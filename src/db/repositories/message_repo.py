@@ -1,65 +1,64 @@
 """
-Message repository for database operations.
+Message metadata repository for database operations.
+NOTE: Message TEXT content is stored in ChromaDB, not PostgreSQL.
 """
 
 import logging
 from typing import Dict, List, Optional
 from psycopg2 import extras
-import json
 
 logger = logging.getLogger(__name__)
 
 
 class MessageRepository:
     """
-    Handles database operations for messages and related data.
+    Handles database operations for message metadata (NOT content).
     """
 
-    def __init__(self, db_connection):
+    def __init__(self, db_connection, workspace_id: str):
         """
         Initialize repository with database connection.
 
         Args:
             db_connection: Database connection from connection pool
+            workspace_id: Workspace ID for multi-tenant isolation
         """
         self.conn = db_connection
+        self.workspace_id = workspace_id
 
     def upsert_message(self, message: Dict) -> int:
         """
-        Insert or update a message.
+        Insert or update message metadata.
 
         Args:
-            message: Message dict
+            message: Message metadata dict (NO message_text field)
 
         Returns:
             message_id
         """
         query = """
-            INSERT INTO messages (
-                slack_ts, channel_id, channel_name, user_id, user_name,
-                message_text, message_type, thread_ts, reply_count, reply_users_count,
-                attachments, mentions, blocks, permalink, is_pinned,
-                edited_at, created_at, raw_data
+            INSERT INTO message_metadata (
+                workspace_id, slack_ts, channel_id, channel_name, user_id, user_name,
+                message_type, thread_ts, reply_count, reply_users_count,
+                has_attachments, has_files, has_reactions, mention_count, link_count,
+                permalink, is_pinned, edited_at, created_at, chromadb_id
             ) VALUES (
-                %(slack_ts)s, %(channel_id)s, %(channel_name)s, %(user_id)s, %(user_name)s,
-                %(message_text)s, %(message_type)s, %(thread_ts)s, %(reply_count)s, %(reply_users_count)s,
-                %(attachments)s, %(mentions)s, %(blocks)s, %(permalink)s, %(is_pinned)s,
-                %(edited_at)s, %(created_at)s, %(raw_data)s
+                %(workspace_id)s, %(slack_ts)s, %(channel_id)s, %(channel_name)s, %(user_id)s, %(user_name)s,
+                %(message_type)s, %(thread_ts)s, %(reply_count)s, %(reply_users_count)s,
+                %(has_attachments)s, %(has_files)s, %(has_reactions)s, %(mention_count)s, %(link_count)s,
+                %(permalink)s, %(is_pinned)s, %(edited_at)s, %(created_at)s, %(chromadb_id)s
             )
-            ON CONFLICT (slack_ts) DO UPDATE SET
-                message_text = EXCLUDED.message_text,
+            ON CONFLICT (workspace_id, slack_ts) DO UPDATE SET
                 reply_count = EXCLUDED.reply_count,
                 reply_users_count = EXCLUDED.reply_users_count,
+                has_reactions = EXCLUDED.has_reactions,
                 edited_at = EXCLUDED.edited_at,
-                raw_data = EXCLUDED.raw_data
+                chromadb_id = EXCLUDED.chromadb_id
             RETURNING message_id
         """
 
-        # Convert lists/dicts to JSON strings for JSONB columns
         params = message.copy()
-        for key in ['attachments', 'mentions', 'blocks', 'raw_data']:
-            if key in params and params[key] is not None:
-                params[key] = json.dumps(params[key])
+        params['workspace_id'] = self.workspace_id
 
         try:
             with self.conn.cursor() as cur:
@@ -84,13 +83,13 @@ class MessageRepository:
             return
 
         query = """
-            INSERT INTO reactions (message_id, user_id, user_name, reaction_name, reacted_at)
-            VALUES (%s, %s, %s, %s, %s)
-            ON CONFLICT (message_id, user_id, reaction_name) DO NOTHING
+            INSERT INTO reactions (workspace_id, message_id, user_id, user_name, reaction_name, reacted_at)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (workspace_id, message_id, user_id, reaction_name) DO NOTHING
         """
 
         params_list = [
-            (message_id, r['user_id'], r.get('user_name', ''), r['reaction_name'], r['reacted_at'])
+            (self.workspace_id, message_id, r['user_id'], r.get('user_name', ''), r['reaction_name'], r['reacted_at'])
             for r in reactions
         ]
 
@@ -115,13 +114,13 @@ class MessageRepository:
             return
 
         query = """
-            INSERT INTO links (message_id, url, link_type, domain, title, description)
-            VALUES (%s, %s, %s, %s, %s, %s)
+            INSERT INTO links (workspace_id, message_id, url, link_type, domain, title, description)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT DO NOTHING
         """
 
         params_list = [
-            (message_id, link['url'], link['link_type'], link['domain'],
+            (self.workspace_id, message_id, link['url'], link['link_type'], link['domain'],
              link.get('title'), link.get('description'))
             for link in links
         ]
@@ -148,19 +147,19 @@ class MessageRepository:
 
         query = """
             INSERT INTO files (
-                slack_file_id, message_id, file_name, file_type, file_size,
+                workspace_id, slack_file_id, message_id, file_name, file_type, file_size,
                 mime_type, url_private, url_private_download, permalink,
                 uploaded_by, uploaded_at
             ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+                %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
             )
-            ON CONFLICT (slack_file_id) DO UPDATE SET
+            ON CONFLICT (workspace_id, slack_file_id) DO UPDATE SET
                 message_id = EXCLUDED.message_id
         """
 
         params_list = [
             (
-                f['slack_file_id'], message_id, f['file_name'], f['file_type'],
+                self.workspace_id, f['slack_file_id'], message_id, f['file_name'], f['file_type'],
                 f['file_size'], f['mime_type'], f['url_private'],
                 f['url_private_download'], f['permalink'], f['uploaded_by'],
                 f['uploaded_at']
@@ -177,47 +176,25 @@ class MessageRepository:
             logger.error(f"Failed to insert files for message {message_id}: {e}")
             raise
 
-    def get_message_by_slack_ts(self, slack_ts: str) -> Optional[Dict]:
+    def update_chromadb_id(self, message_id: int, chromadb_id: str):
         """
-        Get message by Slack timestamp.
+        Update the ChromaDB reference for a message.
 
         Args:
-            slack_ts: Slack timestamp
-
-        Returns:
-            Message dict or None
+            message_id: Message ID
+            chromadb_id: ChromaDB document ID
         """
-        query = "SELECT * FROM messages WHERE slack_ts = %s"
-
-        try:
-            with self.conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
-                cur.execute(query, (slack_ts,))
-                return cur.fetchone()
-        except Exception as e:
-            logger.error(f"Failed to fetch message {slack_ts}: {e}")
-            raise
-
-    def get_messages_count(self, channel_id: Optional[str] = None) -> int:
+        query = """
+            UPDATE message_metadata
+            SET chromadb_id = %s
+            WHERE workspace_id = %s AND message_id = %s
         """
-        Get total message count, optionally filtered by channel.
-
-        Args:
-            channel_id: Optional channel ID filter
-
-        Returns:
-            Message count
-        """
-        if channel_id:
-            query = "SELECT COUNT(*) FROM messages WHERE channel_id = %s AND deleted_at IS NULL"
-            params = (channel_id,)
-        else:
-            query = "SELECT COUNT(*) FROM messages WHERE deleted_at IS NULL"
-            params = None
 
         try:
             with self.conn.cursor() as cur:
-                cur.execute(query, params)
-                return cur.fetchone()[0]
+                cur.execute(query, (chromadb_id, self.workspace_id, message_id))
+                self.conn.commit()
         except Exception as e:
-            logger.error(f"Failed to get message count: {e}")
+            self.conn.rollback()
+            logger.error(f"Failed to update chromadb_id for message {message_id}: {e}")
             raise

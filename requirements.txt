@@ -28,3 +28,5 @@ pytest==8.0.0
 pytest-asyncio==0.23.5
 black==24.2.0
 flake8==7.0.0
+chromadb==0.4.22
+anthropic>=0.18.0

@@ -19,10 +19,18 @@ logs/
 *.db
 *.sqlite
 
+# ChromaDB
+chroma_data/
+*.parquet
+
 # Downloaded files
 downloads/
 files/
 *.tmp
+
+# Generated newsletters
+newsletter*.md
+newsletter*.txt
 
 # OS
 .DS_Store
