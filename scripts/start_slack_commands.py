@@ -1,0 +1,40 @@
+#!/usr/bin/env python3
+"""
+Start Slack Command Handler
+Allows users to ask questions directly in Slack using /ask command
+"""
+
+import sys
+import os
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+from src.services.slack_commands import start_command_handler
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+logger = logging.getLogger(__name__)
+
+if __name__ == "__main__":
+    logger.info("=" * 70)
+    logger.info("SLACK HELPER BOT - COMMAND HANDLER")
+    logger.info("=" * 70)
+    logger.info("")
+    logger.info("Available commands in Slack:")
+    logger.info("  /ask <question>      - Ask a question (only you see the answer)")
+    logger.info("  /askall <question>   - Ask a question (everyone sees the answer)")
+    logger.info("  @bot <question>      - Mention the bot to ask a question")
+    logger.info("")
+    logger.info("=" * 70)
+
+    try:
+        start_command_handler()
+    except KeyboardInterrupt:
+        logger.info("\n🛑 Shutting down command handler...")
+    except Exception as e:
+        logger.error(f"❌ Error: {e}", exc_info=True)
+        sys.exit(1)

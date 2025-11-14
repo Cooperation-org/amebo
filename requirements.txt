@@ -23,10 +23,29 @@ python-json-logger==2.0.7
 # CLI
 click==8.1.7  # For building CLI scripts
 
+# AI
+chromadb==0.4.22
+anthropic>=0.18.0
+
+# FastAPI & Web
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+pydantic==2.6.1
+pydantic-settings==2.1.0
+
+# Auth
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.9
+
+# File handling
+python-magic==0.4.27
+PyPDF2==3.0.1
+python-docx==1.1.0
+aiofiles==23.2.1
+
 # Development (optional)
 pytest==8.0.0
 pytest-asyncio==0.23.5
 black==24.2.0
 flake8==7.0.0
-chromadb==0.4.22
-anthropic>=0.18.0
