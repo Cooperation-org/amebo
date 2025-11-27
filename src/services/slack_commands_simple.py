@@ -88,15 +88,28 @@ async def handle_ask(web_client, user_id, channel_id, question, private=True):
         # Add confidence with percentage
         confidence = result.get('confidence', 50)
         confidence_exp = result.get('confidence_explanation', 'No explanation')
-        answer_text += f"📊 *Confidence:* {confidence}% - {confidence_exp}\n\n"
+
+        # Add confidence bar emoji based on percentage
+        if confidence >= 80:
+            conf_emoji = "🟢"
+        elif confidence >= 60:
+            conf_emoji = "🟡"
+        elif confidence >= 40:
+            conf_emoji = "🟠"
+        else:
+            conf_emoji = "🔴"
+
+        answer_text += f"{conf_emoji} *Confidence:* {confidence}% - _{confidence_exp}_\n\n"
 
         # Add project links if found
         project_links = result.get('project_links', [])
         if project_links:
             answer_text += "🔗 *Related Links:*\n"
             for link in project_links[:5]:
-                link_type = "📂 GitHub" if link['type'] == 'github' else "📄 Docs"
-                answer_text += f"• {link_type}: <{link['url']}>\n"
+                if link['type'] == 'github':
+                    answer_text += f"• 📂 GitHub: <{link['url']}>\n"
+                else:
+                    answer_text += f"• 📄 Docs: <{link['url']}>\n"
             answer_text += "\n"
 
         # Add sources (top 5)
@@ -185,15 +198,28 @@ async def process_events(client: SocketModeClient, req: SocketModeRequest):
 
                 confidence = result.get('confidence', 50)
                 confidence_exp = result.get('confidence_explanation', '')
-                response_text += f"📊 {confidence}% - {confidence_exp}\n"
+
+                # Confidence emoji
+                if confidence >= 80:
+                    conf_emoji = "🟢"
+                elif confidence >= 60:
+                    conf_emoji = "🟡"
+                elif confidence >= 40:
+                    conf_emoji = "🟠"
+                else:
+                    conf_emoji = "🔴"
+
+                response_text += f"{conf_emoji} {confidence}% - _{confidence_exp}_\n"
 
                 # Add project links if found
                 project_links = result.get('project_links', [])
                 if project_links:
                     response_text += "\n🔗 *Links:*\n"
                     for link in project_links[:3]:
-                        link_type = "📂" if link['type'] == 'github' else "📄"
-                        response_text += f"• {link_type} <{link['url']}>\n"
+                        if link['type'] == 'github':
+                            response_text += f"• 📂 <{link['url']}>\n"
+                        else:
+                            response_text += f"• 📄 <{link['url']}>\n"
 
                 response_text += f"\n_Based on {result.get('context_used', 0)} messages_"
 

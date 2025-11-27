@@ -9,30 +9,12 @@ import time
 
 from src.api.models import QARequest, QAResponse, QASource
 from src.api.auth_utils import get_current_user
+from src.api.middleware.workspace_auth import verify_workspace_access, get_workspace_ids_for_org
 from src.services.qa_service import QAService
 from src.db.connection import DatabaseConnection
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-
-def get_workspace_ids_for_org(org_id: int) -> list:
-    """Get all workspace IDs connected to an organization"""
-    conn = DatabaseConnection.get_connection()
-    try:
-        with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
-            cur.execute(
-                """
-                SELECT workspace_id
-                FROM org_workspaces
-                WHERE org_id = %s
-                """,
-                (org_id,)
-            )
-            workspaces = cur.fetchall()
-            return [ws['workspace_id'] for ws in workspaces]
-    finally:
-        DatabaseConnection.return_connection(conn)
 
 
 @router.post("/ask", response_model=QAResponse)
@@ -58,12 +40,8 @@ async def ask_question(
 
         # Determine which workspace to query
         if request.workspace_id:
-            # Verify user has access to this workspace
-            if request.workspace_id not in workspace_ids:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="You don't have access to this workspace"
-                )
+            # SECURITY: Verify user has access to this workspace
+            verify_workspace_access(request.workspace_id, current_user['org_id'])
             workspace_id = request.workspace_id
         else:
             # Use first workspace (or could search all)
@@ -91,9 +69,10 @@ async def ask_question(
                 source_type='slack_message',
                 text=msg.get('text', ''),
                 metadata={
-                    'channel_name': msg.get('metadata', {}).get('channel_name'),
-                    'user_name': msg.get('metadata', {}).get('user_name'),
-                    'timestamp': msg.get('metadata', {}).get('timestamp'),
+                    'channel': msg.get('channel', 'unknown'),
+                    'user': msg.get('user', 'unknown'),
+                    'timestamp': msg.get('timestamp', ''),
+                    'reference_number': msg.get('reference_number', 0),
                     'workspace_id': workspace_id
                 },
                 relevance_score=msg.get('distance')  # ChromaDB distance score
@@ -107,7 +86,9 @@ async def ask_question(
 
         return QAResponse(
             answer=result['answer'],
-            confidence=result.get('confidence', 'medium'),
+            confidence=result.get('confidence', 50),
+            confidence_explanation=result.get('confidence_explanation', 'No explanation'),
+            project_links=result.get('project_links', []),
             sources=sources,
             question=request.question,
             processing_time_ms=processing_time

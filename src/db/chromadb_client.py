@@ -222,7 +222,7 @@ class ChromaDBClient:
         Semantic search for messages.
 
         Args:
-            workspace_id: Workspace ID
+            workspace_id: Workspace ID (REQUIRED for security)
             query_text: Search query
             n_results: Number of results to return
             where_filter: Metadata filters (e.g., {'channel_id': 'C123'})
@@ -230,7 +230,18 @@ class ChromaDBClient:
         Returns:
             List of matching messages with similarity scores
         """
+        if not workspace_id:
+            raise ValueError("workspace_id is REQUIRED for ChromaDB search")
+
         collection = self.get_or_create_collection(workspace_id)
+
+        # SECURITY: ALWAYS filter by workspace_id, even though we have workspace-specific collections
+        # This is defense-in-depth in case messages somehow end up in wrong collection
+        if where_filter is None:
+            where_filter = {}
+
+        # Enforce workspace_id filter
+        where_filter['workspace_id'] = workspace_id
 
         try:
             results = collection.query(

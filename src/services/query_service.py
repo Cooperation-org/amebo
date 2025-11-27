@@ -24,8 +24,17 @@ class QueryService:
         Initialize query service.
 
         Args:
-            workspace_id: Workspace ID
+            workspace_id: Workspace ID (REQUIRED for security/isolation)
+
+        Raises:
+            ValueError: If workspace_id is None or empty
         """
+        if not workspace_id:
+            raise ValueError(
+                "workspace_id is REQUIRED for query service. "
+                "This ensures workspace data isolation for security."
+            )
+
         self.workspace_id = workspace_id
         self.chromadb = ChromaDBClient()
         DatabaseConnection.initialize_pool()

@@ -27,8 +27,17 @@ class QAService:
         Initialize Q&A service.
 
         Args:
-            workspace_id: Workspace ID
+            workspace_id: Workspace ID (REQUIRED for security/isolation)
+
+        Raises:
+            ValueError: If workspace_id is None or empty
         """
+        if not workspace_id:
+            raise ValueError(
+                "workspace_id is REQUIRED for Q&A service. "
+                "This ensures workspace data isolation for security."
+            )
+
         self.workspace_id = workspace_id
         self.query_service = QueryService(workspace_id)
 
@@ -61,20 +70,47 @@ class QAService:
         """
         logger.info(f"Answering question: {question}")
 
+        # Auto-detect time-based questions if days_back not explicitly provided
+        if days_back is None:
+            days_back = self._detect_time_filter(question)
+
+        # Auto-detect channel filter from question
+        if channel_filter is None:
+            channel_filter = self._detect_channel_filter(question)
+
         # 1. Retrieve relevant messages (semantic search)
+        # Get more results than needed to allow filtering
+        search_results = n_context_messages * 3
         relevant_messages = self.query_service.semantic_search(
             query=question,
-            n_results=n_context_messages,
+            n_results=search_results,
             channel_filter=channel_filter,
             days_back=days_back
         )
 
+        # 2. Filter out low-quality messages (bot notifications, joins, etc.)
+        relevant_messages = self._filter_quality_messages(relevant_messages, n_context_messages)
+
         if not relevant_messages:
+            # Provide helpful message based on filters
+            filters_applied = []
+            if days_back:
+                filters_applied.append(f"last {days_back} days")
+            if channel_filter:
+                filters_applied.append(f"#{channel_filter} channel")
+
+            if filters_applied:
+                filters_str = " in the " + " and ".join(filters_applied)
+                answer = f"I couldn't find any substantive messages{filters_str}. There may be very little activity during this period, or the messages might be too short/simple to be useful (like emoji reactions or join notifications).\n\nTry:\n• Asking about a different time period\n• Asking without specifying a channel\n• Asking about a more general topic"
+            else:
+                answer = "I couldn't find any relevant information in the Slack history to answer this question."
+
             return {
-                'answer': "I couldn't find any relevant information in the Slack history to answer this question.",
+                'answer': answer,
                 'sources': [],
                 'confidence': 0,
-                'confidence_explanation': 'No relevant messages found',
+                'confidence_explanation': 'No relevant messages found after filtering',
+                'project_links': [],
                 'context_used': 0
             }
 
@@ -89,9 +125,121 @@ class QAService:
 
         return answer
 
+    def _detect_time_filter(self, question: str) -> Optional[int]:
+        """
+        Detect if question is time-based and return appropriate days_back filter.
+
+        Args:
+            question: User's question
+
+        Returns:
+            Number of days to look back, or None for no filter
+        """
+        question_lower = question.lower()
+
+        # Time-based keywords
+        time_patterns = {
+            'today': 1,
+            'yesterday': 2,
+            'this week': 7,
+            'past week': 7,
+            'last week': 14,  # Look back 2 weeks to include last week
+            'this month': 30,
+            'past month': 30,
+            'last month': 60,  # Look back 2 months to include last month
+            'recent': 7,
+            'recently': 7,
+            'latest': 7,
+        }
+
+        for pattern, days in time_patterns.items():
+            if pattern in question_lower:
+                logger.info(f"Detected time filter '{pattern}' -> {days} days")
+                return days
+
+        # Default: no time filter (search all history)
+        return None
+
+    def _detect_channel_filter(self, question: str) -> Optional[str]:
+        """
+        Detect if question mentions a specific channel.
+
+        Args:
+            question: User's question
+
+        Returns:
+            Channel name (without #) or None
+        """
+        question_lower = question.lower()
+
+        # Common channel names
+        channel_keywords = [
+            'general', 'standup', 'hackathons', 'random', 'engineering',
+            'design', 'product', 'marketing', 'sales', 'support',
+            'dev', 'testing', 'qa', 'operations', 'announcements'
+        ]
+
+        for channel in channel_keywords:
+            # Match patterns like "in #general", "in general channel", "general channel"
+            if f'#{channel}' in question_lower or f'{channel} channel' in question_lower or f'in {channel}' in question_lower:
+                logger.info(f"Detected channel filter: {channel}")
+                return channel
+
+        return None
+
+    def _filter_quality_messages(self, messages: List[Dict], limit: int) -> List[Dict]:
+        """
+        Filter out low-quality messages (bot notifications, joins, etc.).
+
+        Args:
+            messages: List of messages from search
+            limit: Maximum number of messages to return
+
+        Returns:
+            Filtered list of quality messages
+        """
+        quality_messages = []
+
+        for msg in messages:
+            text = msg.get('text', '').lower()
+
+            # Skip if message is too short
+            if len(text.strip()) < 10:
+                continue
+
+            # Skip common bot notification patterns
+            skip_patterns = [
+                'has joined the channel',
+                'has left the channel',
+                'set the channel topic',
+                'set the channel description',
+                'uploaded a file',
+                'renamed the channel',
+                'archived the channel',
+                'pinned a message',
+            ]
+
+            if any(pattern in text for pattern in skip_patterns):
+                continue
+
+            # Skip if message is mostly mentions (like "@user @user @user")
+            mention_count = text.count('<@')
+            word_count = len(text.split())
+            if word_count > 0 and mention_count / word_count > 0.5:
+                continue
+
+            quality_messages.append(msg)
+
+            # Stop once we have enough quality messages
+            if len(quality_messages) >= limit:
+                break
+
+        logger.info(f"Filtered {len(messages)} messages down to {len(quality_messages)} quality messages")
+        return quality_messages
+
     def _build_context(self, messages: List[Dict]) -> str:
         """
-        Build context string from relevant messages with inline numbering.
+        Build context string from relevant messages with channel-based citations.
 
         Args:
             messages: List of relevant messages
@@ -103,10 +251,11 @@ class QAService:
 
         for i, msg in enumerate(messages, 1):
             metadata = msg['metadata']
+            channel_name = metadata.get('channel_name', 'unknown')
+            user_name = metadata.get('user_name', 'unknown')
+
             context_parts.append(
-                f"[{i}] Channel: #{metadata.get('channel_name', 'unknown')} | "
-                f"User: {metadata.get('user_name', 'unknown')}\n"
-                f"{msg['text']}"
+                f"[#{channel_name}] (from {user_name}):\n{msg['text']}"
             )
 
         return "\n\n".join(context_parts)
@@ -132,36 +281,36 @@ class QAService:
 
 **Critical Rules:**
 1. ONLY answer based on the provided messages - NO external knowledge or assumptions
-2. Use inline citations [1], [2] when referencing specific messages (like academic papers)
-3. If messages don't contain the answer, say "I don't have information about this in the Slack history"
-4. NEVER make assumptions or add information not explicitly in the messages
-5. When discussing projects/tools, include any GitHub repos or documentation links mentioned in the messages
+2. If messages don't contain the answer, say "I don't have information about this in the Slack history"
+3. NEVER make assumptions or add information not explicitly in the messages
+4. Be thorough and include ALL relevant details from the messages
 
-**Citation Format:**
-- Use [1], [2], [3] to cite messages (e.g., "The team is working on the dashboard [1][3]")
-- Place citations immediately after the relevant statement
-- Multiple citations can be combined [1][2]
+**How Messages Are Formatted:**
+Each message shows its channel name in brackets like [#hackathons] or [#standup].
 
-**Confidence Assessment:**
-After your answer, on a new line add:
-Confidence: X% - [brief explanation of why this confidence level]
+**Your Answer Must:**
+- Use inline citations with channel names: [#hackathons], [#general], [#standup]
+- Place citations immediately after relevant statements
+- Example: "The team is working on the dashboard [#general]"
+- Include URLs inline in your text (e.g., "The repo is at https://github.com/...")
+- Use *bold* for emphasis (single asterisk, not double **)
+- Use _italic_ for secondary emphasis
+- Write in clear paragraphs
+- Be comprehensive - include all relevant details, dates, names, features, URLs
 
-Base confidence on:
-- 80-100%: Multiple messages confirm the same information
-- 60-79%: Information found but limited confirmation
-- 40-59%: Somewhat relevant but indirect information
-- 20-39%: Very limited or ambiguous information
-- 0-19%: Almost no relevant information found
-
-**Project Links:**
-If the question is about a project/tool and messages contain GitHub repos or docs, include them at the end."""
+**What NOT to Include:**
+- Do NOT add emoji or emoji codes (:link:, :large_yellow_circle:, etc.)
+- Do NOT add a "Confidence:" line
+- Do NOT create a separate "Related Links:" section
+- Do NOT use ## headers or **double asterisks**
+- Do NOT add a "Sources:" section"""
 
         user_prompt = f"""Question: {question}
 
 Slack Message History:
 {context}
 
-Please answer the question based on these messages. Cite message numbers when relevant."""
+Answer the question based on these messages. Be comprehensive and include all relevant details."""
 
         try:
             response = self.client.messages.create(
@@ -175,8 +324,26 @@ Please answer the question based on these messages. Cite message numbers when re
 
             answer_text = response.content[0].text
 
-            # Extract confidence percentage and explanation
+            # Extract confidence percentage and explanation (and remove from answer)
             confidence, confidence_explanation = self._extract_confidence(answer_text)
+
+            # Remove confidence line from answer text (handles emoji codes too)
+            confidence_pattern = r':?\w*:?\s*\*?\*?Confidence:\s*\d+%\s*\*?\*?\s*[-–]\s*.+?(?:\n|$)'
+            answer_text = re.sub(confidence_pattern, '', answer_text, flags=re.IGNORECASE | re.MULTILINE).strip()
+
+            # Remove any standalone "Related Links:" or "Sources:" sections Claude might add
+            # This handles variations like ":link: Related Links:" or "**Sources:**"
+            answer_text = re.sub(r':?\w*:?\s*\*{0,2}Related Links?:?\*{0,2}\s*\n.*?(?=\n\n|\Z)', '', answer_text, flags=re.IGNORECASE | re.DOTALL)
+            answer_text = re.sub(r':?\w*:?\s*\*{0,2}Sources?:?\*{0,2}\s*\n.*?(?=\n\n|\Z)', '', answer_text, flags=re.IGNORECASE | re.DOTALL)
+
+            # Remove numbered source citations like "[1] #standup - user: text..."
+            answer_text = re.sub(r'\[\d+\]\s+#[\w-]+\s+-\s+[^:]*:\s+_[^_]+_\n?', '', answer_text)
+
+            # Remove emoji shortcodes from the entire answer
+            answer_text = re.sub(r':[\w_]+:', '', answer_text)
+
+            # Clean up extra blank lines
+            answer_text = re.sub(r'\n{3,}', '\n\n', answer_text).strip()
 
             # Extract project links from messages
             project_links = self._extract_project_links(messages)
@@ -250,13 +417,15 @@ Please answer the question based on these messages. Cite message numbers when re
         Returns:
             Tuple of (confidence percentage 0-100, explanation string)
         """
-        # Look for "Confidence: X% - explanation" pattern
-        confidence_pattern = r'Confidence:\s*(\d+)%\s*[-–]\s*(.+?)(?:\n|$)'
-        match = re.search(confidence_pattern, answer, re.IGNORECASE)
+        # Look for "Confidence: X% - explanation" pattern (with emoji codes, ** or without)
+        confidence_pattern = r':?\w*:?\s*\*?\*?Confidence:\s*(\d+)%\s*\*?\*?\s*[-–]\s*(.+?)(?:\n|$)'
+        match = re.search(confidence_pattern, answer, re.IGNORECASE | re.MULTILINE)
 
         if match:
             confidence = int(match.group(1))
             explanation = match.group(2).strip()
+            # Remove emoji codes from explanation
+            explanation = re.sub(r':[\w_]+:', '', explanation).strip()
             return confidence, explanation
 
         # Fallback: assess based on content
@@ -332,6 +501,7 @@ Please answer the question based on these messages. Cite message numbers when re
     def _format_sources(self, messages: List[Dict]) -> List[Dict]:
         """
         Format source messages for response with reference numbers.
+        Looks up usernames from database if not in metadata.
 
         Args:
             messages: Relevant messages
@@ -339,15 +509,51 @@ Please answer the question based on these messages. Cite message numbers when re
         Returns:
             List of formatted source dicts
         """
+        from src.db.connection import DatabaseConnection
+
         sources = []
 
+        # Collect user IDs that need lookup
+        user_ids_to_lookup = set()
+        for msg in messages[:10]:
+            metadata = msg['metadata']
+            if not metadata.get('user_name'):
+                user_id = metadata.get('user_id')
+                if user_id:
+                    user_ids_to_lookup.add(user_id)
+
+        # Lookup usernames if needed
+        user_map = {}
+        if user_ids_to_lookup:
+            conn = DatabaseConnection.get_connection()
+            try:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT user_id, COALESCE(display_name, real_name, user_name) as name
+                        FROM users
+                        WHERE workspace_id = %s AND user_id = ANY(%s)
+                        """,
+                        (self.workspace_id, list(user_ids_to_lookup))
+                    )
+                    user_map = {row[0]: row[1] for row in cur.fetchall()}
+            finally:
+                DatabaseConnection.return_connection(conn)
+
+        # Format sources
         for i, msg in enumerate(messages[:10], 1):  # Top 10 sources
             metadata = msg['metadata']
+            channel = metadata.get('channel_name', '') or 'unknown'
+
+            # Get username from metadata or lookup
+            user_id = metadata.get('user_id', '')
+            user = metadata.get('user_name', '') or user_map.get(user_id, 'unknown')
+
             sources.append({
                 'reference_number': i,
                 'text': msg['text'][:200] + ('...' if len(msg['text']) > 200 else ''),
-                'channel': metadata.get('channel_name', 'unknown'),
-                'user': metadata.get('user_name', 'unknown'),
+                'channel': channel,
+                'user': user,
                 'timestamp': metadata.get('timestamp', ''),
                 'distance': msg.get('distance', 0)
             })

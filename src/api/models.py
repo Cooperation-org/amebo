@@ -150,7 +150,9 @@ class QASource(BaseModel):
 
 class QAResponse(BaseModel):
     answer: str
-    confidence: str  # 'high', 'medium', 'low'
+    confidence: int  # 0-100 percentage
+    confidence_explanation: Optional[str] = None
+    project_links: Optional[List[dict]] = []
     sources: List[QASource]
     question: str
     processing_time_ms: Optional[float] = None
