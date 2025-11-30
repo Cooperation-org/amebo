@@ -10,18 +10,20 @@ interface QuestionInputProps {
   onSubmit: (question: string) => void;
   isLoading?: boolean;
   placeholder?: string;
+  disabled?: boolean;
 }
 
 export function QuestionInput({ 
   onSubmit, 
   isLoading = false, 
-  placeholder = "Ask a question about your Slack conversations..." 
+  placeholder = "Ask a question about your Slack conversations...",
+  disabled = false
 }: QuestionInputProps) {
   const [question, setQuestion] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (question.trim() && !isLoading) {
+    if (question.trim() && !isLoading && !disabled) {
       onSubmit(question.trim());
       setQuestion('');
     }
@@ -44,7 +46,7 @@ export function QuestionInput({
               onKeyDown={handleKeyDown}
               placeholder={placeholder}
               className="min-h-[100px] resize-none"
-              disabled={isLoading}
+              disabled={isLoading || disabled}
             />
             <div className="flex justify-between items-center text-sm text-gray-500">
               <span>Press Cmd+Enter to submit</span>
@@ -54,7 +56,7 @@ export function QuestionInput({
           <div className="flex justify-end">
             <Button 
               type="submit" 
-              disabled={!question.trim() || isLoading}
+              disabled={!question.trim() || isLoading || disabled}
               className="flex items-center gap-2"
             >
               {isLoading ? (

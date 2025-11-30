@@ -93,8 +93,13 @@ class DatabaseConnection:
         Close all connections in the pool.
         """
         if cls._connection_pool:
-            cls._connection_pool.closeall()
-            logger.info("All database connections closed")
+            try:
+                cls._connection_pool.closeall()
+                cls._connection_pool = None
+                logger.info("All database connections closed")
+            except Exception as e:
+                logger.warning(f"Error closing connection pool: {e}")
+                cls._connection_pool = None
 
 
 def get_db_connection():

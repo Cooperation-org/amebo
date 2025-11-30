@@ -59,8 +59,8 @@ def verify_workspace_access(workspace_id: str, org_id: int) -> None:
         # Check if org has access to this workspace
         cur.execute(
             """
-            SELECT 1 FROM org_workspaces
-            WHERE org_id = %s AND workspace_id = %s
+            SELECT 1 FROM workspaces
+            WHERE org_id = %s AND workspace_id = %s AND is_active = true
             """,
             (org_id, workspace_id)
         )
@@ -83,24 +83,17 @@ def verify_workspace_access(workspace_id: str, org_id: int) -> None:
 def get_workspace_ids_for_org(org_id: int) -> list[str]:
     """
     Get all workspace IDs that an organization has access to.
-
-    Args:
-        org_id: Organization ID
-
-    Returns:
-        List of workspace IDs
-
-    Security: Only returns workspaces the organization owns.
     """
     conn = DatabaseConnection.get_connection()
     try:
         cur = conn.cursor()
 
+        # Use workspaces table directly with org_id column
         cur.execute(
             """
             SELECT workspace_id
-            FROM org_workspaces
-            WHERE org_id = %s
+            FROM workspaces
+            WHERE org_id = %s AND is_active = true
             """,
             (org_id,)
         )
@@ -110,5 +103,8 @@ def get_workspace_ids_for_org(org_id: int) -> list[str]:
 
         return workspace_ids
 
+    except Exception as e:
+        logger.error(f"Error getting workspaces for org {org_id}: {e}")
+        return []
     finally:
         DatabaseConnection.return_connection(conn)

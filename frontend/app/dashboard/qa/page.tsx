@@ -58,10 +58,10 @@ export default function QAPage() {
 
   const handleAskQuestion = async (question: string) => {
     if (!hasWorkspaces) {
-      toast.error('Please add a workspace first to ask questions');
+      toast.error('Please connect a workspace first to ask questions');
       return;
     }
-    
+
     setCurrentQuestion(question);
     try {
       const qaResponse = await askQuestionMutation.mutateAsync({
@@ -76,6 +76,7 @@ export default function QAPage() {
 
       setResponse(qaResponse);
     } catch (error) {
+      console.error('Q&A Error:', error);
       toast.error(error instanceof Error ? error.message : 'Failed to get answer');
     }
   };
@@ -126,23 +127,17 @@ export default function QAPage() {
 
         {/* Main Content */}
         <div className="lg:col-span-3 space-y-6">
-          {!hasWorkspaces ? (
-            <Card>
-              <CardContent className="p-12 text-center">
-                <div className="flex flex-col items-center space-y-4">
-                  <div className="p-4 bg-orange-100 rounded-full">
-                    <Building2 className="h-8 w-8 text-orange-600" />
-                  </div>
-                  <div className="space-y-2">
-                    <h3 className="text-lg font-medium text-gray-900">
-                      No workspaces connected
-                    </h3>
-                    <p className="text-gray-600 max-w-md">
-                      You need to connect at least one Slack workspace before you can ask questions. 
-                      Connect your workspace to start getting AI-powered answers.
+          {!hasWorkspaces && (
+            <Card className="border-orange-200 bg-orange-50">
+              <CardContent className="p-4">
+                <div className="flex items-center space-x-3">
+                  <Building2 className="h-5 w-5 text-orange-600" />
+                  <div className="flex-1">
+                    <p className="text-sm text-orange-800">
+                      <strong>No Workspaces Connected:</strong> Connect a Slack workspace to start asking questions about your team's conversations.
                     </p>
                   </div>
-                  <Button asChild className="mt-4">
+                  <Button asChild size="sm" variant="outline">
                     <Link href="/dashboard/workspaces">
                       <Plus className="h-4 w-4 mr-2" />
                       Add Workspace
@@ -151,47 +146,48 @@ export default function QAPage() {
                 </div>
               </CardContent>
             </Card>
-          ) : (
-            <>
-              {/* Question Input */}
-              <QuestionInput
-                onSubmit={handleAskQuestion}
-                isLoading={askQuestionMutation.isPending}
-              />
+          )}
+          
+          {/* Question Input */}
+          <QuestionInput
+            onSubmit={handleAskQuestion}
+            isLoading={askQuestionMutation.isPending}
+            placeholder={hasWorkspaces ? "Ask a question about your Slack conversations..." : "Connect a workspace to start asking questions"}
+            disabled={!hasWorkspaces}
+          />
 
-              {/* Answer Display */}
-              {response ? (
-                <AnswerDisplay response={response} />
-              ) : (
-                <Card>
-                  <CardContent className="p-12 text-center">
-                    <div className="flex flex-col items-center space-y-4">
-                      <div className="p-4 bg-blue-100 rounded-full">
-                        <Sparkles className="h-8 w-8 text-blue-600" />
-                      </div>
-                      <div className="space-y-2">
-                        <h3 className="text-lg font-medium text-gray-900">
-                          Ready to help you find answers
-                        </h3>
-                        <p className="text-gray-600 max-w-md">
-                          Ask any question about your Slack conversations, team discussions, 
-                          or uploaded documents. I'll search through your workspace to find 
-                          the most relevant information.
-                        </p>
-                      </div>
-                      <div className="text-sm text-gray-500 space-y-1">
-                        <p><strong>Try asking:</strong></p>
-                        <ul className="text-left space-y-1">
-                          <li>• "How do we deploy to production?"</li>
-                          <li>• "What's our code review process?"</li>
-                          <li>• "Who handles customer support issues?"</li>
-                        </ul>
-                      </div>
+          {/* Answer Display */}
+          {response ? (
+            <AnswerDisplay response={response} />
+          ) : (
+            <Card>
+              <CardContent className="p-12 text-center">
+                <div className="flex flex-col items-center space-y-4">
+                  <div className="p-4 bg-blue-100 rounded-full">
+                    <Sparkles className="h-8 w-8 text-blue-600" />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-medium text-gray-900">
+                      Ready to help you find answers
+                    </h3>
+                    <p className="text-gray-600 max-w-md">
+                      Ask any question about your Slack conversations, team discussions, or uploaded documents.
+                    </p>
+                  </div>
+                  {hasWorkspaces && (
+                    <div className="text-sm text-gray-500 space-y-1">
+                      <p><strong>Try asking:</strong></p>
+                      <ul className="text-left space-y-1">
+                        <li>• "What did we discuss about the new feature?"</li>
+                        <li>• "Who mentioned the deployment issue?"</li>
+                        <li>• "What are the latest updates on the project?"</li>
+                        <li>• "Show me conversations about bug fixes"</li>
+                      </ul>
                     </div>
-                  </CardContent>
-                </Card>
-              )}
-            </>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           )}
         </div>
       </div>

@@ -3,11 +3,14 @@
 import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
 import { Upload, File, X, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useWorkspaces } from '@/src/hooks/useWorkspaces';
 
 interface FileUploadProps {
-  onFilesSelected: (files: File[]) => void;
+  onFilesSelected: (files: File[], workspaceId?: string) => void;
   isUploading?: boolean;
   acceptedTypes?: string[];
   maxSize?: number;
@@ -23,6 +26,10 @@ export function FileUpload({
 }: FileUploadProps) {
   const [dragActive, setDragActive] = useState(false);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [selectedWorkspace, setSelectedWorkspace] = useState<string>('');
+  const { data: workspacesData } = useWorkspaces();
+  
+  const workspaces = workspacesData?.workspaces || [];
 
   const validateFile = (file: File): string | null => {
     // Check file size
@@ -91,8 +98,10 @@ export function FileUpload({
 
   const handleUpload = () => {
     if (selectedFiles.length > 0) {
-      onFilesSelected(selectedFiles);
+      const workspaceId = selectedWorkspace === 'none' ? undefined : selectedWorkspace || undefined;
+      onFilesSelected(selectedFiles, workspaceId);
       setSelectedFiles([]);
+      setSelectedWorkspace('');
     }
   };
 
@@ -150,6 +159,26 @@ export function FileUpload({
           </div>
         </CardContent>
       </Card>
+
+      {/* Workspace Selection */}
+      {selectedFiles.length > 0 && workspaces.length > 0 && (
+        <div className="space-y-2">
+          <Label htmlFor="workspace-select">Tag to Workspace (Optional)</Label>
+          <Select value={selectedWorkspace} onValueChange={setSelectedWorkspace}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select a workspace or leave untagged" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No workspace (organization-wide)</SelectItem>
+              {workspaces.map((workspace) => (
+                <SelectItem key={workspace.workspace_id} value={workspace.workspace_id}>
+                  {workspace.team_name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       {/* Selected Files */}
       {selectedFiles.length > 0 && (

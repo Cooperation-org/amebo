@@ -209,25 +209,16 @@ class SlackHelperApp:
         logger.info("Press Ctrl+C to shutdown")
         logger.info("")
 
-        # Wait for any task to complete or fail
-        done, pending = await asyncio.wait(
-            tasks,
-            return_when=asyncio.FIRST_COMPLETED
-        )
-
-        # If any task completed, it's likely an error
-        for task in done:
-            try:
-                task.result()
-            except Exception as e:
-                logger.error(f"Service {task.get_name()} failed: {e}")
-
-        # Cancel remaining tasks
-        for task in pending:
-            task.cancel()
-
-        # Wait for all tasks to finish cancelling
-        await asyncio.gather(*pending, return_exceptions=True)
+        # Wait for shutdown signal or any task to fail
+        try:
+            await asyncio.gather(*tasks)
+        except Exception as e:
+            logger.error(f"Service failed: {e}")
+            # Cancel all tasks on failure
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def shutdown(self):
         """

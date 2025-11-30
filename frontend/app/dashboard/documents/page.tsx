@@ -21,11 +21,12 @@ export default function DocumentsPage() {
   const workspaces = workspacesData?.workspaces || [];
   const hasWorkspaces = workspaces.length > 0;
 
-  const handleFileUpload = async (files: File[]) => {
+  const handleFileUpload = async (files: File[], workspaceId?: string) => {
     for (const file of files) {
       try {
-        await uploadMutation.mutateAsync(file);
-        toast.success(`${file.name} uploaded successfully`);
+        await uploadMutation.mutateAsync({ file, workspaceId });
+        const workspaceText = workspaceId ? ` to ${workspaces.find(w => w.workspace_id === workspaceId)?.team_name}` : '';
+        toast.success(`${file.name} uploaded successfully${workspaceText}`);
       } catch (error) {
         toast.error(`Failed to upload ${file.name}`);
       }

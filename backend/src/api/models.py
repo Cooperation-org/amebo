@@ -87,8 +87,23 @@ class OrganizationUpdateRequest(BaseModel):
 
 class InviteUserRequest(BaseModel):
     email: EmailStr
-    full_name: str
     role: str = Field(default="member", pattern="^(admin|member|viewer)$")
+
+
+class InviteUserResponse(BaseModel):
+    success: bool
+    message: str
+    user_id: int
+
+
+class TeamMember(BaseModel):
+    user_id: int
+    name: str
+    email: str
+    role: str
+    status: str  # 'active', 'pending', 'inactive'
+    last_active: Optional[str] = None
+    invited_at: str
 
 
 # ============================================================================
@@ -136,6 +151,8 @@ class DocumentListResponse(BaseModel):
 class QARequest(BaseModel):
     question: str = Field(..., min_length=3, max_length=1000)
     workspace_id: Optional[str] = None
+    channel_filter: Optional[str] = None
+    days_back: Optional[int] = Field(default=30, ge=1, le=365)
     include_documents: bool = True
     include_slack: bool = True
     max_sources: int = Field(default=10, ge=1, le=50)

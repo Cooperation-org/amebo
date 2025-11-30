@@ -157,6 +157,46 @@ class ApiClient {
       method: 'POST',
     });
   }
+
+  // Team management endpoints
+  async getTeamMembers() {
+    return this.request('/api/team/members');
+  }
+
+  async inviteUser(data: {
+    email: string;
+    role: string;
+  }) {
+    return this.request('/api/team/invite', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateUserRole(userId: number, role: string) {
+    return this.request(`/api/team/members/${userId}/role`, {
+      method: 'PUT',
+      body: JSON.stringify({ role }),
+    });
+  }
+
+  async deactivateUser(userId: number) {
+    return this.request(`/api/team/members/${userId}/deactivate`, {
+      method: 'PUT',
+    });
+  }
+
+  async activateUser(userId: number) {
+    return this.request(`/api/team/members/${userId}/activate`, {
+      method: 'PUT',
+    });
+  }
+
+  async deleteUser(userId: number) {
+    return this.request(`/api/team/members/${userId}`, {
+      method: 'DELETE',
+    });
+  }
 }
 
 export const apiClient = new ApiClient(API_BASE_URL);

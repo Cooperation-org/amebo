@@ -42,8 +42,14 @@ export default function DashboardPage() {
   ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 5);
 
   const formatTimeAgo = (timestamp: string) => {
+    if (!timestamp) return 'Unknown';
+    
     const now = new Date();
     const time = new Date(timestamp);
+    
+    // Check if date is valid
+    if (isNaN(time.getTime())) return 'Unknown';
+    
     const diffMs = now.getTime() - time.getTime();
     const diffMins = Math.floor(diffMs / (1000 * 60));
     const diffHours = Math.floor(diffMs / (1000 * 60 * 60));

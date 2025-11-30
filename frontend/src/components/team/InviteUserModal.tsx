@@ -11,6 +11,8 @@ import { Mail, Loader2, CheckCircle, Users, Shield, Eye } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { useInviteUser } from '@/src/hooks/useTeam';
+import { toast } from 'sonner';
 
 const inviteSchema = z.object({
   email: z.string().email('Please enter a valid email address'),
@@ -26,8 +28,10 @@ interface InviteUserModalProps {
 }
 
 export function InviteUserModal({ open, onClose, onUserInvited }: InviteUserModalProps) {
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [inviteSent, setInviteSent] = useState(false);
+  const [inviteMessage, setInviteMessage] = useState('');
+  
+  const inviteUserMutation = useInviteUser();
 
   const {
     register,
@@ -46,20 +50,23 @@ export function InviteUserModal({ open, onClose, onUserInvited }: InviteUserModa
   const selectedRole = watch('role');
 
   const onSubmit = async (data: InviteFormData) => {
-    setIsSubmitting(true);
     try {
-      // TODO: Replace with actual API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      const response = await inviteUserMutation.mutateAsync({
+        email: data.email,
+        role: data.role,
+      });
       
+      setInviteMessage(response.message);
       setInviteSent(true);
+      toast.success('User invited successfully!');
+      
       setTimeout(() => {
         onUserInvited?.();
         handleClose();
-      }, 2000);
+      }, 3000);
     } catch (error) {
       console.error('Failed to send invitation:', error);
-    } finally {
-      setIsSubmitting(false);
+      toast.error(error instanceof Error ? error.message : 'Failed to send invitation');
     }
   };
 
@@ -67,6 +74,7 @@ export function InviteUserModal({ open, onClose, onUserInvited }: InviteUserModa
     onClose();
     reset();
     setInviteSent(false);
+    setInviteMessage('');
   };
 
   const getRoleDescription = (role: string) => {
@@ -103,7 +111,7 @@ export function InviteUserModal({ open, onClose, onUserInvited }: InviteUserModa
             <CheckCircle className="h-16 w-16 mx-auto text-green-600 mb-4" />
             <h3 className="text-lg font-semibold mb-2">Invitation Sent!</h3>
             <p className="text-gray-600 mb-4">
-              We've sent an invitation email with instructions to join your team.
+              {inviteMessage || "We've sent an invitation email with instructions to join your team."}
             </p>
             <Button onClick={handleClose} className="w-full">
               Done
@@ -201,10 +209,10 @@ export function InviteUserModal({ open, onClose, onUserInvited }: InviteUserModa
             </Button>
             <Button
               type="submit"
-              disabled={isSubmitting}
+              disabled={inviteUserMutation.isPending}
               className="flex-1"
             >
-              {isSubmitting ? (
+              {inviteUserMutation.isPending ? (
                 <>
                   <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   Sending...

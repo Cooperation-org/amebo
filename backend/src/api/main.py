@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 import logging
 import time
 
-from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces
+from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces, dev_auth, team
 from src.db.connection import DatabaseConnection
 
 # Configure logging
@@ -106,16 +106,19 @@ async def root():
 
 
 # Include routers
-app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
+# Use dev auth for development, comment out for production
+app.include_router(dev_auth.router, prefix="/api/auth", tags=["Development Auth"])
+# app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(organizations.router, prefix="/api/organizations", tags=["Organizations"])
 app.include_router(workspaces.router, prefix="/api/workspaces", tags=["Workspaces"])
 app.include_router(documents.router, prefix="/api/documents", tags=["Documents"])
 app.include_router(qa.router, prefix="/api/qa", tags=["Q&A"])
 app.include_router(slack_oauth.router, prefix="/api/slack", tags=["Slack Integration"])
 
-# Import admin routes
+# Import admin and team routes
 from src.api.routes import admin
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+app.include_router(team.router, prefix="/api/team", tags=["Team Management"])
 
 
 if __name__ == "__main__":

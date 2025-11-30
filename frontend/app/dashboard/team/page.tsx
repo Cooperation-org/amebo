@@ -6,8 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, UserPlus, MoreHorizontal, Mail, Shield, Eye } from 'lucide-react';
+import { Users, UserPlus, MoreHorizontal, Mail, Shield, Eye, Loader2, Trash2, UserX, UserCheck } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { InviteUserModal } from '@/src/components/team/InviteUserModal';
+import { useTeamMembers, useUpdateUserRole, useDeactivateUser, useDeleteUser, useActivateUser } from '@/src/hooks/useTeam';
+import { toast } from 'sonner';
 
 interface TeamMember {
   user_id: number;
@@ -23,35 +26,53 @@ interface TeamMember {
 export default function TeamPage() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   
-  // Mock team data
-  const [teamMembers] = useState<TeamMember[]>([
-    {
-      user_id: 1,
-      name: 'John Doe',
-      email: 'john@example.com',
-      role: 'admin',
-      status: 'active',
-      last_active: '2 minutes ago',
-      invited_at: '2025-11-01T10:00:00Z'
-    },
-    {
-      user_id: 2,
-      name: 'Jane Smith',
-      email: 'jane@example.com',
-      role: 'member',
-      status: 'active',
-      last_active: '1 hour ago',
-      invited_at: '2025-11-15T14:30:00Z'
-    },
-    {
-      user_id: 3,
-      name: 'Bob Wilson',
-      email: 'bob@example.com',
-      role: 'viewer',
-      status: 'pending',
-      invited_at: '2025-11-28T09:15:00Z'
+  const { data: teamData, isLoading } = useTeamMembers();
+  const updateRoleMutation = useUpdateUserRole();
+  const deactivateUserMutation = useDeactivateUser();
+  const activateUserMutation = useActivateUser();
+  const deleteUserMutation = useDeleteUser();
+  
+  const teamMembers = teamData?.members || [];
+  
+  const handleRoleChange = async (userId: number, newRole: string) => {
+    try {
+      await updateRoleMutation.mutateAsync({ userId, role: newRole });
+      toast.success('User role updated successfully');
+    } catch (error) {
+      toast.error('Failed to update user role');
     }
-  ]);
+  };
+  
+  const handleDeactivateUser = async (userId: number) => {
+    if (confirm('Are you sure you want to deactivate this user? They will be hidden but can be reactivated later.')) {
+      try {
+        await deactivateUserMutation.mutateAsync(userId);
+        toast.success('User deactivated successfully');
+      } catch (error) {
+        toast.error('Failed to deactivate user');
+      }
+    }
+  };
+  
+  const handleDeleteUser = async (userId: number) => {
+    if (confirm('Are you sure you want to permanently delete this user? This action cannot be undone.')) {
+      try {
+        await deleteUserMutation.mutateAsync(userId);
+        toast.success('User deleted permanently');
+      } catch (error) {
+        toast.error('Failed to delete user');
+      }
+    }
+  };
+  
+  const handleActivateUser = async (userId: number) => {
+    try {
+      await activateUserMutation.mutateAsync(userId);
+      toast.success('User activated successfully');
+    } catch (error) {
+      toast.error('Failed to activate user');
+    }
+  };
 
   const getRoleIcon = (role: string) => {
     switch (role) {
@@ -162,65 +183,121 @@ export default function TeamPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {teamMembers.map((member) => (
-              <div
-                key={member.user_id}
-                className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex items-center gap-4">
-                  <Avatar>
-                    <AvatarImage src={member.avatar_url} />
-                    <AvatarFallback>
-                      {member.name.split(' ').map(n => n[0]).join('')}
-                    </AvatarFallback>
-                  </Avatar>
-                  
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-medium">{member.name}</h4>
-                      {getRoleIcon(member.role)}
-                    </div>
-                    <p className="text-sm text-gray-600">{member.email}</p>
-                    {member.last_active && (
-                      <p className="text-xs text-gray-500">Last active: {member.last_active}</p>
-                    )}
-                  </div>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <span className="ml-2">Loading team members...</span>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {teamMembers.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Users className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                  <p className="text-sm">No team members yet</p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    Invite your first team member to get started
+                  </p>
                 </div>
+              ) : (
+                teamMembers.map((member) => (
+                  <div
+                    key={member.user_id}
+                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    <div className="flex items-center gap-4">
+                      <Avatar>
+                        <AvatarImage src={member.avatar_url} />
+                        <AvatarFallback>
+                          {member.name.split(' ').map(n => n[0]).join('')}
+                        </AvatarFallback>
+                      </Avatar>
+                      
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-medium">{member.name}</h4>
+                          {getRoleIcon(member.role)}
+                        </div>
+                        <p className="text-sm text-gray-600">{member.email}</p>
+                        {member.last_active && (
+                          <p className="text-xs text-gray-500">Last active: {member.last_active}</p>
+                        )}
+                      </div>
+                    </div>
 
-                <div className="flex items-center gap-4">
-                  <div className="text-right">
-                    {getRoleBadge(member.role)}
-                    <div className="mt-1">
-                      {getStatusBadge(member.status)}
+                    <div className="flex items-center gap-4">
+                      <div className="text-right">
+                        {getRoleBadge(member.role)}
+                        <div className="mt-1">
+                          {getStatusBadge(member.status)}
+                        </div>
+                      </div>
+
+                      <div className="text-right text-sm text-gray-500">
+                        <p>Invited</p>
+                        <p>{formatDate(member.invited_at)}</p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <Select 
+                          defaultValue={member.role}
+                          onValueChange={(value) => handleRoleChange(member.user_id, value)}
+                          disabled={updateRoleMutation.isPending}
+                        >
+                          <SelectTrigger className="w-32">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="admin">Admin</SelectItem>
+                            <SelectItem value="member">Member</SelectItem>
+                            <SelectItem value="viewer">Viewer</SelectItem>
+                          </SelectContent>
+                        </Select>
+
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              disabled={deactivateUserMutation.isPending || deleteUserMutation.isPending || activateUserMutation.isPending}
+                            >
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {member.status === 'active' ? (
+                              <DropdownMenuItem 
+                                onClick={() => handleDeactivateUser(member.user_id)}
+                                className="text-orange-600 focus:text-orange-700"
+                              >
+                                <UserX className="h-4 w-4 mr-2" />
+                                Deactivate User
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem 
+                                onClick={() => handleActivateUser(member.user_id)}
+                                className="text-green-600 focus:text-green-700"
+                              >
+                                <UserCheck className="h-4 w-4 mr-2" />
+                                Activate User
+                              </DropdownMenuItem>
+                            )}
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem 
+                              onClick={() => handleDeleteUser(member.user_id)}
+                              className="text-red-600 focus:text-red-700"
+                            >
+                              <Trash2 className="h-4 w-4 mr-2" />
+                              Delete Permanently
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </div>
                     </div>
                   </div>
-
-                  <div className="text-right text-sm text-gray-500">
-                    <p>Invited</p>
-                    <p>{formatDate(member.invited_at)}</p>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Select defaultValue={member.role}>
-                      <SelectTrigger className="w-32">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="admin">Admin</SelectItem>
-                        <SelectItem value="member">Member</SelectItem>
-                        <SelectItem value="viewer">Viewer</SelectItem>
-                      </SelectContent>
-                    </Select>
-
-                    <Button variant="ghost" size="sm">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+                ))
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -229,7 +306,6 @@ export default function TeamPage() {
         onClose={() => setShowInviteModal(false)}
         onUserInvited={() => {
           setShowInviteModal(false);
-          // Refresh team list
         }}
       />
     </div>

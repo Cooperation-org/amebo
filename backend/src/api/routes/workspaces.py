@@ -43,22 +43,22 @@ class WorkspaceResponse(BaseModel):
 
 @router.get("/", response_model=dict)
 async def get_workspaces(current_user: dict = Depends(get_current_user)):
-    """Get all workspaces for the current user's organization"""
+    """Get all workspaces"""
     try:
         conn = DatabaseConnection.get_connection()
         cursor = conn.cursor()
         
-        # Simple query with only basic columns that should exist
+        # Query workspaces for user's organization
         cursor.execute("""
             SELECT 
                 w.workspace_id,
                 w.team_name,
-                w.org_id,
-                w.is_active
+                w.is_active,
+                w.org_id
             FROM workspaces w
             WHERE w.org_id = %s
             ORDER BY w.workspace_id
-        """, (current_user["org_id"],))
+        """, (current_user.get("org_id", 1),))
         
         workspaces = []
         for row in cursor.fetchall():
@@ -67,10 +67,10 @@ async def get_workspaces(current_user: dict = Depends(get_current_user)):
                 "team_name": row[1],
                 "team_domain": None,
                 "icon_url": None,
-                "is_active": row[3],
+                "is_active": row[2],
                 "installed_at": None,
                 "last_active": None,
-                "status": "active" if row[3] else "inactive",
+                "status": "active" if row[2] else "inactive",
                 "message_count": 0,
                 "channel_count": 0,
                 "last_sync_at": None
@@ -99,28 +99,13 @@ async def create_workspace(
         cursor = conn.cursor()
         
         # For now, create a simple workspace entry
-        # In production, this would integrate with Slack API and credential encryption
         workspace_id = f"W{hash(workspace_data.workspace_name) % 1000000:06d}"
         
-        # Check if installed_at column exists
         cursor.execute("""
-            SELECT column_name FROM information_schema.columns 
-            WHERE table_name = 'workspaces' AND column_name = 'installed_at'
-        """)
-        has_installed_at = cursor.fetchone() is not None
-        
-        if has_installed_at:
-            cursor.execute("""
-                INSERT INTO workspaces (workspace_id, team_name, org_id, is_active, installed_at)
-                VALUES (%s, %s, %s, %s, NOW())
-                ON CONFLICT (workspace_id) DO NOTHING
-            """, (workspace_id, workspace_data.workspace_name, current_user["org_id"], True))
-        else:
-            cursor.execute("""
-                INSERT INTO workspaces (workspace_id, team_name, org_id, is_active)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (workspace_id) DO NOTHING
-            """, (workspace_id, workspace_data.workspace_name, current_user["org_id"], True))
+            INSERT INTO workspaces (workspace_id, team_name, is_active, org_id)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (workspace_id) DO NOTHING
+        """, (workspace_id, workspace_data.workspace_name, True, current_user.get("org_id", 1)))
         
         conn.commit()
         
@@ -157,7 +142,7 @@ async def update_workspace(
         cursor.execute("""
             SELECT workspace_id FROM workspaces 
             WHERE workspace_id = %s AND org_id = %s
-        """, (workspace_id, current_user["org_id"]))
+        """, (workspace_id, current_user.get("org_id", 1)))
         
         if not cursor.fetchone():
             raise HTTPException(
@@ -165,26 +150,12 @@ async def update_workspace(
                 detail="Workspace not found"
             )
         
-        # Check if last_active column exists
-        cursor.execute("""
-            SELECT column_name FROM information_schema.columns 
-            WHERE table_name = 'workspaces' AND column_name = 'last_active'
-        """)
-        has_last_active = cursor.fetchone() is not None
-        
         # Update workspace
-        if has_last_active:
-            cursor.execute("""
-                UPDATE workspaces 
-                SET team_name = %s, last_active = NOW()
-                WHERE workspace_id = %s AND org_id = %s
-            """, (workspace_data.team_name, workspace_id, current_user["org_id"]))
-        else:
-            cursor.execute("""
-                UPDATE workspaces 
-                SET team_name = %s
-                WHERE workspace_id = %s AND org_id = %s
-            """, (workspace_data.team_name, workspace_id, current_user["org_id"]))
+        cursor.execute("""
+            UPDATE workspaces 
+            SET team_name = %s, updated_at = NOW()
+            WHERE workspace_id = %s AND org_id = %s
+        """, (workspace_data.team_name, workspace_id, current_user.get("org_id", 1)))
         
         conn.commit()
         
@@ -218,7 +189,7 @@ async def delete_workspace(
         cursor.execute("""
             SELECT workspace_id FROM workspaces 
             WHERE workspace_id = %s AND org_id = %s
-        """, (workspace_id, current_user["org_id"]))
+        """, (workspace_id, current_user.get("org_id", 1)))
         
         if not cursor.fetchone():
             raise HTTPException(
@@ -230,7 +201,7 @@ async def delete_workspace(
         cursor.execute("""
             DELETE FROM workspaces 
             WHERE workspace_id = %s AND org_id = %s
-        """, (workspace_id, current_user["org_id"]))
+        """, (workspace_id, current_user.get("org_id", 1)))
         
         conn.commit()
         
@@ -264,7 +235,7 @@ async def sync_workspace(
         cursor.execute("""
             SELECT workspace_id FROM workspaces 
             WHERE workspace_id = %s AND org_id = %s
-        """, (workspace_id, current_user["org_id"]))
+        """, (workspace_id, current_user.get("org_id", 1)))
         
         if not cursor.fetchone():
             raise HTTPException(
@@ -272,21 +243,12 @@ async def sync_workspace(
                 detail="Workspace not found"
             )
         
-        # In production, this would trigger the backfill service
-        # For now, just update the last_active timestamp if column exists
+        # Update timestamp
         cursor.execute("""
-            SELECT column_name FROM information_schema.columns 
-            WHERE table_name = 'workspaces' AND column_name = 'last_active'
-        """)
-        has_last_active = cursor.fetchone() is not None
-        
-        if has_last_active:
-            cursor.execute("""
-                UPDATE workspaces 
-                SET last_active = NOW()
-                WHERE workspace_id = %s AND org_id = %s
-            """, (workspace_id, current_user["org_id"]))
-        # If no last_active column, sync is still triggered (just no timestamp update)
+            UPDATE workspaces 
+            SET updated_at = NOW()
+            WHERE workspace_id = %s AND org_id = %s
+        """, (workspace_id, current_user.get("org_id", 1)))
         
         conn.commit()
         
@@ -306,38 +268,142 @@ async def sync_workspace(
         if 'conn' in locals():
             DatabaseConnection.return_connection(conn)
 
+@router.patch("/{workspace_id}/deactivate", response_model=dict)
+async def deactivate_workspace(
+    workspace_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Deactivate a workspace (soft delete)"""
+    try:
+        conn = DatabaseConnection.get_connection()
+        cursor = conn.cursor()
+        
+        # Verify workspace belongs to user's org
+        cursor.execute("""
+            SELECT workspace_id FROM workspaces 
+            WHERE workspace_id = %s AND org_id = %s
+        """, (workspace_id, current_user.get("org_id", 1)))
+        
+        if not cursor.fetchone():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Workspace not found"
+            )
+        
+        # Deactivate workspace
+        cursor.execute("""
+            UPDATE workspaces 
+            SET is_active = false, updated_at = NOW()
+            WHERE workspace_id = %s AND org_id = %s
+        """, (workspace_id, current_user.get("org_id", 1)))
+        
+        conn.commit()
+        
+        return {"status": "deactivated", "workspace_id": workspace_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deactivating workspace: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to deactivate workspace"
+        )
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            DatabaseConnection.return_connection(conn)
+
+@router.patch("/{workspace_id}/activate", response_model=dict)
+async def activate_workspace(
+    workspace_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Reactivate a workspace"""
+    try:
+        conn = DatabaseConnection.get_connection()
+        cursor = conn.cursor()
+        
+        # Verify workspace belongs to user's org
+        cursor.execute("""
+            SELECT workspace_id FROM workspaces 
+            WHERE workspace_id = %s AND org_id = %s
+        """, (workspace_id, current_user.get("org_id", 1)))
+        
+        if not cursor.fetchone():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Workspace not found"
+            )
+        
+        # Activate workspace
+        cursor.execute("""
+            UPDATE workspaces 
+            SET is_active = true, updated_at = NOW()
+            WHERE workspace_id = %s AND org_id = %s
+        """, (workspace_id, current_user.get("org_id", 1)))
+        
+        conn.commit()
+        
+        return {"status": "activated", "workspace_id": workspace_id}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error activating workspace: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to activate workspace"
+        )
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            DatabaseConnection.return_connection(conn)
+
 @router.post("/test-connection", response_model=dict)
 async def test_connection(
     credentials: dict,
     current_user: dict = Depends(get_current_user)
 ):
-    """Test Slack workspace connection"""
+    """Test real Slack workspace connection using existing backfill service"""
     try:
-        # In production, this would test the actual Slack API connection
-        # For now, just validate the token formats
+        from src.services.backfill_service import BackfillService
+        from slack_sdk.web.async_client import AsyncWebClient
+        
         bot_token = credentials.get("bot_token", "")
-        app_token = credentials.get("app_token", "")
-        signing_secret = credentials.get("signing_secret", "")
         
-        if not bot_token.startswith("xoxb-"):
+        if not bot_token:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid bot token format"
+                detail="Bot token is required"
             )
         
-        if not app_token.startswith("xapp-"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid app token format"
-            )
+        # Test connection using Slack client
+        client = AsyncWebClient(token=bot_token)
         
-        if len(signing_secret) < 32:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid signing secret"
-            )
+        # Test auth
+        auth_response = await client.auth_test()
+        team_info = await client.team_info()
         
-        return {"status": "success", "message": "Connection test passed"}
+        # Get channels using backfill service
+        backfill_service = BackfillService(workspace_id="test", bot_token=bot_token)
+        channels = await backfill_service._get_all_channels()
+        
+        return {
+            "success": True,
+            "team_name": team_info["team"]["name"],
+            "team_domain": team_info["team"].get("domain"),
+            "team_id": team_info["team"]["id"],
+            "bot_user_id": auth_response["user_id"],
+            "channel_count": len(channels),
+            "channels": [{
+                "id": ch["id"],
+                "name": ch["name"],
+                "is_private": ch.get("is_private", False)
+            } for ch in channels[:5]]  # First 5 channels
+        }
         
     except HTTPException:
         raise
@@ -345,7 +411,50 @@ async def test_connection(
         logger.error(f"Error testing connection: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Connection test failed"
+            detail=f"Connection test failed: {str(e)}"
+        )
+
+@router.post("/{workspace_id}/backfill", response_model=dict)
+async def backfill_workspace(
+    workspace_id: str,
+    backfill_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Backfill messages from Slack workspace"""
+    try:
+        from src.services.backfill_service import BackfillService
+        
+        bot_token = backfill_data.get("bot_token")
+        days_back = backfill_data.get("days_back", 7)
+        
+        if not bot_token:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Bot token is required"
+            )
+        
+        # Initialize backfill service
+        backfill_service = BackfillService(workspace_id=workspace_id, bot_token=bot_token)
+        
+        # Run backfill
+        result = await backfill_service.backfill_messages(days=days_back)
+        
+        return {
+            "success": True,
+            "workspace_id": workspace_id,
+            "total_messages": result["total_messages"],
+            "channels_processed": result["channels_processed"],
+            "total_channels": result["total_channels"],
+            "errors": result["errors"]
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error during backfill: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Backfill failed: {str(e)}"
         )
 
 @router.get("/{workspace_id}/channels", response_model=dict)
@@ -362,7 +471,7 @@ async def get_workspace_channels(
         cursor.execute("""
             SELECT workspace_id FROM workspaces 
             WHERE workspace_id = %s AND org_id = %s
-        """, (workspace_id, current_user["org_id"]))
+        """, (workspace_id, current_user.get("org_id", 1)))
         
         if not cursor.fetchone():
             raise HTTPException(

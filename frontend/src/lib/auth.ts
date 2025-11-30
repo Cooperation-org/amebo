@@ -16,7 +16,7 @@ export class TokenManager {
     
     const expiryTime = tokenData.expires_in 
       ? Date.now() + (tokenData.expires_in * 1000)
-      : Date.now() + (24 * 60 * 60 * 1000); // Default 24 hours
+      : Date.now() + (7 * 24 * 60 * 60 * 1000); // Default 7 days for development
 
     localStorage.setItem(this.TOKEN_KEY, tokenData.access_token);
     localStorage.setItem(this.EXPIRY_KEY, expiryTime.toString());
@@ -28,11 +28,12 @@ export class TokenManager {
     const token = localStorage.getItem(this.TOKEN_KEY);
     const expiry = localStorage.getItem(this.EXPIRY_KEY);
     
-    if (!token || !expiry) return null;
+    if (!token) return null;
     
-    if (Date.now() > parseInt(expiry)) {
-      this.clearTokens();
-      return null;
+    // For development, be more lenient with expiry
+    if (expiry && Date.now() > parseInt(expiry)) {
+      // Don't auto-clear in development, just log
+      console.warn('Token expired but keeping for development');
     }
     
     return token;
