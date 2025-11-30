@@ -63,12 +63,21 @@ export function AddWorkspaceModal({ onWorkspaceAdded }: AddWorkspaceModalProps) 
   const onSubmit = async (data: WorkspaceFormData) => {
     setIsSubmitting(true);
     try {
-      await apiClient.addWorkspace({
+      const response = await apiClient.addWorkspace({
         workspace_name: data.team_name,
         bot_token: data.bot_token,
         app_token: data.app_token,
         signing_secret: data.signing_secret,
       });
+      
+      // Trigger initial backfill for the new workspace
+      if (response.workspace_id) {
+        try {
+          await apiClient.triggerWorkspaceSync(response.workspace_id);
+        } catch (backfillError) {
+          console.warn('Failed to trigger initial backfill:', backfillError);
+        }
+      }
       
       onWorkspaceAdded?.();
       setOpen(false);

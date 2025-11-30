@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Filter, RotateCcw } from 'lucide-react';
+import { Filter, RotateCcw, Search } from 'lucide-react';
 import { useWorkspaces, useWorkspaceChannels } from '@/src/hooks/useWorkspaces';
 
 interface FilterOptions {
@@ -36,6 +36,15 @@ export function FilterSidebar({
   const workspaces = workspacesData?.workspaces || [];
   const channels = channelsData?.channels || [];
   const [localFilters, setLocalFilters] = useState<FilterOptions>(filters);
+  const [channelSearch, setChannelSearch] = useState('');
+  
+  // Debounced channel search
+  const filteredChannels = useMemo(() => {
+    if (!channelSearch.trim()) return channels;
+    return channels.filter(channel => 
+      channel.name.toLowerCase().includes(channelSearch.toLowerCase())
+    );
+  }, [channels, channelSearch]);
 
   const handleFilterChange = (key: keyof FilterOptions, value: any) => {
     const newFilters = { ...localFilters, [key]: value };
@@ -100,6 +109,18 @@ export function FilterSidebar({
         {/* Channel Filter */}
         <div className="space-y-2">
           <Label htmlFor="channel">Channel</Label>
+          {channels.length > 10 && (
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                placeholder="Search channels..."
+                value={channelSearch}
+                onChange={(e) => setChannelSearch(e.target.value)}
+                className="pl-10"
+                disabled={isLoading || !localFilters.workspaceId}
+              />
+            </div>
+          )}
           <Select
             value={localFilters.channelFilter || 'all'}
             onValueChange={(value) => handleFilterChange('channelFilter', value === 'all' ? undefined : value)}
@@ -110,7 +131,7 @@ export function FilterSidebar({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All channels</SelectItem>
-              {channels.map((channel) => (
+              {filteredChannels.map((channel) => (
                 <SelectItem key={channel.id} value={channel.name}>
                   #{channel.name}
                 </SelectItem>

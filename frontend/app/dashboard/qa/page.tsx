@@ -1,14 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { QuestionInput } from '@/src/components/qa/QuestionInput';
 import { AnswerDisplay } from '@/src/components/qa/AnswerDisplay';
 import { FilterSidebar } from '@/src/components/qa/FilterSidebar';
 import { QueryHistory } from '@/src/components/qa/QueryHistory';
 import { Card, CardContent } from '@/components/ui/card';
-import { MessageSquare, Sparkles } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { MessageSquare, Sparkles, Building2, Plus } from 'lucide-react';
 import { useAskQuestion } from '@/src/hooks/useQA';
+import { useWorkspaces } from '@/src/hooks/useWorkspaces';
 import { toast } from 'sonner';
+import Link from 'next/link';
 
 interface QAResponse {
   answer: string;
@@ -49,8 +52,16 @@ export default function QAPage() {
   });
 
   const askQuestionMutation = useAskQuestion();
+  const { data: workspacesData } = useWorkspaces();
+  const workspaces = workspacesData?.workspaces || [];
+  const hasWorkspaces = workspaces.length > 0;
 
   const handleAskQuestion = async (question: string) => {
+    if (!hasWorkspaces) {
+      toast.error('Please add a workspace first to ask questions');
+      return;
+    }
+    
     setCurrentQuestion(question);
     try {
       const qaResponse = await askQuestionMutation.mutateAsync({
@@ -72,6 +83,23 @@ export default function QAPage() {
   const handleSelectFromHistory = (question: string) => {
     handleAskQuestion(question);
   };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Cmd+K to focus question input
+      if ((event.metaKey || event.ctrlKey) && event.key === 'k') {
+        event.preventDefault();
+        const questionInput = document.querySelector('textarea[placeholder*="Ask"]') as HTMLTextAreaElement;
+        if (questionInput) {
+          questionInput.focus();
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   return (
     <div className="px-4 py-6 sm:px-0">
@@ -98,43 +126,72 @@ export default function QAPage() {
 
         {/* Main Content */}
         <div className="lg:col-span-3 space-y-6">
-          {/* Question Input */}
-          <QuestionInput
-            onSubmit={handleAskQuestion}
-            isLoading={askQuestionMutation.isPending}
-          />
-
-          {/* Answer Display */}
-          {response ? (
-            <AnswerDisplay response={response} />
-          ) : (
+          {!hasWorkspaces ? (
             <Card>
               <CardContent className="p-12 text-center">
                 <div className="flex flex-col items-center space-y-4">
-                  <div className="p-4 bg-blue-100 rounded-full">
-                    <Sparkles className="h-8 w-8 text-blue-600" />
+                  <div className="p-4 bg-orange-100 rounded-full">
+                    <Building2 className="h-8 w-8 text-orange-600" />
                   </div>
                   <div className="space-y-2">
                     <h3 className="text-lg font-medium text-gray-900">
-                      Ready to help you find answers
+                      No workspaces connected
                     </h3>
                     <p className="text-gray-600 max-w-md">
-                      Ask any question about your Slack conversations, team discussions, 
-                      or uploaded documents. I'll search through your workspace to find 
-                      the most relevant information.
+                      You need to connect at least one Slack workspace before you can ask questions. 
+                      Connect your workspace to start getting AI-powered answers.
                     </p>
                   </div>
-                  <div className="text-sm text-gray-500 space-y-1">
-                    <p><strong>Try asking:</strong></p>
-                    <ul className="text-left space-y-1">
-                      <li>• "How do we deploy to production?"</li>
-                      <li>• "What's our code review process?"</li>
-                      <li>• "Who handles customer support issues?"</li>
-                    </ul>
-                  </div>
+                  <Button asChild className="mt-4">
+                    <Link href="/dashboard/workspaces">
+                      <Plus className="h-4 w-4 mr-2" />
+                      Add Workspace
+                    </Link>
+                  </Button>
                 </div>
               </CardContent>
             </Card>
+          ) : (
+            <>
+              {/* Question Input */}
+              <QuestionInput
+                onSubmit={handleAskQuestion}
+                isLoading={askQuestionMutation.isPending}
+              />
+
+              {/* Answer Display */}
+              {response ? (
+                <AnswerDisplay response={response} />
+              ) : (
+                <Card>
+                  <CardContent className="p-12 text-center">
+                    <div className="flex flex-col items-center space-y-4">
+                      <div className="p-4 bg-blue-100 rounded-full">
+                        <Sparkles className="h-8 w-8 text-blue-600" />
+                      </div>
+                      <div className="space-y-2">
+                        <h3 className="text-lg font-medium text-gray-900">
+                          Ready to help you find answers
+                        </h3>
+                        <p className="text-gray-600 max-w-md">
+                          Ask any question about your Slack conversations, team discussions, 
+                          or uploaded documents. I'll search through your workspace to find 
+                          the most relevant information.
+                        </p>
+                      </div>
+                      <div className="text-sm text-gray-500 space-y-1">
+                        <p><strong>Try asking:</strong></p>
+                        <ul className="text-left space-y-1">
+                          <li>• "How do we deploy to production?"</li>
+                          <li>• "What's our code review process?"</li>
+                          <li>• "Who handles customer support issues?"</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </>
           )}
         </div>
       </div>

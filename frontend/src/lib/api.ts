@@ -151,6 +151,12 @@ class ApiClient {
       method: 'POST',
     });
   }
+
+  async triggerWorkspaceSync(workspaceId: string) {
+    return this.request(`/api/workspaces/${workspaceId}/sync`, {
+      method: 'POST',
+    });
+  }
 }
 
 export const apiClient = new ApiClient(API_BASE_URL);

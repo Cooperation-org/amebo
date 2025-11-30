@@ -23,7 +23,7 @@ class DatabaseConnection:
     _connection_pool = None
 
     @classmethod
-    def initialize_pool(cls, minconn=1, maxconn=10):
+    def initialize_pool(cls, minconn=2, maxconn=20):
         """
         Initialize the connection pool.
 

@@ -12,12 +12,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { User, Settings, LogOut, MessageSquare, Building2, Users } from 'lucide-react';
+import { User, Settings, LogOut, MessageSquare, Building2, Users, FileText } from 'lucide-react';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: MessageSquare },
   { name: 'Q&A', href: '/dashboard/qa', icon: MessageSquare },
   { name: 'Workspaces', href: '/dashboard/workspaces', icon: Building2 },
+  { name: 'Documents', href: '/dashboard/documents', icon: FileText },
   { name: 'Team', href: '/dashboard/team', icon: Users },
   { name: 'Settings', href: '/dashboard/settings', icon: Settings },
 ];

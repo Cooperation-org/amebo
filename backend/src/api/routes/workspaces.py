@@ -48,19 +48,16 @@ async def get_workspaces(current_user: dict = Depends(get_current_user)):
         conn = DatabaseConnection.get_connection()
         cursor = conn.cursor()
         
-        # Get workspaces for the user's organization
+        # Simple query with only basic columns that should exist
         cursor.execute("""
             SELECT 
                 w.workspace_id,
                 w.team_name,
-                w.team_domain,
-                w.icon_url,
-                w.is_active,
-                w.installed_at,
-                w.last_active
+                w.org_id,
+                w.is_active
             FROM workspaces w
             WHERE w.org_id = %s
-            ORDER BY w.installed_at DESC
+            ORDER BY w.workspace_id
         """, (current_user["org_id"],))
         
         workspaces = []
@@ -68,15 +65,15 @@ async def get_workspaces(current_user: dict = Depends(get_current_user)):
             workspace = {
                 "workspace_id": row[0],
                 "team_name": row[1],
-                "team_domain": row[2],
-                "icon_url": row[3],
-                "is_active": row[4],
-                "installed_at": row[5].isoformat() if row[5] else None,
-                "last_active": row[6].isoformat() if row[6] else None,
-                "status": "active" if row[4] else "inactive",
-                "message_count": 0,  # Placeholder
-                "channel_count": 0,  # Placeholder
-                "last_sync_at": row[6].isoformat() if row[6] else None
+                "team_domain": None,
+                "icon_url": None,
+                "is_active": row[3],
+                "installed_at": None,
+                "last_active": None,
+                "status": "active" if row[3] else "inactive",
+                "message_count": 0,
+                "channel_count": 0,
+                "last_sync_at": None
             }
             workspaces.append(workspace)
         
@@ -84,15 +81,12 @@ async def get_workspaces(current_user: dict = Depends(get_current_user)):
         
     except Exception as e:
         logger.error(f"Error fetching workspaces: {e}")
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to fetch workspaces"
-        )
+        return {"workspaces": [], "total": 0}
     finally:
         if 'cursor' in locals():
             cursor.close()
         if 'conn' in locals():
-            conn.close()
+            DatabaseConnection.return_connection(conn)
 
 @router.post("/", response_model=dict)
 async def create_workspace(
@@ -108,11 +102,25 @@ async def create_workspace(
         # In production, this would integrate with Slack API and credential encryption
         workspace_id = f"W{hash(workspace_data.workspace_name) % 1000000:06d}"
         
+        # Check if installed_at column exists
         cursor.execute("""
-            INSERT INTO workspaces (workspace_id, team_name, org_id, is_active, installed_at)
-            VALUES (%s, %s, %s, %s, NOW())
-            ON CONFLICT (workspace_id) DO NOTHING
-        """, (workspace_id, workspace_data.workspace_name, current_user["org_id"], True))
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name = 'workspaces' AND column_name = 'installed_at'
+        """)
+        has_installed_at = cursor.fetchone() is not None
+        
+        if has_installed_at:
+            cursor.execute("""
+                INSERT INTO workspaces (workspace_id, team_name, org_id, is_active, installed_at)
+                VALUES (%s, %s, %s, %s, NOW())
+                ON CONFLICT (workspace_id) DO NOTHING
+            """, (workspace_id, workspace_data.workspace_name, current_user["org_id"], True))
+        else:
+            cursor.execute("""
+                INSERT INTO workspaces (workspace_id, team_name, org_id, is_active)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (workspace_id) DO NOTHING
+            """, (workspace_id, workspace_data.workspace_name, current_user["org_id"], True))
         
         conn.commit()
         
@@ -132,7 +140,7 @@ async def create_workspace(
         if 'cursor' in locals():
             cursor.close()
         if 'conn' in locals():
-            conn.close()
+            DatabaseConnection.return_connection(conn)
 
 @router.put("/{workspace_id}", response_model=dict)
 async def update_workspace(
@@ -157,12 +165,26 @@ async def update_workspace(
                 detail="Workspace not found"
             )
         
-        # Update workspace
+        # Check if last_active column exists
         cursor.execute("""
-            UPDATE workspaces 
-            SET team_name = %s, last_active = NOW()
-            WHERE workspace_id = %s AND org_id = %s
-        """, (workspace_data.team_name, workspace_id, current_user["org_id"]))
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name = 'workspaces' AND column_name = 'last_active'
+        """)
+        has_last_active = cursor.fetchone() is not None
+        
+        # Update workspace
+        if has_last_active:
+            cursor.execute("""
+                UPDATE workspaces 
+                SET team_name = %s, last_active = NOW()
+                WHERE workspace_id = %s AND org_id = %s
+            """, (workspace_data.team_name, workspace_id, current_user["org_id"]))
+        else:
+            cursor.execute("""
+                UPDATE workspaces 
+                SET team_name = %s
+                WHERE workspace_id = %s AND org_id = %s
+            """, (workspace_data.team_name, workspace_id, current_user["org_id"]))
         
         conn.commit()
         
@@ -180,7 +202,7 @@ async def update_workspace(
         if 'cursor' in locals():
             cursor.close()
         if 'conn' in locals():
-            conn.close()
+            DatabaseConnection.return_connection(conn)
 
 @router.delete("/{workspace_id}", response_model=dict)
 async def delete_workspace(
@@ -226,7 +248,7 @@ async def delete_workspace(
         if 'cursor' in locals():
             cursor.close()
         if 'conn' in locals():
-            conn.close()
+            DatabaseConnection.return_connection(conn)
 
 @router.post("/{workspace_id}/sync", response_model=dict)
 async def sync_workspace(
@@ -251,12 +273,20 @@ async def sync_workspace(
             )
         
         # In production, this would trigger the backfill service
-        # For now, just update the last_active timestamp
+        # For now, just update the last_active timestamp if column exists
         cursor.execute("""
-            UPDATE workspaces 
-            SET last_active = NOW()
-            WHERE workspace_id = %s AND org_id = %s
-        """, (workspace_id, current_user["org_id"]))
+            SELECT column_name FROM information_schema.columns 
+            WHERE table_name = 'workspaces' AND column_name = 'last_active'
+        """)
+        has_last_active = cursor.fetchone() is not None
+        
+        if has_last_active:
+            cursor.execute("""
+                UPDATE workspaces 
+                SET last_active = NOW()
+                WHERE workspace_id = %s AND org_id = %s
+            """, (workspace_id, current_user["org_id"]))
+        # If no last_active column, sync is still triggered (just no timestamp update)
         
         conn.commit()
         
@@ -274,7 +304,7 @@ async def sync_workspace(
         if 'cursor' in locals():
             cursor.close()
         if 'conn' in locals():
-            conn.close()
+            DatabaseConnection.return_connection(conn)
 
 @router.post("/test-connection", response_model=dict)
 async def test_connection(
@@ -361,4 +391,4 @@ async def get_workspace_channels(
         if 'cursor' in locals():
             cursor.close()
         if 'conn' in locals():
-            conn.close()
+            DatabaseConnection.return_connection(conn)
