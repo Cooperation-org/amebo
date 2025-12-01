@@ -56,7 +56,7 @@ export function InviteUserModal({ open, onClose, onUserInvited }: InviteUserModa
         role: data.role,
       });
       
-      setInviteMessage(response.message);
+      setInviteMessage((response as any).message);
       setInviteSent(true);
       toast.success('User invited successfully!');
       
