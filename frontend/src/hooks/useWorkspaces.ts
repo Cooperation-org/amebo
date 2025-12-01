@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '@/src/lib/api';
 
 interface Workspace {
@@ -36,5 +36,18 @@ export function useWorkspaceChannels(workspaceId?: string) {
     },
     enabled: !!workspaceId,
     staleTime: 10 * 60 * 1000, // 10 minutes
+  });
+}
+
+export function useTriggerBackfill() {
+  const queryClient = useQueryClient();
+  
+  return useMutation({
+    mutationFn: async ({ workspaceId, days }: { workspaceId: string; days: number }) => {
+      return await apiClient.triggerBackfill(workspaceId, days);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] });
+    },
   });
 }

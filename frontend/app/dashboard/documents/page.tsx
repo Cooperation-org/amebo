@@ -7,29 +7,26 @@ import { Badge } from '@/components/ui/badge';
 import { FileUpload } from '@/src/components/documents/FileUpload';
 import { DocumentList } from '@/src/components/documents/DocumentList';
 import { FileText, Upload, Trash2, Building2, Plus } from 'lucide-react';
-import { useDocuments, useUploadDocument, useDeleteDocument } from '@/src/hooks/useDocuments';
+import { useDocuments, useUploadDocuments, useDeleteDocument } from '@/src/hooks/useDocuments';
 import { useWorkspaces } from '@/src/hooks/useWorkspaces';
 import { toast } from 'sonner';
 import Link from 'next/link';
 
 export default function DocumentsPage() {
-  const { data: documents = [], isLoading } = useDocuments();
+  const { data: documentsData, isLoading } = useDocuments();
+  const documents = documentsData?.documents || [];
   const { data: workspacesData } = useWorkspaces();
-  const uploadMutation = useUploadDocument();
+  const uploadMutation = useUploadDocuments();
   const deleteMutation = useDeleteDocument();
   
   const workspaces = workspacesData?.workspaces || [];
   const hasWorkspaces = workspaces.length > 0;
 
   const handleFileUpload = async (files: File[], workspaceId?: string) => {
-    for (const file of files) {
-      try {
-        await uploadMutation.mutateAsync({ file, workspaceId });
-        const workspaceText = workspaceId ? ` to ${workspaces.find(w => w.workspace_id === workspaceId)?.team_name}` : '';
-        toast.success(`${file.name} uploaded successfully${workspaceText}`);
-      } catch (error) {
-        toast.error(`Failed to upload ${file.name}`);
-      }
+    try {
+      await uploadMutation.mutateAsync({ files, workspaceId });
+    } catch (error) {
+      // Error handling is done in the hook
     }
   };
 
@@ -43,10 +40,10 @@ export default function DocumentsPage() {
   };
 
   const getStatusStats = () => {
-    const stats = documents.reduce((acc, doc) => {
+    const stats = Array.isArray(documents) ? documents.reduce((acc, doc) => {
       acc[doc.status] = (acc[doc.status] || 0) + 1;
       return acc;
-    }, {} as Record<string, number>);
+    }, {} as Record<string, number>) : {};
     
     return {
       total: documents.length,
