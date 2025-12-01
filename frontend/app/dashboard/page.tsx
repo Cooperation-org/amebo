@@ -14,7 +14,7 @@ export default function DashboardPage() {
   const { user } = useAuthStore();
   const { data: workspacesData } = useWorkspaces();
   const { data: documentsData } = useDocuments();
-  const documents = (documentsData as any)?.documents || [];
+  const documents = documentsData?.documents || [];
   const { data: queryHistory = [] } = useQueryHistory();
 
   const workspaces = workspacesData?.workspaces || [];

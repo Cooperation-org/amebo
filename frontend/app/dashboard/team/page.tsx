@@ -18,7 +18,6 @@ interface TeamMember {
   email: string;
   role: 'admin' | 'member' | 'viewer';
   status: 'active' | 'pending' | 'inactive';
-  avatar_url?: string;
   last_active?: string;
   invited_at: string;
 }
@@ -206,7 +205,7 @@ export default function TeamPage() {
                   >
                     <div className="flex items-center gap-4">
                       <Avatar>
-                        <AvatarImage src={member.avatar_url} />
+                        <AvatarImage src="" />
                         <AvatarFallback>
                           {member.name.split(' ').map(n => n[0]).join('')}
                         </AvatarFallback>

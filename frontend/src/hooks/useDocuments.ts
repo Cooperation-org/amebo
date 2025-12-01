@@ -8,7 +8,7 @@ export function useDocuments(workspaceId?: string) {
   return useQuery({
     queryKey: ['documents', workspaceId],
     queryFn: () => apiClient.getDocuments(workspaceId),
-  });
+  }) as { data?: { documents: any[] }, isLoading: boolean, error: any };
 }
 
 export function useUploadDocuments() {
