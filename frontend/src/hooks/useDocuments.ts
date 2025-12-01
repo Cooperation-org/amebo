@@ -51,3 +51,19 @@ export function useDeleteDocument() {
     },
   });
 }
+
+export function useClearAllDocuments() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => apiClient.clearAllDocuments(),
+    onSuccess: (data) => {
+      const { documents_deleted, collections_deleted } = data;
+      toast.success(`Cleared ${documents_deleted} documents and ${collections_deleted?.length || 0} collections`);
+      queryClient.invalidateQueries({ queryKey: ['documents'] });
+    },
+    onError: (error: Error) => {
+      toast.error(`Failed to clear documents: ${error.message}`);
+    },
+  });
+}

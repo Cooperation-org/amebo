@@ -19,9 +19,9 @@ app = FastAPI(title="Slack Helper Q&A API")
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -50,7 +50,7 @@ class QAResponse(BaseModel):
 def get_current_user():
     return {
         "user_id": 1,
-        "org_id": 1,
+        "org_id": 8,
         "email": "orjienekenechukwu@gmail.com"
     }
 
@@ -64,7 +64,7 @@ async def login(request: LoginRequest):
             "user": {
                 "user_id": 1,
                 "email": request.email,
-                "org_id": 1,
+                "org_id": 8,
                 "org_name": "WhatsCookin Team",
                 "role": "admin"
             }
@@ -76,7 +76,7 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
     return {
         "user_id": 1,
         "email": "orjienekenechukwu@gmail.com",
-        "org_id": 1,
+        "org_id": 8,
         "org_name": "WhatsCookin Team",
         "role": "admin"
     }

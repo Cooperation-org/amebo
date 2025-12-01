@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { FileUpload } from '@/src/components/documents/FileUpload';
 import { DocumentList } from '@/src/components/documents/DocumentList';
 import { FileText, Upload, Trash2, Building2, Plus } from 'lucide-react';
-import { useDocuments, useUploadDocuments, useDeleteDocument } from '@/src/hooks/useDocuments';
+import { useDocuments, useUploadDocuments, useDeleteDocument, useClearAllDocuments } from '@/src/hooks/useDocuments';
 import { useWorkspaces } from '@/src/hooks/useWorkspaces';
 import { toast } from 'sonner';
 import Link from 'next/link';
@@ -18,6 +18,7 @@ export default function DocumentsPage() {
   const { data: workspacesData } = useWorkspaces();
   const uploadMutation = useUploadDocuments();
   const deleteMutation = useDeleteDocument();
+  const clearAllMutation = useClearAllDocuments();
   
   const workspaces = workspacesData?.workspaces || [];
   const hasWorkspaces = workspaces.length > 0;
@@ -182,13 +183,15 @@ export default function DocumentsPage() {
                     variant="outline"
                     size="sm"
                     onClick={() => {
-                      // TODO: Implement bulk delete
-                      toast.info('Bulk delete coming soon');
+                      if (confirm('Are you sure you want to clear all documents? This action cannot be undone.')) {
+                        clearAllMutation.mutate();
+                      }
                     }}
+                    disabled={clearAllMutation.isPending}
                     className="flex items-center gap-2"
                   >
                     <Trash2 className="h-4 w-4" />
-                    Clear All
+                    {clearAllMutation.isPending ? 'Clearing...' : 'Clear All'}
                   </Button>
                 )}
               </div>

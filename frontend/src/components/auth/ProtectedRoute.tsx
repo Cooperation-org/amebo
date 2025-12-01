@@ -51,11 +51,12 @@ export function ProtectedRoute({ children }: ProtectedRouteProps) {
     checkAuth();
   }, [checkAuth]);
 
-  useEffect(() => {
-    if (!isLoading && !isAuthenticated) {
-      router.push('/login');
-    }
-  }, [isAuthenticated, isLoading, router]);
+  // Temporarily disabled to debug login issues
+  // useEffect(() => {
+  //   if (!isLoading && !isAuthenticated) {
+  //     router.push('/login');
+  //   }
+  // }, [isAuthenticated, isLoading, router]);
 
   if (isLoading) {
     return <LoadingSkeleton />;

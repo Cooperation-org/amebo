@@ -7,6 +7,7 @@ import { ConfidenceBadge } from './ConfidenceBadge';
 import { SourceCard } from './SourceCard';
 import { Copy, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
+import ReactMarkdown from 'react-markdown';
 
 interface QAResponse {
   answer: string;
@@ -74,10 +75,24 @@ export function AnswerDisplay({ response }: AnswerDisplayProps) {
           </div>
         </CardHeader>
         <CardContent>
-          <div className="prose prose-sm max-w-none">
-            <div className="whitespace-pre-wrap text-gray-800 leading-relaxed">
+          <div className="prose prose-sm max-w-none text-gray-800">
+            <ReactMarkdown
+              components={{
+                p: ({ children }) => <p className="mb-4 leading-relaxed">{children}</p>,
+                strong: ({ children }) => <strong className="font-semibold text-gray-900">{children}</strong>,
+                em: ({ children }) => <em className="italic">{children}</em>,
+                ul: ({ children }) => <ul className="list-disc pl-6 mb-4 space-y-1">{children}</ul>,
+                ol: ({ children }) => <ol className="list-decimal pl-6 mb-4 space-y-1">{children}</ol>,
+                li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                h1: ({ children }) => <h1 className="text-xl font-bold mb-3 text-gray-900">{children}</h1>,
+                h2: ({ children }) => <h2 className="text-lg font-semibold mb-2 text-gray-900">{children}</h2>,
+                h3: ({ children }) => <h3 className="text-base font-medium mb-2 text-gray-900">{children}</h3>,
+                code: ({ children }) => <code className="bg-gray-100 px-1 py-0.5 rounded text-sm font-mono">{children}</code>,
+                pre: ({ children }) => <pre className="bg-gray-100 p-3 rounded-lg overflow-x-auto mb-4">{children}</pre>,
+              }}
+            >
               {response.answer}
-            </div>
+            </ReactMarkdown>
           </div>
           
           {response.confidence_explanation && (

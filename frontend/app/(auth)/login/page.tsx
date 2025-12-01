@@ -28,7 +28,8 @@ export default function LoginPage() {
     try {
       await login(data.email, data.password);
       toast.success('Login successful!');
-      router.push('/dashboard');
+      // Immediate redirect
+      window.location.replace('/dashboard');
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Login failed');
     }

@@ -18,22 +18,28 @@ class ApiClient {
     const config: RequestInit = {
       headers: {
         'Content-Type': 'application/json',
+        'ngrok-skip-browser-warning': 'true',
         ...TokenManager.getAuthHeader(),
         ...options.headers,
       },
-      credentials: 'include',
+      mode: 'cors',
       ...options,
     };
 
     const response = await fetch(url, config);
 
     if (response.status === 401) {
-      // Token expired or invalid
-      TokenManager.clearTokens();
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
+      const errorData = await response.json().catch(() => ({ message: 'Authentication required' }));
+      // Only redirect to login for actual auth failures, not other 401s
+      if (errorData.message?.toLowerCase().includes('token') || 
+          errorData.message?.toLowerCase().includes('authentication') ||
+          errorData.message?.toLowerCase().includes('unauthorized')) {
+        TokenManager.clearTokens();
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
       }
-      throw new Error('Authentication required');
+      throw new Error(errorData.message || 'Request failed');
     }
 
     if (!response.ok) {
@@ -218,7 +224,9 @@ class ApiClient {
     const url = `${this.baseURL}/api/documents/upload`;
     const response = await fetch(url, {
       method: 'POST',
+      mode: 'cors',
       headers: {
+        'ngrok-skip-browser-warning': 'true',
         ...TokenManager.getAuthHeader(),
       },
       body: formData,
@@ -245,6 +253,12 @@ class ApiClient {
 
   async deleteDocument(documentId: string) {
     return this.request(`/api/documents/${documentId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async clearAllDocuments() {
+    return this.request('/api/documents/clear-all', {
       method: 'DELETE',
     });
   }

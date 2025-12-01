@@ -34,7 +34,9 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",  # Next.js dev
         "http://localhost:3001",
-        "https://your-domain.com"  # Production domain
+        "https://727c96dd6693.ngrok-free.app",  # ngrok
+        "https://*.vercel.app",  # Vercel deployments
+        "*"  # Allow all for development
     ],
     allow_credentials=True,
     allow_methods=["*"],

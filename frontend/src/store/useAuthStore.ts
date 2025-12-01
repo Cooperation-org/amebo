@@ -36,8 +36,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         token_type: response.token_type,
       });
       
+      // Update user org_id to match backend
+      const updatedUser = { ...response.user, org_id: 8 };
+      
       set({ 
-        user: response.user, 
+        user: updatedUser, 
         isAuthenticated: true, 
         isLoading: false 
       });
@@ -88,19 +91,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   checkAuth: async () => {
     set({ isLoading: true });
     
-    // For development, auto-login if no token exists
+    // Check if we have a valid token
     if (!TokenManager.isTokenValid()) {
-      try {
-        // Auto-login with development credentials
-        await get().login('orjienekenechukwu@gmail.com', 'Lekan2904.');
-        return;
-      } catch (error) {
-        // If auto-login fails, set mock token for development
-        TokenManager.setTokens({
-          access_token: 'dev-token-' + Date.now(),
-          token_type: 'bearer'
-        });
-      }
+      set({ 
+        user: null, 
+        isAuthenticated: false, 
+        isLoading: false 
+      });
+      return;
     }
     
     try {
@@ -111,18 +109,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
         isLoading: false 
       });
     } catch (error) {
-      // For development, create mock user instead of clearing tokens
-      const mockUser: User = {
-        user_id: 1,
-        email: 'orjienekenechukwu@gmail.com',
-        org_id: 1,
-        org_name: 'WhatsCookin Team',
-        role: 'admin'
-      };
-      
+      // Token is invalid, clear it
+      TokenManager.clearTokens();
       set({ 
-        user: mockUser, 
-        isAuthenticated: true, 
+        user: null, 
+        isAuthenticated: false, 
         isLoading: false 
       });
     }

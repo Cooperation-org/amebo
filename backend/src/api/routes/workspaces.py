@@ -58,7 +58,7 @@ async def get_workspaces(current_user: dict = Depends(get_current_user)):
             FROM workspaces w
             WHERE w.org_id = %s
             ORDER BY w.workspace_id
-        """, (current_user.get("org_id", 1),))
+        """, (current_user.get("org_id", 8),))
         
         workspaces = []
         for row in cursor.fetchall():
@@ -215,7 +215,7 @@ async def delete_workspace(
     workspace_id: str,
     current_user: dict = Depends(get_current_user)
 ):
-    """Delete a workspace"""
+    """Delete a workspace and all associated documents"""
     try:
         conn = DatabaseConnection.get_connection()
         cursor = conn.cursor()
@@ -224,7 +224,7 @@ async def delete_workspace(
         cursor.execute("""
             SELECT workspace_id FROM workspaces 
             WHERE workspace_id = %s AND org_id = %s
-        """, (workspace_id, current_user.get("org_id", 1)))
+        """, (workspace_id, current_user.get("org_id", 8)))
         
         if not cursor.fetchone():
             raise HTTPException(
@@ -232,15 +232,48 @@ async def delete_workspace(
                 detail="Workspace not found"
             )
         
-        # Delete workspace (this will cascade to related data)
+        # Get ChromaDB collections to clean up
+        cursor.execute("""
+            SELECT chromadb_collection FROM documents 
+            WHERE workspace_id = %s AND chromadb_collection IS NOT NULL
+        """, (workspace_id,))
+        
+        collections_to_delete = [row[0] for row in cursor.fetchall()]
+        
+        # Delete associated documents first
+        cursor.execute("""
+            DELETE FROM documents WHERE workspace_id = %s
+        """, (workspace_id,))
+        
+        # Delete workspace
         cursor.execute("""
             DELETE FROM workspaces 
             WHERE workspace_id = %s AND org_id = %s
-        """, (workspace_id, current_user.get("org_id", 1)))
+        """, (workspace_id, current_user.get("org_id", 8)))
         
         conn.commit()
         
-        return {"status": "deleted", "workspace_id": workspace_id}
+        # Clean up ChromaDB collections
+        deleted_collections = []
+        try:
+            import chromadb
+            chroma_client = chromadb.PersistentClient(path='./chroma_db')
+            existing_collections = [col.name for col in chroma_client.list_collections()]
+            
+            for collection_name in collections_to_delete:
+                if collection_name in existing_collections:
+                    chroma_client.delete_collection(collection_name)
+                    deleted_collections.append(collection_name)
+                    logger.info(f"Deleted ChromaDB collection: {collection_name}")
+        except Exception as chroma_error:
+            logger.warning(f"ChromaDB cleanup failed: {chroma_error}")
+        
+        return {
+            "status": "deleted", 
+            "workspace_id": workspace_id,
+            "documents_deleted": len(collections_to_delete),
+            "collections_deleted": deleted_collections
+        }
         
     except HTTPException:
         raise

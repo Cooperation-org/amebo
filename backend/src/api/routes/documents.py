@@ -158,6 +158,69 @@ async def list_documents(
             DatabaseConnection.return_connection(conn)
 
 
+@router.delete("/clear-all")
+async def clear_all_documents(
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Clear all documents for the organization
+    """
+    from src.db.connection import DatabaseConnection
+    
+    try:
+        conn = DatabaseConnection.get_connection()
+        cursor = conn.cursor()
+        
+        # Get ChromaDB collections to clean up
+        cursor.execute("""
+            SELECT chromadb_collection FROM documents 
+            WHERE org_id = %s AND chromadb_collection IS NOT NULL
+        """, (current_user.get("org_id", 8),))
+        
+        collections_to_delete = [row[0] for row in cursor.fetchall()]
+        
+        # Delete all documents for the organization
+        cursor.execute("""
+            DELETE FROM documents WHERE org_id = %s
+        """, (current_user.get("org_id", 8),))
+        
+        deleted_count = cursor.rowcount
+        conn.commit()
+        
+        # Clean up ChromaDB collections
+        deleted_collections = []
+        try:
+            import chromadb
+            chroma_client = chromadb.PersistentClient(path='./chroma_db')
+            existing_collections = [col.name for col in chroma_client.list_collections()]
+            
+            for collection_name in collections_to_delete:
+                if collection_name in existing_collections:
+                    chroma_client.delete_collection(collection_name)
+                    deleted_collections.append(collection_name)
+                    logger.info(f"Deleted ChromaDB collection: {collection_name}")
+        except Exception as chroma_error:
+            logger.warning(f"ChromaDB cleanup failed: {chroma_error}")
+        
+        return {
+            "success": True,
+            "documents_deleted": deleted_count,
+            "collections_deleted": deleted_collections
+        }
+        
+    except Exception as e:
+        logger.error(f"Error clearing documents: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to clear documents"
+        )
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            DatabaseConnection.return_connection(conn)
+
+
 @router.delete("/{document_id}")
 async def delete_document(
     document_id: int,
