@@ -158,6 +158,13 @@ class ApiClient {
     });
   }
 
+  async triggerBackfill(workspaceId: string, days: number) {
+    return this.request(`/api/workspaces/${workspaceId}/backfill`, {
+      method: 'POST',
+      body: JSON.stringify({ days_back: days }),
+    });
+  }
+
   // Team management endpoints
   async getTeamMembers() {
     return this.request('/api/team/members');
@@ -194,6 +201,50 @@ class ApiClient {
 
   async deleteUser(userId: number) {
     return this.request(`/api/team/members/${userId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Document endpoints
+  async uploadDocuments(files: File[], workspaceId?: string) {
+    const formData = new FormData();
+    files.forEach((file) => {
+      formData.append('files', file);
+    });
+    if (workspaceId) {
+      formData.append('workspace_id', workspaceId);
+    }
+
+    const url = `${this.baseURL}/api/documents/upload`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        ...TokenManager.getAuthHeader(),
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ message: 'Upload failed' }));
+      throw new Error(error.message || `HTTP ${response.status}`);
+    }
+
+    return response.json();
+  }
+
+  async getDocuments(workspaceId?: string, page = 1, pageSize = 20) {
+    const params = new URLSearchParams({
+      page: page.toString(),
+      page_size: pageSize.toString(),
+    });
+    if (workspaceId) {
+      params.append('workspace_id', workspaceId);
+    }
+    return this.request(`/api/documents?${params}`);
+  }
+
+  async deleteDocument(documentId: string) {
+    return this.request(`/api/documents/${documentId}`, {
       method: 'DELETE',
     });
   }

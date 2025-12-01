@@ -13,14 +13,15 @@ import { useQueryHistory } from '@/src/hooks/useQA';
 export default function DashboardPage() {
   const { user } = useAuthStore();
   const { data: workspacesData } = useWorkspaces();
-  const { data: documents = [] } = useDocuments();
+  const { data: documentsData } = useDocuments();
+  const documents = documentsData?.documents || [];
   const { data: queryHistory = [] } = useQueryHistory();
 
   const workspaces = workspacesData?.workspaces || [];
   const hasWorkspaces = workspaces.length > 0;
   const totalMessages = workspaces.reduce((sum, ws) => sum + (ws.message_count || 0), 0);
   const activeWorkspaces = workspaces.filter(ws => ws.status === 'active').length;
-  const indexedDocuments = documents.filter(doc => doc.status === 'indexed').length;
+  const indexedDocuments = Array.isArray(documents) ? documents.filter(doc => doc.status === 'indexed').length : 0;
   const thisMonthQueries = queryHistory.filter((q: any) => {
     const queryDate = new Date(q.timestamp);
     const now = new Date();

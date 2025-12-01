@@ -45,7 +45,7 @@ export default function QAPage() {
   const [response, setResponse] = useState<QAResponse | null>(null);
   const [currentQuestion, setCurrentQuestion] = useState('');
   const [filters, setFilters] = useState<FilterOptions>({
-    daysBack: 30,
+    daysBack: 90,  // Increased to match backfill period
     includeDocuments: true,
     includeSlack: true,
     maxSources: 10,
@@ -66,7 +66,7 @@ export default function QAPage() {
     try {
       const qaResponse = await askQuestionMutation.mutateAsync({
         question,
-        workspace_id: filters.workspaceId,
+        workspace_id: filters.workspaceId || workspaces[0]?.workspace_id,
         channel_filter: filters.channelFilter,
         days_back: filters.daysBack,
         include_documents: filters.includeDocuments,
