@@ -71,9 +71,9 @@ export function AddWorkspaceModal({ onWorkspaceAdded }: AddWorkspaceModalProps) 
       });
       
       // Trigger initial backfill for the new workspace
-      if (response.workspace_id) {
+      if ((response as any).workspace_id) {
         try {
-          await apiClient.triggerWorkspaceSync(response.workspace_id);
+          await apiClient.triggerWorkspaceSync((response as any).workspace_id);
         } catch (backfillError) {
           console.warn('Failed to trigger initial backfill:', backfillError);
         }
