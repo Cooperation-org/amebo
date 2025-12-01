@@ -42,7 +42,7 @@ export default function SignupPage() {
             Create your account
           </CardTitle>
           <CardDescription className="text-center">
-            Get started with Slack Helper Bot for your team
+            Get started with Amebo for your team
           </CardDescription>
         </CardHeader>
         <CardContent>

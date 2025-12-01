@@ -70,7 +70,7 @@ export function SlackWorkspaceForm({ onSuccess, onSkip }: SlackWorkspaceFormProp
         signing_secret: data.signingSecret,
       });
       
-      toast.success('🎉 Workspace added successfully! Welcome to Slack Helper Bot.');
+      toast.success('🎉 Workspace added successfully! Welcome to Amebo Bot.');
       onSuccess();
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to add workspace';

@@ -39,7 +39,7 @@ export default function LoginPage() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold text-center">
-            Sign in to Slack Helper Bot
+            Sign in to Amebo
           </CardTitle>
           <CardDescription className="text-center">
             Enter your email and password to access your account

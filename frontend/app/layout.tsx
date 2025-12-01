@@ -6,7 +6,7 @@ import { Providers } from '../src/lib/providers';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Slack Helper Bot',
+  title: 'Amebo',
   description: 'AI-powered Q&A and knowledge management for Slack workspaces',
 };
 

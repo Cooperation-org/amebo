@@ -14,7 +14,7 @@ import Link from 'next/link';
 
 export default function DocumentsPage() {
   const { data: documentsData, isLoading } = useDocuments();
-  const documents = documentsData?.documents || [];
+  const documents = (documentsData as any)?.documents || [];
   const { data: workspacesData } = useWorkspaces();
   const uploadMutation = useUploadDocuments();
   const deleteMutation = useDeleteDocument();
