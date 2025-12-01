@@ -38,7 +38,7 @@ export default function DashboardPage() {
     ...workspaces.slice(0, 2).map(ws => ({
       type: 'workspace',
       title: `Synced ${ws.team_name}`,
-      time: ws.last_sync_at || ws.created_at,
+      time: ws.last_sync_at || ws.installed_at,
     })),
   ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 5);
 
