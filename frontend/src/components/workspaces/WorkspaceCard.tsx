@@ -3,8 +3,8 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Settings, Trash2, RefreshCw } from 'lucide-react';
-import { BackfillButton } from './BackfillButton';
+import { Settings, Trash2, RefreshCw, Download } from 'lucide-react';
+// import { BackfillButton } from './BackfillButton';
 
 interface Workspace {
   workspace_id: string;
@@ -90,10 +90,14 @@ export function WorkspaceCard({ workspace, onEdit, onDelete, onSync }: Workspace
             <Settings className="h-3 w-3 mr-1" />
             Edit
           </Button>
-          <BackfillButton 
-            workspaceId={workspace.workspace_id}
+          <Button 
+            variant="outline" 
+            size="sm"
             disabled={workspace.status === 'syncing'}
-          />
+          >
+            <Download className="h-3 w-3 mr-1" />
+            Backfill
+          </Button>
           <Button 
             variant="outline" 
             size="sm"
