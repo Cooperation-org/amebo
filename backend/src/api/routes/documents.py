@@ -227,10 +227,66 @@ async def delete_document(
     current_user: dict = Depends(get_current_user)
 ):
     """
-    Delete a document (soft delete)
+    Delete a document
     """
-    # TODO: Implement document deletion
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Document deletion coming soon"
-    )
+    from src.db.connection import DatabaseConnection
+    
+    try:
+        conn = DatabaseConnection.get_connection()
+        cursor = conn.cursor()
+        
+        # Get document info and verify ownership
+        cursor.execute("""
+            SELECT chromadb_collection FROM documents 
+            WHERE document_id = %s AND org_id = %s
+        """, (document_id, current_user.get("org_id", 8)))
+        
+        result = cursor.fetchone()
+        if not result:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Document not found"
+            )
+        
+        collection_name = result[0]
+        
+        # Delete from database
+        cursor.execute("""
+            DELETE FROM documents 
+            WHERE document_id = %s AND org_id = %s
+        """, (document_id, current_user.get("org_id", 8)))
+        
+        conn.commit()
+        
+        # Clean up ChromaDB collection if exists
+        try:
+            if collection_name:
+                import chromadb
+                chroma_client = chromadb.PersistentClient(path='./chroma_db')
+                existing_collections = [col.name for col in chroma_client.list_collections()]
+                
+                if collection_name in existing_collections:
+                    chroma_client.delete_collection(collection_name)
+                    logger.info(f"Deleted ChromaDB collection: {collection_name}")
+        except Exception as chroma_error:
+            logger.warning(f"ChromaDB cleanup failed: {chroma_error}")
+        
+        return {
+            "success": True,
+            "document_id": document_id,
+            "collection_deleted": collection_name
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting document: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete document"
+        )
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            DatabaseConnection.return_connection(conn)
