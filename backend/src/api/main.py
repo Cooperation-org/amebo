@@ -3,6 +3,7 @@ FastAPI Application - Slack Helper Bot Backend
 Handles authentication, document management, Q&A, and Slack OAuth
 """
 
+import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -26,8 +27,7 @@ app = FastAPI(
     version="1.0.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json",
-    root_path="/amebo-api"  # Tells FastAPI it's behind /amebo-api/ proxy
+    openapi_url="/api/openapi.json"
 )
 
 # CORS Configuration
