@@ -115,6 +115,7 @@ async def invite_user(
             
             # Generate temporary password
             temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
+            logger.info(f"temp password: {temp_password}")
             password_hash = bcrypt.hashpw(temp_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
             
             # Create user
