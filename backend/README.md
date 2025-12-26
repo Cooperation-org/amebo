@@ -86,9 +86,9 @@ SMTP_PORT=587
 SMTP_USERNAME=your_email@gmail.com
 SMTP_PASSWORD=your_app_password
 
-# Development
-DEBUG=True
-CORS_ORIGINS=["http://localhost:3000"]
+# Development (set to false in production)
+DEBUG=false
+CORS_ORIGINS=http://localhost:3000,http://localhost:3001
 ```
 
 ### 4. Database Initialization

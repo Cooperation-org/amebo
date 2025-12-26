@@ -14,13 +14,8 @@ from src.api.models import TeamMember, InviteUserRequest, InviteUserResponse
 from src.db.connection import DatabaseConnection
 from src.services.email_service import email_service
 
-# Simple auth for development
-async def get_current_user():
-    return {
-        "user_id": 1,
-        "org_id": 8,  # Updated to match the test user's org
-        "email": "orjienekenechukwu@gmail.com"
-    }
+# Use proper auth middleware
+from src.api.middleware.auth import get_current_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -134,7 +129,7 @@ async def invite_user(
             
             user_id = cur.fetchone()["user_id"]
             
-            # Log the invitation
+            # Log the invitation (never log passwords or secrets)
             cur.execute("""
                 INSERT INTO audit_logs (org_id, user_id, action, resource_type, resource_id, details)
                 VALUES (%s, %s, %s, %s, %s, %s)
@@ -146,8 +141,7 @@ async def invite_user(
                 str(user_id),
                 extras.Json({
                     'invited_email': request.email,
-                    'role': request.role,
-                    'temp_password': temp_password  # In production, send via email
+                    'role': request.role
                 })
             ))
             
