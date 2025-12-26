@@ -66,29 +66,65 @@ nano .env
 **Required Environment Variables:**
 
 ```env
+# ==============================================================================
+# REQUIRED - App will not start without these
+# ==============================================================================
+
 # Database
 DATABASE_URL=postgresql://username:password@localhost:5432/slack_helper
 
 # Anthropic AI
 ANTHROPIC_API_KEY=your_anthropic_api_key_here
 
-# JWT Security
-JWT_SECRET_KEY=your_super_secret_jwt_key_here
-JWT_ALGORITHM=HS256
-JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30
+# Security Keys (REQUIRED - generate with command below)
+# python -c "import secrets; print(secrets.token_urlsafe(32))"
+JWT_SECRET_KEY=your_generated_secret_key_here
+ENCRYPTION_KEY=your_generated_encryption_key_here
 
-# Encryption
-FERNET_KEY=your_fernet_encryption_key_here
+# ==============================================================================
+# OPTIONAL - Have sensible defaults
+# ==============================================================================
 
-# Email (for team invitations)
+# CORS - comma-separated list of allowed origins
+CORS_ORIGINS=http://localhost:3000,http://localhost:3001
+
+# Rate Limiting (requests per window)
+RATE_LIMIT_AUTH_MAX=5          # Auth endpoints (login) - strict to prevent brute force
+RATE_LIMIT_AUTH_WINDOW=60      # Window in seconds
+RATE_LIMIT_API_MAX=100         # General API endpoints
+RATE_LIMIT_API_WINDOW=60
+RATE_LIMIT_UPLOAD_MAX=10       # File upload endpoints
+RATE_LIMIT_UPLOAD_WINDOW=60
+
+# File Upload Limits
+MAX_UPLOAD_SIZE_MB=50          # Maximum file size in MB
+MAX_FILES_PER_REQUEST=10       # Maximum files per upload request
+
+# Email (for team invitations - optional)
 SMTP_SERVER=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USERNAME=your_email@gmail.com
-SMTP_PASSWORD=your_app_password
+SMTP_USERNAME=
+SMTP_PASSWORD=
 
-# Development (set to false in production)
+# Debug mode (always false in production)
 DEBUG=false
-CORS_ORIGINS=http://localhost:3000,http://localhost:3001
+
+# ==============================================================================
+# DEVELOPMENT ONLY - Never enable in production
+# ==============================================================================
+# DEV_AUTH_ENABLED=false       # Set to true to enable dev auth endpoints
+# DEV_AUTH_EMAIL=              # Email for dev login
+# DEV_AUTH_PASSWORD=           # Password for dev login
+```
+
+### Generating Secure Keys
+
+**Important:** You must generate secure random keys for `JWT_SECRET_KEY` and `ENCRYPTION_KEY`.
+The app will refuse to start without them.
+
+```bash
+# Generate a secure key (run twice, once for each)
+python -c "import secrets; print(secrets.token_urlsafe(32))"
 ```
 
 ### 4. Database Initialization
@@ -257,11 +293,14 @@ logging.basicConfig(level=logging.DEBUG)
 ## 🔒 Security Features
 
 - **Multi-tenant Architecture** - Complete data isolation between organizations
-- **JWT Authentication** - Secure token-based authentication
-- **Credential Encryption** - Fernet encryption for Slack tokens
+- **JWT Authentication** - Secure token-based authentication with required secret keys
+- **Credential Encryption** - Fernet encryption for Slack tokens (stored encrypted at rest)
+- **Rate Limiting** - Configurable per-endpoint rate limits to prevent brute force and abuse
 - **Input Validation** - Pydantic models for request validation
-- **CORS Protection** - Configurable cross-origin resource sharing
-- **SQL Injection Prevention** - Parameterized queries
+- **File Upload Protection** - Size limits, file count limits, and content type validation
+- **CORS Protection** - Configurable cross-origin resource sharing (no wildcards)
+- **SQL Injection Prevention** - Parameterized queries throughout
+- **Safe Error Messages** - Internal errors are logged but not exposed to clients
 
 ## 📊 Performance
 
@@ -286,15 +325,43 @@ docker run -p 8000:8000 slack-helper-backend
 
 ## 📝 Environment Variables Reference
 
-| Variable | Description | Required | Default |
-|----------|-------------|----------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | Yes | - |
-| `ANTHROPIC_API_KEY` | Anthropic Claude API key | Yes | - |
-| `JWT_SECRET_KEY` | JWT signing secret | Yes | - |
-| `FERNET_KEY` | Encryption key for credentials | Yes | - |
-| `SMTP_SERVER` | Email server for invitations | No | - |
-| `DEBUG` | Enable debug mode | No | `False` |
-| `CORS_ORIGINS` | Allowed CORS origins | No | `[]` |
+### Required Variables
+
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | PostgreSQL connection string |
+| `ANTHROPIC_API_KEY` | Anthropic Claude API key |
+| `JWT_SECRET_KEY` | JWT signing secret (generate with `secrets.token_urlsafe(32)`) |
+| `ENCRYPTION_KEY` | Credential encryption key (generate with `secrets.token_urlsafe(32)`) |
+
+### Optional Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CORS_ORIGINS` | Comma-separated allowed origins | `http://localhost:3000,http://localhost:3001` |
+| `DEBUG` | Enable debug mode | `false` |
+| `RATE_LIMIT_AUTH_MAX` | Max auth requests per window | `5` |
+| `RATE_LIMIT_AUTH_WINDOW` | Auth rate limit window (seconds) | `60` |
+| `RATE_LIMIT_API_MAX` | Max API requests per window | `100` |
+| `RATE_LIMIT_API_WINDOW` | API rate limit window (seconds) | `60` |
+| `RATE_LIMIT_UPLOAD_MAX` | Max upload requests per window | `10` |
+| `RATE_LIMIT_UPLOAD_WINDOW` | Upload rate limit window (seconds) | `60` |
+| `MAX_UPLOAD_SIZE_MB` | Maximum file upload size | `50` |
+| `MAX_FILES_PER_REQUEST` | Maximum files per upload | `10` |
+| `SMTP_SERVER` | Email server for invitations | - |
+| `SMTP_PORT` | Email server port | `587` |
+| `SMTP_USERNAME` | Email username | - |
+| `SMTP_PASSWORD` | Email password | - |
+
+### Development Only Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `DEV_AUTH_ENABLED` | Enable dev auth endpoints | `false` |
+| `DEV_AUTH_EMAIL` | Email for dev login | - |
+| `DEV_AUTH_PASSWORD` | Password for dev login | - |
+
+> ⚠️ **Never enable `DEV_AUTH_ENABLED` in production!**
 
 ## 🤝 Contributing
 
