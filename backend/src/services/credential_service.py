@@ -58,13 +58,10 @@ class CredentialService:
             app_token_enc = self.encryption_manager.encrypt(app_token) if app_token else None
             signing_secret_enc = self.encryption_manager.encrypt(signing_secret) if signing_secret else None
 
-            # Update or insert
+            # Update or insert - only store encrypted credentials
             cur.execute("""
                 INSERT INTO installations (
                     workspace_id,
-                    bot_token,
-                    app_token,
-                    signing_secret,
                     bot_token_encrypted,
                     app_token_encrypted,
                     signing_secret_encrypted,
@@ -72,22 +69,20 @@ class CredentialService:
                     credentials_encrypted,
                     encryption_version,
                     installed_at
-                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, TRUE, 1, NOW())
+                ) VALUES (%s, %s, %s, %s, %s, TRUE, 1, NOW())
                 ON CONFLICT (workspace_id) DO UPDATE SET
-                    bot_token = EXCLUDED.bot_token,
-                    app_token = EXCLUDED.app_token,
-                    signing_secret = EXCLUDED.signing_secret,
                     bot_token_encrypted = EXCLUDED.bot_token_encrypted,
                     app_token_encrypted = EXCLUDED.app_token_encrypted,
                     signing_secret_encrypted = EXCLUDED.signing_secret_encrypted,
                     bot_user_id = EXCLUDED.bot_user_id,
                     credentials_encrypted = TRUE,
-                    encryption_version = 1
+                    encryption_version = 1,
+                    -- Clear any legacy plaintext credentials
+                    bot_token = NULL,
+                    app_token = NULL,
+                    signing_secret = NULL
             """, (
                 workspace_id,
-                bot_token,  # Keep plaintext for backward compatibility during migration
-                app_token,
-                signing_secret,
                 bot_token_enc,
                 app_token_enc,
                 signing_secret_enc,

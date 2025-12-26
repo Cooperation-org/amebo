@@ -118,15 +118,15 @@ async def create_workspace(
                 org_id = EXCLUDED.org_id
         """, (workspace_id, team_name, True, current_user.get("org_id", 8)))
         
-        # Store credentials
-        cursor.execute("""
-            INSERT INTO installations (workspace_id, bot_token, app_token, signing_secret)
-            VALUES (%s, %s, %s, %s)
-            ON CONFLICT (workspace_id) DO UPDATE SET
-                bot_token = EXCLUDED.bot_token,
-                app_token = EXCLUDED.app_token,
-                signing_secret = EXCLUDED.signing_secret
-        """, (workspace_id, workspace_data.bot_token, workspace_data.app_token, workspace_data.signing_secret))
+        # Store credentials using the credential service (encrypted)
+        from src.services.credential_service import CredentialService
+        cred_service = CredentialService()
+        cred_service.store_credentials(
+            workspace_id=workspace_id,
+            bot_token=workspace_data.bot_token,
+            app_token=workspace_data.app_token,
+            signing_secret=workspace_data.signing_secret
+        )
         
         conn.commit()
         
