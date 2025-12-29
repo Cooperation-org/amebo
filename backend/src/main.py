@@ -21,6 +21,7 @@ Environment Variables Required:
 import asyncio
 import signal
 import sys
+import os
 import logging
 from typing import Optional
 
@@ -62,12 +63,15 @@ class SlackHelperApp:
         """
         from src.api.main import app as fastapi_app
 
-        logger.info("🚀 Starting FastAPI server on http://0.0.0.0:8000")
+        # Get port from environment variable, default to 8003
+        api_port = int(os.getenv('API_PORT', 8003))
+
+        logger.info(f"🚀 Starting FastAPI server on http://0.0.0.0:{api_port}")
 
         config = Config(
             app=fastapi_app,
             host="0.0.0.0",
-            port=8000,
+            port=api_port,
             log_level="info",
             access_log=True,
             loop="asyncio"
@@ -198,13 +202,16 @@ class SlackHelperApp:
         )
         tasks.append(self.scheduler_task)
 
+        # Get port for display
+        api_port = int(os.getenv('API_PORT', 8003))
+
         logger.info("")
         logger.info("=" * 70)
         logger.info("✅ All services started successfully")
         logger.info("=" * 70)
         logger.info("")
-        logger.info("📍 API Documentation: http://localhost:8000/api/docs")
-        logger.info("📍 Health Check: http://localhost:8000/health")
+        logger.info(f"📍 API Documentation: http://localhost:{api_port}/api/docs")
+        logger.info(f"📍 Health Check: http://localhost:{api_port}/health")
         logger.info("")
         logger.info("Press Ctrl+C to shutdown")
         logger.info("")
