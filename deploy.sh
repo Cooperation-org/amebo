@@ -145,7 +145,7 @@ case $choice in
     6)
         print_info "Creating database backup..."
         BACKUP_FILE="backup_$(date +%Y%m%d_%H%M%S).sql"
-        docker-compose exec -T postgres pg_dump -U postgres slack_helper > "$BACKUP_FILE"
+        docker-compose exec -T postgres pg_dump -U postgres amebo > "$BACKUP_FILE"
         print_success "Database backed up to: $BACKUP_FILE"
 
         # Also backup ChromaDB

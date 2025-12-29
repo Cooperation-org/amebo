@@ -46,11 +46,11 @@ brew install postgresql
 brew services start postgresql
 
 # Create database
-createdb slack_helper
+createdb amebo
 
 # Create user (optional)
-psql -c "CREATE USER slack_user WITH PASSWORD 'your_password';"
-psql -c "GRANT ALL PRIVILEGES ON DATABASE slack_helper TO slack_user;"
+psql -c "CREATE USER amebo_user WITH PASSWORD 'your_password';"
+psql -c "GRANT ALL PRIVILEGES ON DATABASE amebo TO amebo_user;"
 ```
 
 ### 3. Environment Configuration
@@ -67,7 +67,7 @@ nano .env
 
 ```env
 # Database
-DATABASE_URL=postgresql://username:password@localhost:5432/slack_helper
+DATABASE_URL=postgresql://username:password@localhost:5432/amebo
 
 # Anthropic AI
 ANTHROPIC_API_KEY=your_anthropic_api_key_here

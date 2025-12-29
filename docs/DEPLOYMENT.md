@@ -2,6 +2,25 @@
 
 This guide covers deploying Amebo to a production server using Docker.
 
+## Quick Reference
+
+```bash
+# Switch to application user
+sudo su - amebo
+
+# Navigate to app directory
+cd /opt/amebo
+
+# Start services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f backend
+
+# Stop services
+docker-compose down
+```
+
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
@@ -46,15 +65,51 @@ sudo apt install git -y
 
 ## Server Setup
 
-### 1. Clone the Repository
+### 1. Create Dedicated Application User (Recommended)
+
+For security and better process isolation, create a dedicated user for the application:
 
 ```bash
-cd ~
-git clone <your-repository-url> amebo
-cd amebo
+# Create user named 'amebo' (no login shell for extra security)
+sudo adduser --system --group --disabled-password amebo
+
+# OR create with login capability (useful for debugging)
+sudo adduser amebo
+sudo passwd amebo  # Set password
+
+# Add to docker group
+sudo usermod -aG docker amebo
+
+# Create application directory
+sudo mkdir -p /opt/amebo
+sudo chown -R amebo:amebo /opt/amebo
+
+# Verify
+id amebo  # Should show docker in groups
 ```
 
-### 2. Configure Environment Variables
+**Why use a dedicated user?**
+- ✅ **Security**: Limits damage if app is compromised
+- ✅ **Isolation**: Clear separation from personal/system files
+- ✅ **No sudo**: App runs with minimal permissions
+- ✅ **Clean auditing**: All app actions tied to one user
+
+**Alternative:** If this is a personal dev server, you can use your own user account. Just ensure you're in the `docker` group and **never run as root**.
+
+### 2. Clone the Repository
+
+```bash
+# Switch to amebo user
+sudo su - amebo
+
+# Clone repository
+cd /opt/amebo  # or ~ if using personal user
+git clone <your-repository-url> .
+# OR if already cloned elsewhere
+# sudo mv ~/amebo /opt/amebo && sudo chown -R amebo:amebo /opt/amebo
+```
+
+### 3. Configure Environment Variables
 
 Create production environment file:
 
@@ -72,7 +127,7 @@ cp backend/.env.example backend/.env
 nano backend/.env
 ```
 
-### 3. Generate Security Keys
+### 4. Generate Security Keys
 
 ```bash
 # Generate encryption key for Fernet
@@ -91,7 +146,7 @@ Add these to your `.env.production` and `backend/.env` files.
 | Variable | Description | Example |
 |----------|-------------|---------|
 | `POSTGRES_PASSWORD` | Database password | `secure_db_pass_123` |
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:password@postgres:5432/slack_helper` |
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:password@postgres:5432/amebo` |
 | `SLACK_BOT_TOKEN` | Slack bot token | `xoxb-...` |
 | `SLACK_APP_TOKEN` | Slack app token for Socket Mode | `xapp-...` |
 | `ANTHROPIC_API_KEY` | Claude API key | `sk-ant-...` |
@@ -122,6 +177,12 @@ FROM_EMAIL=noreply@yourdomain.com
 ### 1. Build and Start Services
 
 ```bash
+# Make sure you're running as the amebo user (if using dedicated user)
+whoami  # Should output 'amebo'
+
+# Navigate to app directory
+cd /opt/amebo  # or wherever you cloned the repo
+
 # Load environment variables
 source .env.production
 
@@ -231,8 +292,16 @@ sudo certbot --nginx -d your-domain.com
 ### Updating the Application
 
 ```bash
-cd ~/amebo
+# Switch to amebo user (if using dedicated user)
+sudo su - amebo
+
+# Navigate to app directory
+cd /opt/amebo
+
+# Pull latest changes
 git pull
+
+# Rebuild and restart
 docker-compose down
 docker-compose up -d --build
 ```
@@ -240,12 +309,20 @@ docker-compose up -d --build
 ### Backing Up Data
 
 ```bash
+# Switch to amebo user (if using dedicated user)
+sudo su - amebo
+cd /opt/amebo
+
 # Backup PostgreSQL
-docker-compose exec postgres pg_dump -U postgres slack_helper > backup_$(date +%Y%m%d).sql
+docker-compose exec -T postgres pg_dump -U postgres amebo > backup_$(date +%Y%m%d).sql
 
 # Backup ChromaDB
 docker-compose exec backend tar -czf /tmp/chromadb_backup.tar.gz /app/chromadb_data
 docker cp amebo-backend:/tmp/chromadb_backup.tar.gz ./chromadb_backup_$(date +%Y%m%d).tar.gz
+
+# Store backups in a safe location
+sudo mkdir -p /var/backups/amebo
+sudo mv backup_*.sql chromadb_backup_*.tar.gz /var/backups/amebo/
 ```
 
 ### Viewing Logs
@@ -339,18 +416,24 @@ docker-compose up -d
 
 ## Security Best Practices
 
-1. **Never commit `.env` or `.env.production`** - keep secrets secure
-2. **Use strong passwords** - generate random passwords for production
-3. **Enable firewall** - only allow necessary ports
+1. **Use a dedicated user** - Run the application as the `amebo` user, not root or your personal account
+2. **Never commit `.env` or `.env.production`** - keep secrets secure
+3. **Use strong passwords** - generate random passwords for production
+4. **Enable firewall** - only allow necessary ports
    ```bash
    sudo ufw allow 22    # SSH
    sudo ufw allow 80    # HTTP
    sudo ufw allow 443   # HTTPS
    sudo ufw enable
    ```
-4. **Regular updates** - keep Docker and system packages updated
-5. **Monitor logs** - set up log monitoring and alerts
-6. **Backup regularly** - automate database backups
+5. **Restrict file permissions** - Ensure only amebo user can read env files
+   ```bash
+   sudo chmod 600 /opt/amebo/.env.production
+   sudo chmod 600 /opt/amebo/backend/.env
+   ```
+6. **Regular updates** - keep Docker and system packages updated
+7. **Monitor logs** - set up log monitoring and alerts
+8. **Backup regularly** - automate database backups
 
 ## Monitoring
 
@@ -391,13 +474,17 @@ For issues and questions:
 
 **Production Ready Checklist:**
 
+- [ ] Dedicated `amebo` user created and configured
+- [ ] User added to docker group
 - [ ] Environment variables configured
 - [ ] Security keys generated
+- [ ] File permissions set (600 for .env files)
 - [ ] Database initialized
 - [ ] SSL certificate installed
-- [ ] Firewall configured
+- [ ] Firewall configured (UFW enabled)
 - [ ] Backup strategy in place
 - [ ] Monitoring set up
 - [ ] Slack app configured
 - [ ] Domain/DNS configured
 - [ ] Email SMTP tested
+- [ ] Verified running as non-root user
