@@ -3,6 +3,7 @@ FastAPI Application - Slack Helper Bot Backend
 Handles authentication, document management, Q&A, and Slack OAuth
 """
 
+import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -10,6 +11,7 @@ import logging
 import time
 
 from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces, dev_auth, team
+from src.api.middleware.rate_limit import RateLimitMiddleware
 from src.db.connection import DatabaseConnection
 
 # Configure logging
@@ -25,23 +27,30 @@ app = FastAPI(
     description="Backend API for Slack Helper Bot - Q&A, Document Management, and Slack Integration",
     version="1.0.0",
     docs_url="/api/docs",
-    redoc_url="/api/redoc"
+    redoc_url="/api/redoc",
+    openapi_url="/openapi.json"  # FastAPI serves this at root, not under /api
 )
 
 # CORS Configuration
+# Configure allowed origins via CORS_ORIGINS environment variable (comma-separated)
+# Example: CORS_ORIGINS=http://localhost:3000,https://myapp.vercel.app
+cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
+cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Next.js dev
-        "http://localhost:3001",
-        "https://727c96dd6693.ngrok-free.app",  # ngrok
-        "https://*.vercel.app",  # Vercel deployments
-        "*"  # Allow all for development
-    ],
+    allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
+
+# Rate limiting middleware (applied after CORS)
+# Configure limits via environment variables:
+# - RATE_LIMIT_AUTH_MAX / RATE_LIMIT_AUTH_WINDOW (default: 5 requests per 60s)
+# - RATE_LIMIT_API_MAX / RATE_LIMIT_API_WINDOW (default: 100 requests per 60s)
+# - RATE_LIMIT_UPLOAD_MAX / RATE_LIMIT_UPLOAD_WINDOW (default: 10 requests per 60s)
+app.add_middleware(RateLimitMiddleware)
 
 
 # Request timing middleware
@@ -108,9 +117,13 @@ async def root():
 
 
 # Include routers
-# Use dev auth for development, comment out for production
-app.include_router(dev_auth.router, prefix="/api/auth", tags=["Development Auth"])
-# app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
+# Use real authentication by default
+app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
+
+# Dev auth is only included if explicitly enabled via environment variable
+import os
+if os.getenv("DEV_AUTH_ENABLED", "false").lower() == "true":
+    app.include_router(dev_auth.router, prefix="/api/dev-auth", tags=["Development Auth"])
 app.include_router(organizations.router, prefix="/api/organizations", tags=["Organizations"])
 app.include_router(workspaces.router, prefix="/api/workspaces", tags=["Workspaces"])
 app.include_router(documents.router, prefix="/api/documents", tags=["Documents"])

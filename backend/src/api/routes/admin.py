@@ -10,6 +10,7 @@ from datetime import datetime
 
 from src.api.auth_utils import get_current_user, require_admin
 from src.api.middleware.workspace_auth import verify_workspace_access, get_workspace_ids_for_org
+from src.api.utils.errors import get_safe_error
 from src.db.connection import DatabaseConnection
 import logging
 
@@ -153,7 +154,7 @@ async def create_backfill_schedule(
     except Exception as e:
         conn.rollback()
         logger.error(f"❌ Error creating backfill schedule: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=get_safe_error('database'))
     finally:
         cur.close()
         conn.close()
@@ -246,7 +247,7 @@ async def delete_backfill_schedule(
     except Exception as e:
         conn.rollback()
         logger.error(f"❌ Error deleting schedule: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=get_safe_error('database'))
     finally:
         cur.close()
         conn.close()
@@ -296,7 +297,7 @@ async def trigger_manual_backfill(
 
     except Exception as e:
         logger.error(f"❌ Error triggering manual backfill: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=get_safe_error('database'))
 
 
 # ============================================================================

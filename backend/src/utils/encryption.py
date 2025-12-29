@@ -27,13 +27,10 @@ class EncryptionManager:
         encryption_key = os.getenv("ENCRYPTION_KEY")
 
         if not encryption_key:
-            logger.warning(
-                "⚠️  ENCRYPTION_KEY not set in environment! "
-                "Using default key for development. "
-                "NEVER use in production!"
+            raise RuntimeError(
+                "ENCRYPTION_KEY environment variable is required for credential encryption. "
+                "Generate a secure key with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
             )
-            # Default key for development only
-            encryption_key = "dev-encryption-key-change-in-production"
 
         # Derive a valid Fernet key from the encryption key
         self.fernet = self._create_fernet(encryption_key)
