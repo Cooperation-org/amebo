@@ -224,10 +224,17 @@ docker-compose logs -f frontend
 
 ### 4. Initialize Database
 
-The database will auto-initialize on first run. Verify:
+Create the database tables:
 
 ```bash
-docker-compose exec backend python -c "from src.db.connection import DatabaseConnection; print('DB Connected')"
+# Initialize database schema
+docker compose exec backend python init_db.py
+
+# Or if using docker-compose (old version)
+docker-compose exec backend python init_db.py
+
+# Verify connection
+docker compose exec backend python -c "from src.db.connection import DatabaseConnection; DatabaseConnection.initialize_pool(); print('✅ DB Connected')"
 ```
 
 ## Running the Application
@@ -251,29 +258,44 @@ Create Nginx config:
 ```bash
 sudo nano /etc/nginx/sites-available/amebo
 ```
-
 ```nginx
+# Backend API Server (api.amebo.linkedtrust.us)
 server {
     listen 80;
-    server_name your-domain.com;
-
-    # Frontend
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_cache_bypass $http_upgrade;
-    }
+    server_name api.amebo.linkedtrust.us;
 
     # Backend API
-    location /api {
+    location / {
         proxy_pass http://localhost:8000;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # CORS headers (if needed)
+        add_header Access-Control-Allow-Origin *;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS";
+        add_header Access-Control-Allow-Headers "Authorization, Content-Type";
+    }
+}
+
+# Frontend App Server (amebo.linkedtrust.us)
+server {
+    listen 80;
+    server_name amebo.linkedtrust.us;
+
+    # Frontend
+    location / {
+        proxy_pass http://localhost:3001;  # Note: Using 3001 (from docker-compose)
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
     }
 }
 ```
@@ -281,10 +303,20 @@ server {
 Enable and get SSL:
 
 ```bash
+# Enable the site
 sudo ln -s /etc/nginx/sites-available/amebo /etc/nginx/sites-enabled/
+
+# Test configuration
 sudo nginx -t
+
+# Restart nginx
 sudo systemctl restart nginx
-sudo certbot --nginx -d your-domain.com
+
+# Get SSL certificates for BOTH subdomains
+sudo certbot --nginx -d amebo.linkedtrust.us -d api.amebo.linkedtrust.us
+
+# OR if you have different domains, adjust:
+# sudo certbot --nginx -d your-frontend-domain.com -d api.your-backend-domain.com
 ```
 
 ## Maintenance
