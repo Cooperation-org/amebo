@@ -16,13 +16,17 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Slack Helper Q&A API")
 
-# CORS middleware
+# CORS middleware - configure via CORS_ORIGINS env var
+import os
+cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
+cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=cors_origins,
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
 
 # Models
@@ -46,18 +50,30 @@ class QAResponse(BaseModel):
     question: str
     processing_time_ms: Optional[float] = None
 
-# Mock auth
+# Mock auth - FOR LOCAL DEVELOPMENT ONLY
+# In production, use the real auth middleware
 def get_current_user():
     return {
         "user_id": 1,
         "org_id": 8,
-        "email": "orjienekenechukwu@gmail.com"
+        "email": "dev@localhost"
     }
 
 # Routes
 @app.post("/api/auth/login")
 async def login(request: LoginRequest):
-    if request.email == "orjienekenechukwu@gmail.com" and request.password == "Lekan2904.":
+    """
+    Development login endpoint - FOR LOCAL TESTING ONLY
+    In production, use the main API with real authentication
+    """
+    import os
+    dev_email = os.getenv("DEV_AUTH_EMAIL")
+    dev_password = os.getenv("DEV_AUTH_PASSWORD")
+
+    if not dev_email or not dev_password:
+        raise HTTPException(status_code=500, detail="Dev credentials not configured")
+
+    if request.email == dev_email and request.password == dev_password:
         return {
             "access_token": "mock-jwt-token-" + str(hash(request.email)),
             "token_type": "bearer",
@@ -65,7 +81,7 @@ async def login(request: LoginRequest):
                 "user_id": 1,
                 "email": request.email,
                 "org_id": 8,
-                "org_name": "WhatsCookin Team",
+                "org_name": "Development Team",
                 "role": "admin"
             }
         }
@@ -75,9 +91,9 @@ async def login(request: LoginRequest):
 async def get_current_user_info(current_user: dict = Depends(get_current_user)):
     return {
         "user_id": 1,
-        "email": "orjienekenechukwu@gmail.com",
+        "email": "dev@localhost",
         "org_id": 8,
-        "org_name": "WhatsCookin Team",
+        "org_name": "Development Team",
         "role": "admin"
     }
 

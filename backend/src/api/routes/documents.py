@@ -2,15 +2,28 @@
 Documents routes - upload, list, delete documents
 """
 
+import os
 from fastapi import APIRouter, HTTPException, status, Depends, UploadFile, File, Form
 from typing import List, Optional
 import logging
 
 from src.api.middleware.auth import get_current_user
+from src.api.utils.errors import get_safe_error
 from src.services.document_service import DocumentService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# File upload limits
+MAX_FILE_SIZE_MB = int(os.getenv("MAX_UPLOAD_SIZE_MB", "50"))
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+MAX_FILES_PER_REQUEST = int(os.getenv("MAX_FILES_PER_REQUEST", "10"))
+ALLOWED_CONTENT_TYPES = {
+    'text/plain',
+    'text/markdown',
+    'application/pdf',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+}
 
 
 @router.post("/upload")
@@ -23,20 +36,38 @@ async def upload_documents(
     Upload multiple documents (PDF, DOCX, TXT, MD)
     Processes and stores in ChromaDB
     Can be tagged to a specific workspace
+
+    Limits:
+    - Max file size: 50MB (configurable via MAX_UPLOAD_SIZE_MB)
+    - Max files per request: 10 (configurable via MAX_FILES_PER_REQUEST)
+    - Allowed types: PDF, DOCX, TXT, MD
     """
     from src.db.connection import DatabaseConnection
-    
+
+    # Validate number of files
+    if len(files) > MAX_FILES_PER_REQUEST:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Too many files. Maximum {MAX_FILES_PER_REQUEST} files per request."
+        )
+
+    if len(files) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No files provided"
+        )
+
     try:
         # Verify workspace if provided
         if workspace_id:
             conn = DatabaseConnection.get_connection()
             cursor = conn.cursor()
-            
+
             cursor.execute("""
-                SELECT workspace_id FROM workspaces 
+                SELECT workspace_id FROM workspaces
                 WHERE workspace_id = %s AND org_id = %s AND is_active = true
             """, (workspace_id, current_user.get("org_id", 8)))
-            
+
             if not cursor.fetchone():
                 cursor.close()
                 DatabaseConnection.return_connection(conn)
@@ -44,14 +75,35 @@ async def upload_documents(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Invalid or inactive workspace"
                 )
-            
+
             cursor.close()
             DatabaseConnection.return_connection(conn)
-        
-        # Prepare file data
+
+        # Prepare and validate file data
         file_data_list = []
         for file in files:
+            # Validate content type
+            if file.content_type not in ALLOWED_CONTENT_TYPES:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"File type not allowed: {file.content_type}. Allowed types: PDF, DOCX, TXT, MD"
+                )
+
+            # Read content and validate size
             content = await file.read()
+
+            if len(content) > MAX_FILE_SIZE_BYTES:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"File '{file.filename}' exceeds maximum size of {MAX_FILE_SIZE_MB}MB"
+                )
+
+            if len(content) == 0:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"File '{file.filename}' is empty"
+                )
+
             file_data_list.append({
                 'filename': file.filename,
                 'content_type': file.content_type,
@@ -80,7 +132,7 @@ async def upload_documents(
         logger.error(f"Error uploading documents: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to upload documents: {str(e)}"
+            detail=get_safe_error('upload')
         )
 
 

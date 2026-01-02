@@ -8,15 +8,8 @@ import logging
 import time
 
 from src.api.models import QARequest, QAResponse, QASource
-# from src.api.middleware.auth import get_current_user
-
-# Simple auth for development
-async def get_current_user():
-    return {
-        "user_id": 1,
-        "org_id": 8,  # Updated to match the test user's org
-        "email": "orjienekenechukwu@gmail.com"
-    }
+from src.api.middleware.auth import get_current_user
+from src.api.utils.errors import get_safe_error
 from src.api.middleware.workspace_auth import verify_workspace_access, get_workspace_ids_for_org
 # from src.services.qa_service import QAService  # Disabled for demo
 from src.db.connection import DatabaseConnection
@@ -109,7 +102,7 @@ async def ask_question(
         logger.error(f"Q&A error: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to process question: {str(e)}"
+            detail=get_safe_error('process_question')
         )
 
 

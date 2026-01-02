@@ -21,6 +21,7 @@ from src.api.models import (
 )
 from src.api.auth_utils import get_current_user
 from src.db.connection import DatabaseConnection
+from src.services.credential_service import CredentialService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -198,17 +199,6 @@ async def slack_oauth_callback(request: Request, code: str = None, state: str = 
                     """,
                     (team_name, team_domain, icon_url, workspace_id)
                 )
-
-                # Update installation
-                cur.execute(
-                    """
-                    UPDATE installations
-                    SET bot_token = %s, installed_by = %s, installed_at = NOW(),
-                        last_active = NOW(), is_active = true
-                    WHERE workspace_id = %s
-                    """,
-                    (bot_token, str(user_id), workspace_id)
-                )
             else:
                 # Create new workspace
                 cur.execute(
@@ -219,14 +209,13 @@ async def slack_oauth_callback(request: Request, code: str = None, state: str = 
                     (workspace_id, team_name, team_domain, icon_url)
                 )
 
-                # Create installation record
-                cur.execute(
-                    """
-                    INSERT INTO installations (workspace_id, bot_token, installed_by, installed_at, last_active, is_active)
-                    VALUES (%s, %s, %s, NOW(), NOW(), true)
-                    """,
-                    (workspace_id, bot_token, str(user_id))
-                )
+            # Store credentials securely using CredentialService (encrypted)
+            credential_service = CredentialService()
+            credential_service.store_credentials(
+                workspace_id=workspace_id,
+                bot_token=bot_token,
+                bot_user_id=str(user_id)
+            )
 
             # Link workspace to organization
             cur.execute(

@@ -11,6 +11,7 @@ import logging
 import time
 
 from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces, dev_auth, team
+from src.api.middleware.rate_limit import RateLimitMiddleware
 from src.db.connection import DatabaseConnection
 
 # Configure logging
@@ -43,6 +44,13 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
 )
+
+# Rate limiting middleware (applied after CORS)
+# Configure limits via environment variables:
+# - RATE_LIMIT_AUTH_MAX / RATE_LIMIT_AUTH_WINDOW (default: 5 requests per 60s)
+# - RATE_LIMIT_API_MAX / RATE_LIMIT_API_WINDOW (default: 100 requests per 60s)
+# - RATE_LIMIT_UPLOAD_MAX / RATE_LIMIT_UPLOAD_WINDOW (default: 10 requests per 60s)
+app.add_middleware(RateLimitMiddleware)
 
 
 # Request timing middleware

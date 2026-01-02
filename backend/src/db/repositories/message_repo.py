@@ -15,16 +15,16 @@ class MessageRepository:
     Handles database operations for message metadata (NOT content).
     """
 
-    def __init__(self, db_connection, workspace_id: str):
+    def __init__(self, db_connection, workspace_id: str = None):
         """
         Initialize repository with database connection.
 
         Args:
             db_connection: Database connection from connection pool
-            workspace_id: Workspace ID for multi-tenant isolation
+            workspace_id: Workspace ID for multi-tenant isolation (optional, defaults to W_DEFAULT)
         """
         self.conn = db_connection
-        self.workspace_id = workspace_id
+        self.workspace_id = workspace_id or 'W_DEFAULT'
 
     def upsert_message(self, message: Dict) -> int:
         """
