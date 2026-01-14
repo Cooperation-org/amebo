@@ -70,6 +70,12 @@ class QAService:
         """
         logger.info(f"Answering question: {question}")
 
+        intent = self._classify_intent(question)
+        if intent == 'greeting':
+            return self._handle_greeting(question)
+        elif intent == 'casual':
+            return self._handle_casual(question)
+
         # Auto-detect time-based questions if days_back not explicitly provided
         if days_back is None:
             days_back = self._detect_time_filter(question)
@@ -93,35 +99,36 @@ class QAService:
 
         if not relevant_messages:
             # Provide helpful message based on filters
-            filters_applied = []
-            if days_back:
-                filters_applied.append(f"last {days_back} days")
-            if channel_filter:
-                filters_applied.append(f"#{channel_filter} channel")
+            # filters_applied = []
+            # if days_back:
+            #     filters_applied.append(f"last {days_back} days")
+            # if channel_filter:
+            #     filters_applied.append(f"#{channel_filter} channel")
 
-            if filters_applied:
-                filters_str = " in the " + " and ".join(filters_applied)
-                answer = f"I couldn't find any substantive messages{filters_str}. There may be very little activity during this period, or the messages might be too short/simple to be useful (like emoji reactions or join notifications).\n\nTry:\n• Asking about a different time period\n• Asking without specifying a channel\n• Asking about a more general topic"
-            else:
-                answer = "I couldn't find any relevant information in the Slack history to answer this question."
+            # if filters_applied:
+            #     filters_str = " in the " + " and ".join(filters_applied)
+            #     answer = f"I couldn't find any substantive messages{filters_str}. There may be very little activity during this period, or the messages might be too short/simple to be useful (like emoji reactions or join notifications).\n\nTry:\n• Asking about a different time period\n• Asking without specifying a channel\n• Asking about a more general topic"
+            # else:
+            #     answer = "I couldn't find any relevant information in the Slack history to answer this question."
 
-            return {
-                'answer': answer,
-                'sources': [],
-                'confidence': 0,
-                'confidence_explanation': 'No relevant messages found after filtering',
-                'project_links': [],
-                'context_used': 0
-            }
+            # return {
+            #     'answer': answer,
+            #     'sources': [],
+            #     'confidence': 0,
+            #     'confidence_explanation': 'No relevant messages found after filtering',
+            #     'project_links': [],
+            #     'context_used': 0
+            # }
+            return self._handle_no_results(question, channel_filter, days_back)
 
         # 2. Build context from messages
         context = self._build_context(relevant_messages)
 
         # 3. Generate answer with LLM
         if self.client:
-            answer = self._generate_answer_with_claude(question, context, relevant_messages)
+            answer = self._generate_answer_with_claude(question, context, relevant_messages, intent)
         else:
-            answer = self._generate_mock_answer(question, relevant_messages)
+            answer = self._generate_mock_answer(question, relevant_messages, intent)
 
         return answer
 
@@ -186,6 +193,108 @@ class QAService:
                 return channel
 
         return None
+    
+    def _classify_intent(self, question: str) -> str:
+        """Classify question intent: 'greeting', 'casual', or 'factual'."""
+        question_lower = question.lower().strip()
+
+        # Greeting patterns
+        greeting_patterns = [
+            r'^(hi|hello|hey|good morning|good afternoon|good evening)',
+            r'^(yo|sup|what.?s up)',
+            r'^how.?s it going',
+        ]
+        for pattern in greeting_patterns:
+            if re.match(pattern, question_lower):
+                return 'greeting'
+
+        # Casual chat patterns (jokes, weather, etc.)
+        casual_patterns = {
+            'joke': [r'(tell me a )?joke', r'jokes? please', r'make me laugh'],
+            'weather': [r'(what.?s|how.?s) (the )?(weather|temperature)'],
+            'how_are_you': [r'how are you', r'how.?s everyone'],
+            'time': [r'what time', r'what.?s the time', r'current time'],
+        }
+        for intent, patterns in casual_patterns.items():
+            for pattern in patterns:
+                if re.search(pattern, question_lower):
+                    return 'casual'
+
+        return 'factual'  # Default to full RAG
+    
+    def _handle_greeting(self, question: str) -> Dict:
+        """Fast greeting response, no search."""
+        greetings = [
+            "Hey! 👋 How can I help you today?",
+            "Hello! What Slack history questions do you have?",
+            "Hi there! Ready to dive into our channels? 😊"
+        ]
+        import random
+        return {
+            'answer': random.choice(greetings),
+            'sources': [],
+            'confidence': 100,
+            'confidence_explanation': 'Direct greeting match',
+            'project_links': [],
+            'context_used': 0,
+            'intent': 'greeting'
+        }
+    
+    def _handle_casual(self, question: str) -> Dict:
+        """Pre-built casual responses."""
+        question_lower = question.lower()
+        
+        if any(word in question_lower for word in ['joke', 'laugh']):
+            jokes = [
+                "Why did the developer quit? Because they didn't get arrays! 😄",
+                "Why do programmers prefer dark mode? Because light attracts bugs! 🐛",
+                "How many programmers does it take to change a light bulb? None, that's a hardware problem! 💡"
+            ]
+            import random
+            answer = random.choice(jokes)
+        elif 'weather' in question_lower:
+            answer = "I'm all about Slack history, not forecasts! ☀️ Try asking about recent project updates instead."
+        elif any(phrase in question_lower for phrase in ['how are you', 'hows everyone']):
+            answer = "I'm doing great, thanks! Optimized and ready to search our Slack history. What's up?"
+        else:
+            answer = "Fun question! For Slack insights, ask about projects, standups, or hackathons. 🚀"
+
+        return {
+            'answer': answer,
+            'sources': [],
+            'confidence': 95,
+            'confidence_explanation': 'Casual intent match',
+            'project_links': [],
+            'context_used': 0,
+            'intent': 'casual'
+        }
+    
+    def _handle_no_results(self, question: str, channel_filter: Optional[str], days_back: Optional[int]) -> Dict:
+        """Progressive fallback response."""
+        filters_applied = []
+        if days_back:
+            filters_applied.append(f"last {days_back} days")
+        if channel_filter:
+            filters_applied.append(f"#{channel_filter}")
+
+        if filters_applied:
+            filters_str = " in the " + " and ".join(filters_applied)
+            suggestion = "\n\nTry:\n• Broader time range (e.g., 'this month')\n• No channel filter\n• Related topics"
+        else:
+            filters_str = ""
+            suggestion = "\n\nTry rephrasing or providing more context (channel/date)!"
+
+        answer = f"I couldn't find relevant messages{filters_str}. There might be little activity or no matches.{suggestion}"
+
+        return {
+            'answer': answer,
+            'sources': [],
+            'confidence': 0,
+            'confidence_explanation': 'No relevant messages after broad search',
+            'project_links': [],
+            'context_used': 0,
+            'fallback_level': 'broad_search_tried'
+        }
 
     def _filter_quality_messages(self, messages: List[Dict], limit: int) -> List[Dict]:
         """
@@ -264,7 +373,8 @@ class QAService:
         self,
         question: str,
         context: str,
-        messages: List[Dict]
+        messages: List[Dict],
+        intent: str
     ) -> Dict:
         """
         Generate answer using Claude API.
@@ -355,7 +465,8 @@ Answer the question based on these messages. Be comprehensive and include all re
                 'confidence_explanation': confidence_explanation,
                 'project_links': project_links,
                 'context_used': len(messages),
-                'model': 'claude-3-5-sonnet'
+                'model': 'claude-3-5-sonnet',
+                'intent': intent
             }
 
         except Exception as e:
@@ -372,7 +483,8 @@ Answer the question based on these messages. Be comprehensive and include all re
     def _generate_mock_answer(
         self,
         question: str,
-        messages: List[Dict]
+        messages: List[Dict],
+        intent: str
     ) -> Dict:
         """
         Generate mock answer (when API key not available).
@@ -404,7 +516,8 @@ Answer the question based on these messages. Be comprehensive and include all re
             'confidence_explanation': 'Mock mode - medium confidence estimate',
             'project_links': self._extract_project_links(messages),
             'context_used': len(messages),
-            'model': 'mock'
+            'model': 'mock',
+            'intent': intent
         }
 
     def _extract_confidence(self, answer: str) -> Tuple[int, str]:
