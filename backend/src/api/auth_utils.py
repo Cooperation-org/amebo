@@ -5,6 +5,10 @@ Authentication utilities - JWT, password hashing, token management
 from datetime import datetime, timedelta
 from typing import Optional
 import os
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 from jose import JWTError, jwt
 import bcrypt

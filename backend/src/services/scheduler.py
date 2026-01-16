@@ -60,15 +60,14 @@ class TaskScheduler:
             cur.execute("""
                 SELECT
                     bs.schedule_id,
-                    bs.org_id,
                     bs.workspace_id,
                     bs.schedule_type,
                     bs.cron_expression,
                     bs.days_to_backfill,
                     bs.include_all_channels,
-                    o.org_name
+                    w.team_name
                 FROM backfill_schedules bs
-                JOIN organizations o ON bs.org_id = o.org_id
+                JOIN workspaces w ON bs.workspace_id = w.workspace_id
                 WHERE bs.is_active = TRUE
             """)
 
@@ -76,17 +75,19 @@ class TaskScheduler:
             logger.info(f"📋 Loading {len(schedules)} scheduled jobs from database")
 
             for schedule in schedules:
-                (schedule_id, org_id, workspace_id, schedule_type,
-                 cron_expr, days, include_all, org_name) = schedule
+                (schedule_id, workspace_id, schedule_type,
+                 cron_expr, days, include_all, team_name) = schedule
 
+                logger.info(f"  Found schedule {schedule_id}: {team_name} - {schedule_type}")
+
+                # Actually schedule the job!
                 await self.add_backfill_job(
                     schedule_id=schedule_id,
-                    org_id=org_id,
                     workspace_id=workspace_id,
                     cron_expression=cron_expr,
                     days_to_backfill=days,
                     include_all_channels=include_all,
-                    org_name=org_name
+                    org_name=team_name
                 )
 
             logger.info(f"✅ Loaded {len(self.jobs)} scheduled jobs")
@@ -100,7 +101,6 @@ class TaskScheduler:
     async def add_backfill_job(
         self,
         schedule_id: int,
-        org_id: int,
         workspace_id: str,
         cron_expression: str,
         days_to_backfill: int = 7,
@@ -108,7 +108,7 @@ class TaskScheduler:
         org_name: str = "Unknown"
     ):
         """Add a scheduled backfill job"""
-        job_id = f"backfill_org{org_id}_ws{workspace_id}_sch{schedule_id}"
+        job_id = f"backfill_ws{workspace_id}_sch{schedule_id}"
 
         try:
             # Parse cron expression (e.g., "0 2 * * *" = daily at 2 AM UTC)
@@ -119,7 +119,7 @@ class TaskScheduler:
                 func=self._run_backfill,
                 trigger=trigger,
                 id=job_id,
-                args=[org_id, workspace_id, days_to_backfill, include_all_channels, schedule_id],
+                args=[workspace_id, days_to_backfill, include_all_channels, schedule_id],
                 name=f"Backfill: {org_name} ({workspace_id})",
                 replace_existing=True,
                 max_instances=1  # Prevent concurrent runs of same job
@@ -127,13 +127,16 @@ class TaskScheduler:
 
             self.jobs[job_id] = job
 
+            # Get next run time (only available after scheduler starts)
+            next_run = "pending (scheduler not started)" if not self.scheduler.running else str(job.next_run_time)
+
             logger.info(
                 f"📅 Scheduled backfill job: {job_id}\n"
-                f"   Organization: {org_name} (ID: {org_id})\n"
+                f"   Organization: {org_name}\n"
                 f"   Workspace: {workspace_id}\n"
                 f"   Schedule: {cron_expression}\n"
                 f"   Days to backfill: {days_to_backfill}\n"
-                f"   Next run: {job.next_run_time}"
+                f"   Next run: {next_run}"
             )
 
         except Exception as e:
@@ -141,7 +144,6 @@ class TaskScheduler:
 
     async def trigger_manual_backfill(
         self,
-        org_id: int,
         workspace_id: str,
         days_to_backfill: int = 7,
         include_all_channels: bool = True
@@ -152,13 +154,12 @@ class TaskScheduler:
         """
         logger.info(
             f"🔧 Manual backfill triggered:\n"
-            f"   Org ID: {org_id}\n"
             f"   Workspace: {workspace_id}\n"
             f"   Days: {days_to_backfill}"
         )
 
         # Create unique job ID for manual run
-        job_id = f"manual_backfill_org{org_id}_ws{workspace_id}_{int(datetime.now(timezone.utc).timestamp())}"
+        job_id = f"manual_backfill_ws{workspace_id}_{int(datetime.now(timezone.utc).timestamp())}"
 
         try:
             # Schedule immediate run
@@ -166,8 +167,8 @@ class TaskScheduler:
                 func=self._run_backfill,
                 trigger=DateTrigger(run_date=datetime.now(timezone.utc)),
                 id=job_id,
-                args=[org_id, workspace_id, days_to_backfill, include_all_channels, None],
-                name=f"Manual Backfill: Org {org_id} ({workspace_id})",
+                args=[workspace_id, days_to_backfill, include_all_channels, None],
+                name=f"Manual Backfill: {workspace_id}",
                 max_instances=1
             )
 
@@ -188,7 +189,6 @@ class TaskScheduler:
 
     async def _run_backfill(
         self,
-        org_id: int,
         workspace_id: str,
         days: int,
         include_all: bool,
@@ -201,14 +201,13 @@ class TaskScheduler:
         job_type = "scheduled" if schedule_id else "manual"
         logger.info(
             f"▶️  Starting {job_type} backfill:\n"
-            f"   Org ID: {org_id}\n"
             f"   Workspace: {workspace_id}\n"
             f"   Days: {days}\n"
             f"   All channels: {include_all}"
         )
 
         # Track job execution in database
-        job_run_id = await self._record_job_start(org_id, workspace_id, schedule_id, job_type)
+        job_run_id = await self._record_job_start(workspace_id, schedule_id, job_type)
 
         try:
             # Get workspace credentials from database
@@ -282,7 +281,6 @@ class TaskScheduler:
 
     async def _record_job_start(
         self,
-        org_id: int,
         workspace_id: str,
         schedule_id: Optional[int],
         job_type: str
@@ -294,15 +292,14 @@ class TaskScheduler:
         try:
             cur.execute("""
                 INSERT INTO backfill_job_runs (
-                    org_id,
                     workspace_id,
                     schedule_id,
                     job_type,
                     status,
                     started_at
-                ) VALUES (%s, %s, %s, %s, 'running', NOW())
+                ) VALUES (%s, %s, %s, 'running', NOW())
                 RETURNING job_run_id
-            """, (org_id, workspace_id, schedule_id, job_type))
+            """, (workspace_id, schedule_id, job_type))
 
             job_run_id = cur.fetchone()[0]
             conn.commit()
