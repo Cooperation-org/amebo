@@ -286,7 +286,50 @@ CREATE INDEX idx_teams_workspace ON teams(workspace_id);
 -- OPERATIONAL TABLES
 -- ============================================================================
 
--- 12. SYNC_STATUS: Track sync progress per channel
+-- 12. BACKFILL_SCHEDULES: Automated backfill scheduling
+CREATE TABLE IF NOT EXISTS backfill_schedules (
+    schedule_id SERIAL PRIMARY KEY,
+    org_id INT NOT NULL REFERENCES organizations(org_id) ON DELETE CASCADE,
+    workspace_id VARCHAR(20) NOT NULL REFERENCES workspaces(workspace_id) ON DELETE CASCADE,
+    channel_id VARCHAR(20),
+    schedule_type VARCHAR(20) DEFAULT 'cron', -- 'cron', 'interval'
+    cron_expression VARCHAR(50) DEFAULT '*/30 * * * *', -- Default: every 30 minutes
+    days_to_backfill INT DEFAULT 90, -- Default: 90 days back
+    include_all_channels BOOLEAN DEFAULT true,
+    is_active BOOLEAN DEFAULT true,
+    last_run TIMESTAMP,
+    next_run TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_backfill_schedules_workspace ON backfill_schedules(workspace_id);
+CREATE INDEX idx_backfill_schedules_active ON backfill_schedules(is_active) WHERE is_active = true;
+CREATE INDEX idx_backfill_schedules_next_run ON backfill_schedules(next_run) WHERE is_active = true;
+
+-- 12a. INDEXING_STATUS: Track indexing progress per channel
+CREATE TABLE IF NOT EXISTS indexing_status (
+    workspace_id VARCHAR(20) NOT NULL,
+    channel_id VARCHAR(20) NOT NULL,
+    last_indexed_ts VARCHAR(20), -- Timestamp of most recent indexed message
+    oldest_indexed_ts VARCHAR(20), -- Timestamp of oldest indexed message
+    total_messages INT DEFAULT 0,
+    last_sync_at TIMESTAMP DEFAULT NOW(),
+    status VARCHAR(20) DEFAULT 'current', -- 'current', 'behind', 'indexing', 'failed'
+    error_message TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (workspace_id, channel_id),
+    FOREIGN KEY (workspace_id) REFERENCES workspaces(workspace_id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_indexing_status_workspace ON indexing_status(workspace_id);
+CREATE INDEX idx_indexing_status_status ON indexing_status(status);
+CREATE INDEX idx_indexing_status_last_sync ON indexing_status(last_sync_at);
+
+-- ============================================================================
+
+-- 13. SYNC_STATUS: Track sync progress per channel
 CREATE TABLE IF NOT EXISTS sync_status (
     sync_id SERIAL PRIMARY KEY,
     workspace_id VARCHAR(20) NOT NULL REFERENCES workspaces(workspace_id) ON DELETE CASCADE,
@@ -308,9 +351,26 @@ CREATE INDEX idx_sync_status_status ON sync_status(status);
 CREATE UNIQUE INDEX idx_sync_status_active ON sync_status(workspace_id, channel_id, status)
     WHERE status IN ('running', 'pending');
 
+-- 14. CONVERSATION_HISTORY: Track multi-turn conversations
+CREATE TABLE IF NOT EXISTS conversation_history (
+    conversation_id SERIAL PRIMARY KEY,
+    workspace_id VARCHAR(20) NOT NULL,
+    thread_ts VARCHAR(20) NOT NULL,
+    channel_id VARCHAR(20) NOT NULL,
+    role VARCHAR(10) NOT NULL, -- 'user' or 'assistant'
+    content TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(workspace_id, thread_ts, created_at),
+    FOREIGN KEY (workspace_id) REFERENCES workspaces(workspace_id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_conversation_thread ON conversation_history(workspace_id, thread_ts, created_at);
+CREATE INDEX idx_conversation_workspace ON conversation_history(workspace_id);
+CREATE INDEX idx_conversation_channel ON conversation_history(workspace_id, channel_id);
+
 -- ============================================================================
 
--- 13. PROCESSING_QUEUE: Async job tracking
+-- 14. PROCESSING_QUEUE: Async job tracking
 CREATE TABLE IF NOT EXISTS processing_queue (
     queue_id SERIAL PRIMARY KEY,
     workspace_id VARCHAR(20) REFERENCES workspaces(workspace_id) ON DELETE CASCADE,
@@ -333,7 +393,7 @@ CREATE INDEX idx_processing_queue_message ON processing_queue(message_id);
 
 -- ============================================================================
 
--- 14. BOT_CONFIG: Runtime configuration
+-- 15. BOT_CONFIG: Runtime configuration
 CREATE TABLE IF NOT EXISTS bot_config (
     config_key VARCHAR(100) PRIMARY KEY,
     config_value JSONB NOT NULL,
