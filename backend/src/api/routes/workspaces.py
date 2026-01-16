@@ -9,6 +9,7 @@ from typing import List, Optional
 import logging
 
 from src.api.middleware.auth import get_current_user
+from src.api.utils.errors import get_safe_error
 from src.db.connection import DatabaseConnection
 
 logger = logging.getLogger(__name__)
@@ -154,7 +155,7 @@ async def create_workspace(
         logger.error(f"Error creating workspace: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to create workspace: {str(e)}"
+            detail=get_safe_error('create_workspace')
         )
     finally:
         if 'cursor' in locals():
@@ -479,7 +480,7 @@ async def test_connection(
         logger.error(f"Error testing connection: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Connection test failed: {str(e)}"
+            detail=get_safe_error('connection_test')
         )
 
 class BackfillRequest(BaseModel):
@@ -538,7 +539,7 @@ async def backfill_workspace(
         logger.error(f"Error during backfill: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Backfill failed: {str(e)}"
+            detail=get_safe_error('backfill')
         )
     finally:
         if 'cursor' in locals():
