@@ -15,6 +15,7 @@ from slack_sdk.errors import SlackApiError
 
 from src.db.connection import DatabaseConnection
 from src.db.chromadb_client import ChromaDBClient
+from src.services.backfill_service import BackfillService
 from psycopg2 import extras
 
 logger = logging.getLogger(__name__)
@@ -225,6 +226,61 @@ class SlackListener:
 
             except Exception as e:
                 logger.error(f"Error handling channel creation: {e}", exc_info=True)
+
+        @app.event("member_joined_channel")
+        async def handle_bot_join_channel(event, client: AsyncWebClient):
+            """Handle bot joining a channel - trigger immediate backfill"""
+            try:
+                user_id = event.get('user')
+                channel_id = event.get('channel')
+
+                # Get bot user ID
+                auth_response = await client.auth_test()
+                bot_user_id = auth_response['user_id']
+
+                # Check if it's the bot that joined
+                if user_id == bot_user_id:
+                    logger.info(f"🤖 Bot joined channel {channel_id} in {workspace_id}")
+
+                    # Get channel name
+                    try:
+                        channel_info = await client.conversations_info(channel=channel_id)
+                        channel_name = channel_info['channel']['name']
+                    except SlackApiError:
+                        channel_name = channel_id
+
+                    # Post indexing start message
+                    await client.chat_postMessage(
+                        channel=channel_id,
+                        text=f"👋 Hi! I'm indexing this channel's history (90 days back). I'll let you know when I'm ready!"
+                    )
+
+                    # Get bot token for backfill
+                    conn = DatabaseConnection.get_connection()
+                    try:
+                        with conn.cursor() as cur:
+                            cur.execute("""
+                                SELECT bot_token FROM installations
+                                WHERE workspace_id = %s AND is_active = TRUE
+                            """, (workspace_id,))
+                            result = cur.fetchone()
+                            if result:
+                                bot_token = result[0]
+                            else:
+                                logger.error(f"No bot token found for workspace {workspace_id}")
+                                return
+                    finally:
+                        DatabaseConnection.return_connection(conn)
+
+                    # Trigger immediate backfill in background
+                    asyncio.create_task(
+                        self._run_immediate_backfill(
+                            workspace_id, channel_id, channel_name, bot_token, client
+                        )
+                    )
+
+            except Exception as e:
+                logger.error(f"Error handling bot join channel: {e}", exc_info=True)
 
     async def _store_message(self, message_data: dict):
         """
@@ -451,6 +507,63 @@ class SlackListener:
             logger.error(f"Failed to store channel: {e}", exc_info=True)
         finally:
             DatabaseConnection.return_connection(conn)
+
+    async def _run_immediate_backfill(
+        self,
+        workspace_id: str,
+        channel_id: str,
+        channel_name: str,
+        bot_token: str,
+        client: AsyncWebClient
+    ):
+        """
+        Run immediate backfill for a channel when bot joins
+
+        Args:
+            workspace_id: Slack workspace ID
+            channel_id: Channel ID to backfill
+            channel_name: Channel name for logging
+            bot_token: Bot token for API calls
+            client: Slack web client for posting messages
+        """
+        try:
+            logger.info(f"🔄 Starting immediate backfill for #{channel_name} in {workspace_id}")
+
+            # Initialize backfill service
+            backfill_service = BackfillService(
+                workspace_id=workspace_id,
+                bot_token=bot_token
+            )
+
+            # Run backfill for this specific channel (90 days back)
+            result = await backfill_service.backfill_messages(
+                days=90,
+                include_all_channels=False,
+                channel_ids=[channel_id]
+            )
+
+            # Get message count
+            message_count = result.get('total_messages', 0)
+
+            # Post completion message
+            await client.chat_postMessage(
+                channel=channel_id,
+                text=f"✅ Indexed {message_count} messages from the last 90 days! Ask me anything with `/ask <question>`"
+            )
+
+            logger.info(f"✅ Completed immediate backfill for #{channel_name}: {message_count} messages")
+
+        except Exception as e:
+            logger.error(f"❌ Failed immediate backfill for #{channel_name}: {e}", exc_info=True)
+
+            # Post error message to channel
+            try:
+                await client.chat_postMessage(
+                    channel=channel_id,
+                    text="⚠️ Sorry, I encountered an error while indexing this channel. Please contact your admin."
+                )
+            except Exception:
+                pass  # Don't fail if we can't post error message
 
     async def start(self):
         """Start listening to all workspaces"""
