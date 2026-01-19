@@ -49,6 +49,7 @@ class QAResponse(BaseModel):
     sources: list = []
     question: str
     processing_time_ms: Optional[float] = None
+    intent: Optional[str] = None
 
 # Mock auth - FOR LOCAL DEVELOPMENT ONLY
 # In production, use the real auth middleware
@@ -106,18 +107,23 @@ async def ask_question(request: QARequest, current_user: dict = Depends(get_curr
     # Generate response based on question content
     if any(word in question_lower for word in ['weather', 'temperature', 'rain', 'sunny']):
         answer = "I don't have access to real-time weather data. To get weather information, you'd need to connect a weather API or check a weather service."
+        intent = "casual"
         confidence = 60
     elif any(word in question_lower for word in ['hello', 'hi', 'hey', 'greetings']):
         answer = "Hello! I'm your AI assistant. I can help answer questions about your team's Slack conversations once you connect a workspace."
+        intent = "greeting"
         confidence = 95
     elif any(word in question_lower for word in ['help', 'what can you do', 'capabilities']):
         answer = "I can help you search through your team's Slack messages, find relevant conversations, and answer questions based on your team's knowledge. Connect a workspace to get started!"
+        intent = ""
         confidence = 90
     elif any(word in question_lower for word in ['project', 'code', 'development', 'bug', 'feature']):
         answer = "I can help you find discussions about projects, code reviews, bug reports, and feature requests from your team's Slack conversations. Connect your workspace to search through your team's development discussions."
+        intent = "factual"
         confidence = 75
     else:
         answer = f"I understand you're asking about '{request.question}'. Once you connect a Slack workspace, I'll be able to search through your team's conversations to provide more specific and relevant answers."
+        intent = ""
         confidence = 70
         
     return QAResponse(
@@ -127,7 +133,8 @@ async def ask_question(request: QARequest, current_user: dict = Depends(get_curr
         sources=[],
         project_links=[],
         question=request.question,
-        processing_time_ms=50.0
+        processing_time_ms=50.0,
+        intent = intent
     )
 
 @app.get("/api/workspaces")

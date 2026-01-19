@@ -93,7 +93,8 @@ async def ask_question(
             project_links=result.get('project_links', []),
             sources=sources,
             question=request.question,
-            processing_time_ms=processing_time
+            processing_time_ms=processing_time,
+            intent=result['intent']
         )
 
     except HTTPException:
