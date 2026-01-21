@@ -1,5 +1,6 @@
 # Environment
 .env
+.env.production
 venv/
 env/
 *.pyc
@@ -47,3 +48,15 @@ build/
 *.egg-info/
 chromadb_data/
 chroma_db/
+
+TASKS_QUICK_IMPORT.csv
+SLACK_PADI_TASKS.md
+PR_TASK_1_SCHEDULER_FIX.md
+.env.local
+PR_TEMPLATE.md
+PR_TASK_2_AUTH_FIX.md
+PR_TEMPLATE_TASK_2.md
+PR_TASK_3_CHANNEL_JOIN.md
+PR_TEMPLATE_TASK_3.md
+PR_TASK_4_CONVERSATION_MANAGER.md
+PR_TEMPLATE_TASK_4.md
