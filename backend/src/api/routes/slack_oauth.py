@@ -3,12 +3,15 @@ Slack OAuth routes - installation flow, workspace management
 """
 
 from fastapi import APIRouter, HTTPException, status, Depends, Request
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from psycopg2 import extras
 import logging
 import os
 import secrets
 from urllib.parse import urlencode
+import hashlib
+import hmac
+import time
 
 from slack_sdk.oauth import AuthorizeUrlGenerator
 from slack_sdk.web import WebClient
@@ -404,3 +407,71 @@ async def get_install_button():
     """
 
     return HTMLResponse(content=button_html)
+
+
+def verify_slack_signature(request_body: bytes, timestamp: str, signature: str) -> bool:
+    """Verify Slack request signature"""
+    signing_secret = os.getenv("SLACK_SIGNING_SECRET")
+    if not signing_secret:
+        logger.warning("SLACK_SIGNING_SECRET not configured")
+        return False
+
+    # Check timestamp is within 5 minutes
+    current_timestamp = int(time.time())
+    if abs(current_timestamp - int(timestamp)) > 60 * 5:
+        logger.warning("Slack request timestamp too old")
+        return False
+
+    # Compute signature
+    sig_basestring = f"v0:{timestamp}:{request_body.decode('utf-8')}"
+    computed_signature = 'v0=' + hmac.new(
+        signing_secret.encode(),
+        sig_basestring.encode(),
+        hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(computed_signature, signature)
+
+
+@router.post("/events")
+async def slack_events(request: Request):
+    """
+    Slack Events API endpoint
+    Handles URL verification and incoming events
+    """
+    # Get request body and headers
+    body = await request.body()
+    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
+    signature = request.headers.get("X-Slack-Signature", "")
+
+    # Verify signature for non-challenge requests
+    try:
+        payload = await request.json()
+    except Exception as e:
+        logger.error(f"Failed to parse Slack event payload: {e}")
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+
+    # Handle URL verification challenge
+    if payload.get("type") == "url_verification":
+        logger.info("Slack URL verification challenge received")
+        return JSONResponse(content={"challenge": payload.get("challenge")})
+
+    # Verify signature for actual events
+    if not verify_slack_signature(body, timestamp, signature):
+        logger.warning("Invalid Slack signature")
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    # Handle events
+    event = payload.get("event", {})
+    event_type = event.get("type")
+
+    logger.info(f"Received Slack event: {event_type}")
+
+    # Process different event types
+    if event_type == "app_mention":
+        logger.info(f"App mentioned in channel {event.get('channel')}")
+    elif event_type == "message":
+        logger.info(f"Message received in channel {event.get('channel')}")
+
+    # Always return 200 OK to acknowledge receipt
+    return JSONResponse(content={"ok": True})
