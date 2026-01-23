@@ -48,7 +48,7 @@ services:
       CHROMA_HOST: chromadb
       CHROMA_PORT: 8000
     ports:
-      - "8000:8000"
+      - "8000:8003"
     depends_on:
       postgres:
         condition: service_healthy
