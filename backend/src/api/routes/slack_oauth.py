@@ -25,6 +25,7 @@ from src.api.models import (
 from src.api.auth_utils import get_current_user
 from src.db.connection import DatabaseConnection
 from src.services.credential_service import CredentialService
+from src.services.backfill_service import BackfillService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -230,6 +231,24 @@ async def slack_oauth_callback(request: Request, code: str = None, state: str = 
                 """,
                 (org_id, workspace_id, team_name, user_id)
             )
+
+            # Create backfill schedule for this workspace
+            cur.execute(
+                """
+                INSERT INTO backfill_schedules (
+                    workspace_id, schedule_type, cron_expression,
+                    days_to_backfill, include_all_channels, is_active
+                )
+                VALUES (%s, 'cron', '*/30 * * * *', 90, TRUE, TRUE)
+                ON CONFLICT (workspace_id) DO UPDATE
+                SET cron_expression = EXCLUDED.cron_expression,
+                    days_to_backfill = EXCLUDED.days_to_backfill,
+                    is_active = TRUE,
+                    updated_at = NOW()
+                """,
+                (workspace_id,)
+            )
+            logger.info(f"Created backfill schedule for workspace {workspace_id}")
 
             # Log audit event
             cur.execute(
@@ -475,3 +494,75 @@ async def slack_events(request: Request):
 
     # Always return 200 OK to acknowledge receipt
     return JSONResponse(content={"ok": True})
+
+
+@router.post("/workspaces/{workspace_id}/backfill")
+async def trigger_backfill(
+    workspace_id: str,
+    days: int = 90,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Manually trigger a backfill for a workspace
+    Indexes message history from the last N days
+    """
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+            # Verify workspace belongs to this org
+            cur.execute(
+                """
+                SELECT w.workspace_id, w.team_name
+                FROM workspaces w
+                JOIN org_workspaces ow ON w.workspace_id = ow.workspace_id
+                WHERE ow.org_id = %s AND w.workspace_id = %s
+                """,
+                (current_user['org_id'], workspace_id)
+            )
+            workspace = cur.fetchone()
+
+            if not workspace:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Workspace not found or not connected to your organization"
+                )
+
+            # Get credentials
+            credential_service = CredentialService()
+            creds = credential_service.get_credentials(workspace_id)
+
+            if not creds or not creds.get('bot_token'):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Workspace credentials not found"
+                )
+
+            # Trigger backfill
+            backfill_service = BackfillService(
+                workspace_id=workspace_id,
+                bot_token=creds['bot_token']
+            )
+
+            logger.info(f"Starting manual backfill for workspace {workspace_id} ({days} days)")
+
+            # Run backfill asynchronously
+            import asyncio
+            asyncio.create_task(backfill_service.run_backfill(days_back=days))
+
+            return {
+                "message": f"Backfill started for {workspace['team_name']}",
+                "workspace_id": workspace_id,
+                "days": days,
+                "status": "in_progress"
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Trigger backfill error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to trigger backfill: {str(e)}"
+        )
+    finally:
+        DatabaseConnection.return_connection(conn)

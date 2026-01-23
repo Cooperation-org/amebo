@@ -138,6 +138,84 @@ class SlackHelperApp:
             logger.error(f"Slack listener error: {e}", exc_info=True)
             raise
 
+    async def initialize_workspace(self):
+        """
+        Initialize workspace in database and create backfill schedule.
+        Runs on startup to ensure workspace is set up.
+        """
+        from src.db.connection import DatabaseConnection
+        from slack_sdk import WebClient
+
+        bot_token = os.getenv("SLACK_BOT_TOKEN")
+        if not bot_token:
+            logger.info("Skipping workspace initialization (no bot token)")
+            return
+
+        try:
+            # Get workspace info from Slack
+            client = WebClient(token=bot_token)
+            auth_response = client.auth_test()
+            workspace_id = auth_response['team_id']
+            team_name = auth_response['team']
+
+            logger.info(f"Initializing workspace: {team_name} ({workspace_id})")
+
+            # Initialize database connection
+            DatabaseConnection.initialize_pool()
+            conn = DatabaseConnection.get_connection()
+
+            try:
+                with conn.cursor() as cur:
+                    # Insert or update workspace
+                    cur.execute(
+                        """
+                        INSERT INTO workspaces (workspace_id, team_name, is_active)
+                        VALUES (%s, %s, TRUE)
+                        ON CONFLICT (workspace_id) DO UPDATE
+                        SET team_name = EXCLUDED.team_name, is_active = TRUE, updated_at = NOW()
+                        """,
+                        (workspace_id, team_name)
+                    )
+
+                    # Check if backfill schedule exists
+                    cur.execute(
+                        "SELECT schedule_id FROM backfill_schedules WHERE workspace_id = %s",
+                        (workspace_id,)
+                    )
+                    schedule_exists = cur.fetchone()
+
+                    if not schedule_exists:
+                        # Create backfill schedule (every 30 minutes)
+                        cur.execute(
+                            """
+                            INSERT INTO backfill_schedules (
+                                workspace_id, schedule_type, cron_expression,
+                                days_to_backfill, include_all_channels, is_active
+                            )
+                            VALUES (%s, 'cron', '*/30 * * * *', 90, TRUE, TRUE)
+                            """,
+                            (workspace_id,)
+                        )
+                        logger.info("Created backfill schedule (every 30 minutes)")
+
+                        # Trigger initial backfill
+                        logger.info("Triggering initial backfill...")
+                        from src.services.backfill_service import BackfillService
+                        backfill_service = BackfillService(workspace_id, bot_token)
+                        asyncio.create_task(backfill_service.run_backfill(days_back=90))
+                    else:
+                        logger.info("Backfill schedule already exists")
+
+                    conn.commit()
+
+            finally:
+                DatabaseConnection.return_connection(conn)
+
+            logger.info(f"Workspace initialized: {team_name}")
+
+        except Exception as e:
+            logger.error(f"Failed to initialize workspace: {e}", exc_info=True)
+
     async def start_scheduler(self):
         """
         Start the background task scheduler.
@@ -145,7 +223,7 @@ class SlackHelperApp:
         """
         from src.services.scheduler import TaskScheduler
 
-        logger.info("🚀 Starting background task scheduler")
+        logger.info("Starting background task scheduler")
 
         try:
             # Initialize scheduler
@@ -176,6 +254,11 @@ class SlackHelperApp:
         logger.info("=" * 70)
         logger.info("SLACK HELPER BOT - UNIFIED BACKEND")
         logger.info("=" * 70)
+        logger.info("")
+
+        # Initialize workspace and backfill schedule
+        await self.initialize_workspace()
+
         logger.info("")
 
         # Create tasks for all services
