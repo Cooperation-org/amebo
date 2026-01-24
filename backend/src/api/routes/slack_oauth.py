@@ -564,7 +564,7 @@ async def trigger_backfill(
 
             # Run backfill asynchronously
             import asyncio
-            asyncio.create_task(backfill_service.run_backfill(days_back=days))
+            asyncio.create_task(backfill_service.backfill_messages(days=days))
 
             return {
                 "message": f"Backfill started for {workspace['team_name']}",

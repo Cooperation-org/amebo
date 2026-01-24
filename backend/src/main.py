@@ -207,7 +207,7 @@ class SlackHelperApp:
                         logger.info("Triggering initial 90-day backfill...")
                         from src.services.backfill_service import BackfillService
                         backfill_service = BackfillService(workspace_id, bot_token)
-                        asyncio.create_task(backfill_service.run_backfill(days_back=90))
+                        asyncio.create_task(backfill_service.backfill_messages(days=90))
                         logger.info("Backfill task started in background")
                     else:
                         logger.info("Backfill schedule already exists - skipping creation")
