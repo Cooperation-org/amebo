@@ -146,19 +146,22 @@ class SlackHelperApp:
         from src.db.connection import DatabaseConnection
         from slack_sdk import WebClient
 
+        logger.info("Starting workspace initialization...")
+
         bot_token = os.getenv("SLACK_BOT_TOKEN")
         if not bot_token:
-            logger.info("Skipping workspace initialization (no bot token)")
+            logger.warning("SLACK_BOT_TOKEN not found - skipping workspace initialization")
             return
 
         try:
             # Get workspace info from Slack
+            logger.info(f"Connecting to Slack with bot token: {bot_token[:20]}...")
             client = WebClient(token=bot_token)
             auth_response = client.auth_test()
             workspace_id = auth_response['team_id']
             team_name = auth_response['team']
 
-            logger.info(f"Initializing workspace: {team_name} ({workspace_id})")
+            logger.info(f"Connected to workspace: {team_name} ({workspace_id})")
 
             # Initialize database connection
             DatabaseConnection.initialize_pool()
@@ -167,6 +170,7 @@ class SlackHelperApp:
             try:
                 with conn.cursor() as cur:
                     # Insert or update workspace
+                    logger.info(f"Creating/updating workspace record in database...")
                     cur.execute(
                         """
                         INSERT INTO workspaces (workspace_id, team_name, is_active)
@@ -186,6 +190,7 @@ class SlackHelperApp:
 
                     if not schedule_exists:
                         # Create backfill schedule (every 30 minutes)
+                        logger.info("Creating backfill schedule (every 30 minutes)...")
                         cur.execute(
                             """
                             INSERT INTO backfill_schedules (
@@ -196,25 +201,29 @@ class SlackHelperApp:
                             """,
                             (workspace_id,)
                         )
-                        logger.info("Created backfill schedule (every 30 minutes)")
+                        logger.info("Backfill schedule created")
 
                         # Trigger initial backfill
-                        logger.info("Triggering initial backfill...")
+                        logger.info("Triggering initial 90-day backfill...")
                         from src.services.backfill_service import BackfillService
                         backfill_service = BackfillService(workspace_id, bot_token)
                         asyncio.create_task(backfill_service.run_backfill(days_back=90))
+                        logger.info("Backfill task started in background")
                     else:
-                        logger.info("Backfill schedule already exists")
+                        logger.info("Backfill schedule already exists - skipping creation")
 
                     conn.commit()
+                    logger.info("Database changes committed")
 
             finally:
                 DatabaseConnection.return_connection(conn)
 
-            logger.info(f"Workspace initialized: {team_name}")
+            logger.info(f"Workspace initialization complete for {team_name}")
 
         except Exception as e:
-            logger.error(f"Failed to initialize workspace: {e}", exc_info=True)
+            logger.error(f"FAILED to initialize workspace: {e}", exc_info=True)
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error details: {str(e)}")
 
     async def start_scheduler(self):
         """

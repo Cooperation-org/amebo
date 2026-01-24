@@ -483,14 +483,31 @@ async def slack_events(request: Request):
     # Handle events
     event = payload.get("event", {})
     event_type = event.get("type")
+    team_id = payload.get("team_id")
 
     logger.info(f"Received Slack event: {event_type}")
 
     # Process different event types
     if event_type == "app_mention":
-        logger.info(f"App mentioned in channel {event.get('channel')}")
+        channel = event.get("channel")
+        text = event.get("text", "")
+        user = event.get("user")
+        ts = event.get("ts")
+
+        logger.info(f"App mentioned in channel {channel} by {user}")
+
+        # Process the mention asynchronously
+        import asyncio
+        from src.services.slack_commands_simple import handle_app_mention
+        asyncio.create_task(handle_app_mention(team_id, channel, text, user, ts))
+
     elif event_type == "message":
-        logger.info(f"Message received in channel {event.get('channel')}")
+        # Ignore bot messages to prevent loops
+        if event.get("bot_id"):
+            logger.debug("Ignoring bot message")
+        else:
+            channel = event.get("channel")
+            logger.info(f"Message received in channel {channel}")
 
     # Always return 200 OK to acknowledge receipt
     return JSONResponse(content={"ok": True})
