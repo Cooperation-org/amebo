@@ -170,9 +170,52 @@ class QAService:
         Returns:
             Channel name (without #) or None
         """
+        import re
+
+        # First, check for Slack channel mention format: <#CHANNELID> or <#CHANNELID|name>
+        channel_mention_pattern = r'<#([A-Z0-9]+)(?:\|([a-zA-Z0-9_-]+))?>'
+        matches = re.findall(channel_mention_pattern, question)
+
+        if matches:
+            channel_id, channel_name = matches[0]
+
+            # If channel name is provided in the mention, use it
+            if channel_name:
+                logger.info(f"Detected channel filter from mention: {channel_name} ({channel_id})")
+                return channel_name
+
+            # Otherwise, look up channel name from database using channel_id
+            try:
+                from src.db.connection import DatabaseConnection
+                conn = DatabaseConnection.get_connection()
+                cur = conn.cursor()
+
+                cur.execute(
+                    "SELECT channel_name FROM channels WHERE channel_id = %s",
+                    (channel_id,)
+                )
+                row = cur.fetchone()
+
+                cur.close()
+                conn.close()
+
+                if row:
+                    channel_name = row[0]
+                    logger.info(f"Detected channel filter from ID lookup: {channel_name} ({channel_id})")
+                    return channel_name
+                else:
+                    # If not in database, just use the channel_id as filter
+                    logger.info(f"Detected channel ID filter: {channel_id}")
+                    return channel_id
+
+            except Exception as e:
+                logger.warning(f"Error looking up channel name for {channel_id}: {e}")
+                # Fall back to using channel_id
+                return channel_id
+
+        # Fall back to checking for common channel names
         question_lower = question.lower()
 
-        # Common channel names
         channel_keywords = [
             'general', 'standup', 'hackathons', 'random', 'engineering',
             'design', 'product', 'marketing', 'sales', 'support',
@@ -254,11 +297,79 @@ class QAService:
             channel_name = metadata.get('channel_name', 'unknown')
             user_name = metadata.get('user_name', 'unknown')
 
+            # Parse user mentions in message text and replace with names
+            message_text = self._parse_user_mentions(msg['text'])
+
             context_parts.append(
-                f"[#{channel_name}] (from {user_name}):\n{msg['text']}"
+                f"[#{channel_name}] (from {user_name}):\n{message_text}"
             )
 
         return "\n\n".join(context_parts)
+
+    def _parse_user_mentions(self, text: str) -> str:
+        """
+        Parse user mentions in Slack message format (<@USERID>) and replace with usernames.
+
+        Args:
+            text: Message text with user mentions
+
+        Returns:
+            Text with mentions replaced by names
+        """
+        import re
+        from src.db.connection import DatabaseConnection
+
+        # Find all user mentions in format <@USERID> or <@USERID|username>
+        mention_pattern = r'<@([A-Z0-9]+)(?:\|([^>]+))?>'
+        matches = re.findall(mention_pattern, text)
+
+        if not matches:
+            return text
+
+        # Build a map of user IDs to names
+        user_ids = [match[0] for match in matches]
+        user_map = {}
+
+        try:
+            conn = DatabaseConnection.get_connection()
+            cur = conn.cursor()
+
+            # Look up usernames from users table
+            cur.execute(
+                """
+                SELECT user_id, real_name, display_name
+                FROM users
+                WHERE workspace_id = %s AND user_id = ANY(%s)
+                """,
+                (self.workspace_id, user_ids)
+            )
+
+            for row in cur.fetchall():
+                user_id, real_name, display_name = row
+                # Prefer display_name, fall back to real_name
+                user_map[user_id] = display_name or real_name or user_id
+
+            cur.close()
+            conn.close()
+
+        except Exception as e:
+            logger.warning(f"Error looking up user mentions: {e}")
+
+        # Replace mentions in text
+        def replace_mention(match):
+            user_id = match.group(1)
+            username_in_mention = match.group(2)  # From <@USERID|username> format
+
+            # Use the username if provided in the mention, otherwise lookup
+            if username_in_mention:
+                return f"@{username_in_mention}"
+            elif user_id in user_map:
+                return f"@{user_map[user_id]}"
+            else:
+                # Fall back to showing the ID if we can't resolve it
+                return f"@{user_id}"
+
+        return re.sub(mention_pattern, replace_mention, text)
 
     def _generate_answer_with_claude(
         self,
@@ -303,9 +414,10 @@ class QAService:
 
 3. DO NOT add a "What I found:" section - just provide the answer
 
-**Formatting:**
-- Use *bold* for emphasis (people names, key terms)
-- Use _italic_ for secondary emphasis
+**Formatting (IMPORTANT - This is for Slack, not Markdown):**
+- Use *single asterisks* for bold (NOT double asterisks like **this**)
+- Example: *important term* NOT **important term**
+- Use _underscores_ for italic
 - Write in clear paragraphs
 - NO emojis or emoji codes
 - NO separate "Sources:" or "Confidence:" sections
@@ -347,6 +459,10 @@ Answer the question based on these messages. Be comprehensive and include all re
 
             # Remove emoji shortcodes from the entire answer
             answer_text = re.sub(r':[\w_]+:', '', answer_text)
+
+            # Convert markdown bold (**text**) to Slack bold (*text*)
+            # This ensures compatibility even if Claude doesn't follow instructions
+            answer_text = re.sub(r'\*\*([^\*]+?)\*\*', r'*\1*', answer_text)
 
             # Clean up extra blank lines
             answer_text = re.sub(r'\n{3,}', '\n\n', answer_text).strip()

@@ -175,8 +175,7 @@ class TaskScheduler:
             return {
                 "job_id": job_id,
                 "status": "scheduled",
-                "message": "Manual backfill job scheduled",
-                "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None
+                "message": "Manual backfill job scheduled"
             }
 
         except Exception as e:

@@ -241,7 +241,18 @@ class ChromaDBClient:
             where_filter = {}
 
         # Enforce workspace_id filter
-        where_filter['workspace_id'] = workspace_id
+        # ChromaDB requires $and operator when combining multiple filters
+        if where_filter:
+            # Combine existing filters with workspace_id using $and
+            where_filter = {
+                "$and": [
+                    {"workspace_id": workspace_id},
+                    where_filter
+                ]
+            }
+        else:
+            # Just workspace_id filter
+            where_filter = {"workspace_id": workspace_id}
 
         try:
             results = collection.query(

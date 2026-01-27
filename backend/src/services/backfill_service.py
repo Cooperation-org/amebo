@@ -95,6 +95,9 @@ class BackfillService:
             channel_name = channel.get("name", "unknown")
 
             try:
+                # Store/update channel metadata in database
+                await self._store_channel_metadata(channel)
+
                 messages = await self._fetch_channel_messages(
                     channel_id=channel_id,
                     channel_name=channel_name,
@@ -154,6 +157,46 @@ class BackfillService:
         except SlackApiError as e:
             logger.error(f"Error fetching channels: {e.response['error']}")
             return []
+
+    async def _store_channel_metadata(self, channel: Dict[str, Any]):
+        """
+        Store channel metadata in database
+
+        Args:
+            channel: Channel data from Slack API
+        """
+        try:
+            from src.db.connection import DatabaseConnection
+
+            conn = DatabaseConnection.get_connection()
+            cur = conn.cursor()
+
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO channels (channel_id, channel_name, workspace_id, is_private, is_archived)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (workspace_id, channel_id) DO UPDATE
+                    SET channel_name = EXCLUDED.channel_name,
+                        is_archived = EXCLUDED.is_archived,
+                        last_sync = NOW()
+                    """,
+                    (
+                        channel["id"],
+                        channel.get("name", "unknown"),
+                        self.workspace_id,
+                        channel.get("is_private", False),
+                        channel.get("is_archived", False)
+                    )
+                )
+                conn.commit()
+
+            finally:
+                cur.close()
+                DatabaseConnection.return_connection(conn)
+
+        except Exception as e:
+            logger.warning(f"Could not store channel metadata: {e}")
 
     async def _fetch_channel_messages(
         self,

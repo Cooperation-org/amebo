@@ -146,7 +146,13 @@ class QueryService:
         where_filter = {}
 
         if channel_filter:
-            where_filter['channel_name'] = channel_filter
+            # Try channel_name first, but if filter looks like channel ID (uppercase), also try channel_id
+            if channel_filter.isupper() and len(channel_filter) > 8:
+                # Looks like a channel ID (e.g., C030ESHBN0H)
+                where_filter['channel_id'] = channel_filter
+            else:
+                # Regular channel name (e.g., "standup")
+                where_filter['channel_name'] = channel_filter
 
         # Search in ChromaDB
         results = self.chromadb.search_messages(

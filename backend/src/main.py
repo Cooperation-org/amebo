@@ -188,6 +188,22 @@ class SlackHelperApp:
                         (workspace_id, team_name)
                     )
 
+                    # Store credentials in installations table (needed for scheduler)
+                    app_token = os.getenv("SLACK_APP_TOKEN")
+                    logger.info("Storing credentials in installations table...")
+                    cur.execute(
+                        """
+                        INSERT INTO installations (workspace_id, bot_token, app_token, is_active)
+                        VALUES (%s, %s, %s, TRUE)
+                        ON CONFLICT (workspace_id) DO UPDATE
+                        SET bot_token = EXCLUDED.bot_token,
+                            app_token = EXCLUDED.app_token,
+                            is_active = TRUE,
+                            last_active = NOW()
+                        """,
+                        (workspace_id, bot_token, app_token)
+                    )
+
                     # Check if backfill schedule exists
                     cur.execute(
                         "SELECT schedule_id FROM backfill_schedules WHERE workspace_id = %s",
