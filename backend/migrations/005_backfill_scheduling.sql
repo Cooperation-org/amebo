@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS backfill_job_runs (
 
     -- Constraints
     CONSTRAINT valid_job_type CHECK (job_type IN ('scheduled', 'manual')),
-    CONSTRAINT valid_status CHECK (status IN ('running', 'success', 'failed', 'cancelled'))
+    CONSTRAINT valid_status CHECK (status IN ('running', 'success', 'failed', 'cancelled', 'skipped'))
 );
 
 -- Indexes for performance
@@ -102,6 +102,6 @@ COMMENT ON COLUMN backfill_schedules.days_to_backfill IS 'Number of days to back
 COMMENT ON COLUMN backfill_schedules.include_all_channels IS 'Whether to backfill all channels or only configured ones';
 
 COMMENT ON COLUMN backfill_job_runs.job_type IS 'Whether job was triggered by schedule or manually';
-COMMENT ON COLUMN backfill_job_runs.status IS 'Current status: running, success, failed, cancelled';
+COMMENT ON COLUMN backfill_job_runs.status IS 'Current status: running, success, failed, cancelled, skipped';
 COMMENT ON COLUMN backfill_job_runs.messages_collected IS 'Total messages collected in this run';
 COMMENT ON COLUMN backfill_job_runs.channels_processed IS 'Number of channels processed in this run';

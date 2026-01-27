@@ -214,7 +214,19 @@ class TaskScheduler:
             credentials = await self._get_workspace_credentials(workspace_id)
 
             if not credentials:
-                raise ValueError(f"No credentials found for workspace {workspace_id}")
+                logger.warning(
+                    f"Skipping backfill for workspace {workspace_id} - "
+                    f"No credentials found in installations table. "
+                    f"This workspace may need to be set up or removed from schedules."
+                )
+                await self._record_job_completion(
+                    job_run_id=job_run_id,
+                    status="skipped",
+                    messages_collected=0,
+                    channels_processed=0,
+                    error_message="No credentials found - workspace not configured"
+                )
+                return
 
             # Initialize backfill service
             backfill_service = BackfillService(
@@ -244,7 +256,7 @@ class TaskScheduler:
             )
 
         except Exception as e:
-            logger.error(f"Backfill job failed: {e}", exc_info=True)
+            logger.error(f"Backfill job failed: {e}")
 
             # Record failure
             await self._record_job_completion(
@@ -290,23 +302,88 @@ class TaskScheduler:
         cur = conn.cursor()
 
         try:
+            # Check if table exists first (before doing anything else)
             cur.execute("""
-                INSERT INTO backfill_job_runs (
-                    workspace_id,
-                    schedule_id,
-                    job_type,
-                    status,
-                    started_at
-                ) VALUES (%s, %s, %s, 'running', NOW())
-                RETURNING job_run_id
-            """, (workspace_id, schedule_id, job_type))
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_name = 'backfill_job_runs'
+                )
+            """)
+            table_exists = cur.fetchone()[0]
+
+            if not table_exists:
+                logger.debug("backfill_job_runs table does not exist - job tracking disabled")
+                return -1
+
+            # Check if org_id column exists in workspaces table
+            cur.execute("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns
+                    WHERE table_name = 'workspaces' AND column_name = 'org_id'
+                )
+            """)
+            has_org_id = cur.fetchone()[0]
+
+            if has_org_id:
+                # Get org_id for this workspace
+                cur.execute("""
+                    SELECT org_id FROM workspaces WHERE workspace_id = %s
+                """, (workspace_id,))
+                row = cur.fetchone()
+
+                if not row:
+                    logger.warning(f"Workspace {workspace_id} not found - cannot track job")
+                    return -1
+
+                org_id = row[0]
+
+                cur.execute("""
+                    INSERT INTO backfill_job_runs (
+                        org_id,
+                        workspace_id,
+                        schedule_id,
+                        job_type,
+                        status,
+                        started_at
+                    ) VALUES (%s, %s, %s, %s, 'running', NOW())
+                    RETURNING job_run_id
+                """, (org_id, workspace_id, schedule_id, job_type))
+            else:
+                # No org_id in schema - use workspace_id only
+                logger.debug("Using simplified job tracking (no org_id)")
+
+                # Check if backfill_job_runs has org_id column
+                cur.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.columns
+                        WHERE table_name = 'backfill_job_runs' AND column_name = 'org_id'
+                    )
+                """)
+                job_runs_has_org_id = cur.fetchone()[0]
+
+                if job_runs_has_org_id:
+                    # Table has org_id but workspaces doesn't - skip tracking
+                    logger.debug("Schema mismatch - backfill_job_runs expects org_id but workspaces doesn't have it")
+                    return -1
+                else:
+                    # Insert without org_id
+                    cur.execute("""
+                        INSERT INTO backfill_job_runs (
+                            workspace_id,
+                            schedule_id,
+                            job_type,
+                            status,
+                            started_at
+                        ) VALUES (%s, %s, %s, 'running', NOW())
+                        RETURNING job_run_id
+                    """, (workspace_id, schedule_id, job_type))
 
             job_run_id = cur.fetchone()[0]
             conn.commit()
             return job_run_id
 
         except Exception as e:
-            logger.error(f"Error recording job start: {e}")
+            logger.warning(f"Could not record job start: {e}")
             conn.rollback()
             return -1
         finally:

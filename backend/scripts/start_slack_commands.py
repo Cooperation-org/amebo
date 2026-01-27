@@ -1,15 +1,16 @@
 #!/usr/bin/env python3
 """
-Start Slack Command Handler
-Allows users to ask questions directly in Slack using /ask command
+Start Slack Command Handler (Simple Version)
+Uses raw Socket Mode SDK - no Bolt framework
 """
 
 import sys
 import os
+import asyncio
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
-from src.services.slack_commands import start_command_handler
+from src.services.slack_commands import main
 import logging
 
 logging.basicConfig(
@@ -21,20 +22,20 @@ logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     logger.info("=" * 70)
-    logger.info("SLACK HELPER BOT - COMMAND HANDLER")
+    logger.info("SLACK HELPER BOT - COMMAND HANDLER (SIMPLE)")
     logger.info("=" * 70)
     logger.info("")
     logger.info("Available commands in Slack:")
-    logger.info("  /ask <question>      - Ask a question (only you see the answer)")
-    logger.info("  /askall <question>   - Ask a question (everyone sees the answer)")
-    logger.info("  @bot <question>      - Mention the bot to ask a question")
+    logger.info("  /ask <question>      - Ask a question (private)")
+    logger.info("  /askall <question>   - Ask a question (public)")
+    logger.info("  @bot <question>      - Mention the bot")
     logger.info("")
     logger.info("=" * 70)
 
     try:
-        start_command_handler()
+        asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("\nShutting down command handler...")
+        logger.info("\nShutting down...")
     except Exception as e:
         logger.error(f"Error: {e}", exc_info=True)
         sys.exit(1)

@@ -3,7 +3,7 @@ Slack OAuth routes - installation flow, workspace management
 """
 
 from fastapi import APIRouter, HTTPException, status, Depends, Request
-from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
+from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse, Response
 from psycopg2 import extras
 import logging
 import os
@@ -452,6 +452,9 @@ def verify_slack_signature(request_body: bytes, timestamp: str, signature: str) 
     return hmac.compare_digest(computed_signature, signature)
 
 
+# Cache for processed event IDs to prevent duplicates
+_processed_events = {}
+
 @router.post("/events")
 async def slack_events(request: Request):
     """
@@ -474,38 +477,50 @@ async def slack_events(request: Request):
         logger.info("Slack URL verification challenge received")
         return JSONResponse(content={"challenge": payload.get("challenge")})
 
-    # Get headers for signature verification
-    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
-    signature = request.headers.get("X-Slack-Signature", "")
-
-    # Verify signature for actual events
-    if not verify_slack_signature(body, timestamp, signature):
-        logger.warning("Invalid Slack signature")
-        raise HTTPException(status_code=401, detail="Invalid signature")
-
-    # Handle events
+    # IMMEDIATELY return 200 to prevent Slack retries for events
+    # We'll process asynchronously
+    event_id = payload.get("event_id")
     event = payload.get("event", {})
     event_type = event.get("type")
-    team_id = payload.get("team_id")
+
+    # Check if we've already processed this event (Slack retry)
+    if event_id and event_id in _processed_events:
+        logger.info(f"Ignoring duplicate event {event_id}")
+        return JSONResponse(content={"ok": True})
+
+    # Mark as processing
+    if event_id:
+        _processed_events[event_id] = True
+        # Clean up old events (keep last 1000)
+        if len(_processed_events) > 1000:
+            # Remove oldest 500
+            for key in list(_processed_events.keys())[:500]:
+                del _processed_events[key]
 
     logger.info(f"Received Slack event: {event_type}")
 
-    # Process different event types
+    # Process different event types asynchronously
     if event_type == "app_mention":
+        import asyncio
+        from src.services.slack_commands import handle_app_mention
+
         channel = event.get("channel")
         text = event.get("text", "")
         user = event.get("user")
         ts = event.get("ts")
+        team_id = payload.get("team_id")
 
         logger.info(f"App mentioned in channel {channel} by {user}")
 
-        # Process the mention - await it to catch errors
-        try:
-            from src.services.slack_commands_simple import handle_app_mention
-            await handle_app_mention(team_id, channel, text, user, ts)
-            logger.info("App mention handled successfully")
-        except Exception as e:
-            logger.error(f"Error handling app mention: {e}", exc_info=True)
+        async def process_mention():
+            try:
+                await handle_app_mention(team_id, channel, text, user, ts)
+                logger.info("App mention handled successfully")
+            except Exception as e:
+                logger.error(f"Error handling app mention: {e}", exc_info=True)
+
+        # Create background task (don't await it)
+        asyncio.create_task(process_mention())
 
     elif event_type == "message":
         # Ignore bot messages to prevent loops
@@ -515,7 +530,7 @@ async def slack_events(request: Request):
             channel = event.get("channel")
             logger.info(f"Message received in channel {channel}")
 
-    # Always return 200 OK to acknowledge receipt
+    # Return 200 immediately
     return JSONResponse(content={"ok": True})
 
 
@@ -551,32 +566,63 @@ async def slack_commands(request: Request):
     # Handle commands
     if command == "/ask":
         # Import here to avoid circular imports
-        from src.services.slack_commands_simple import handle_ask
+        from src.services.slack_commands import handle_ask
         from slack_sdk.web.async_client import AsyncWebClient
         import os
+        import asyncio
 
         web_client = AsyncWebClient(token=os.getenv("SLACK_BOT_TOKEN"))
 
-        try:
-            await handle_ask(web_client, user_id, channel_id, text, private=True)
-            return JSONResponse(content={"text": "Processing your question..."})
-        except Exception as e:
-            logger.error(f"Error handling /ask: {e}", exc_info=True)
-            return JSONResponse(content={"text": f"Sorry, an error occurred: {str(e)}"})
+        # Process asynchronously in background to avoid Slack timeout
+        async def process_ask():
+            try:
+                await handle_ask(web_client, user_id, channel_id, text, private=True)
+            except Exception as e:
+                logger.error(f"Error handling /ask: {e}", exc_info=True)
+                # Send error message to user
+                try:
+                    await web_client.chat_postEphemeral(
+                        channel=channel_id,
+                        user=user_id,
+                        text=f"Sorry, an error occurred: {str(e)}"
+                    )
+                except:
+                    pass
+
+        # Create background task (don't await it)
+        asyncio.create_task(process_ask())
+
+        # Return empty 200 response immediately (Slack requires this)
+        return Response(status_code=200)
 
     elif command == "/askall":
-        from src.services.slack_commands_simple import handle_ask
+        from src.services.slack_commands import handle_ask
         from slack_sdk.web.async_client import AsyncWebClient
         import os
+        import asyncio
 
         web_client = AsyncWebClient(token=os.getenv("SLACK_BOT_TOKEN"))
 
-        try:
-            await handle_ask(web_client, user_id, channel_id, text, private=False)
-            return JSONResponse(content={"text": "Processing your question..."})
-        except Exception as e:
-            logger.error(f"Error handling /askall: {e}", exc_info=True)
-            return JSONResponse(content={"text": f"Sorry, an error occurred: {str(e)}"})
+        # Process asynchronously in background to avoid Slack timeout
+        async def process_askall():
+            try:
+                await handle_ask(web_client, user_id, channel_id, text, private=False)
+            except Exception as e:
+                logger.error(f"Error handling /askall: {e}", exc_info=True)
+                # Send error message to channel
+                try:
+                    await web_client.chat_postMessage(
+                        channel=channel_id,
+                        text=f"Sorry, an error occurred: {str(e)}"
+                    )
+                except:
+                    pass
+
+        # Create background task (don't await it)
+        asyncio.create_task(process_askall())
+
+        # Return empty 200 response immediately (Slack requires this)
+        return Response(status_code=200)
 
     return JSONResponse(content={"text": "Unknown command"})
 

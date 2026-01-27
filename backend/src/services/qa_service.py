@@ -277,33 +277,39 @@ class QAService:
         Returns:
             Answer dict
         """
-        system_prompt = """You are a precise Q&A assistant for Slack workspace history.
+        system_prompt = """You are a helpful teammate answering questions about your Slack workspace.
 
-**Critical Rules:**
+**Critical Rules (NEVER BREAK THESE):**
 1. ONLY answer based on the provided messages - NO external knowledge or assumptions
-2. If messages don't contain the answer, say "I don't have information about this in the Slack history"
+2. If messages don't contain the answer, say "I don't have recent info on this in the Slack history"
 3. NEVER make assumptions or add information not explicitly in the messages
 4. Be thorough and include ALL relevant details from the messages
 
-**How Messages Are Formatted:**
-Each message shows its channel name in brackets like [#hackathons] or [#standup].
+**Your Personality:**
+- Conversational and friendly, like chatting with a coworker
+- Professional but approachable
+- Call out blockers, issues, or important context naturally
 
-**Your Answer Must:**
-- Use inline citations with channel names: [#hackathons], [#general], [#standup]
-- Place citations immediately after relevant statements
-- Example: "The team is working on the dashboard [#general]"
-- Include URLs inline in your text (e.g., "The repo is at https://github.com/...")
-- Use *bold* for emphasis (single asterisk, not double **)
+**Response Structure:**
+
+1. START with a casual greeting (vary it):
+   - "Hey!" / "So..." / "Alright," / "Yeah," / or just start with the answer
+
+2. ANSWER the question naturally in 2-4 sentences:
+   - Include key details (who, what, when, blockers)
+   - Mention blockers explicitly if present (use words like "blocker", "blocked by", "waiting on", "issue")
+   - Be specific with names, dates, and context
+   - Include URLs inline when relevant (e.g., "The repo is at https://github.com/...")
+
+3. DO NOT add a "What I found:" section - just provide the answer
+
+**Formatting:**
+- Use *bold* for emphasis (people names, key terms)
 - Use _italic_ for secondary emphasis
 - Write in clear paragraphs
-- Be comprehensive - include all relevant details, dates, names, features, URLs
-
-**What NOT to Include:**
-- Do NOT add emoji or emoji codes (:link:, :large_yellow_circle:, etc.)
-- Do NOT add a "Confidence:" line
-- Do NOT create a separate "Related Links:" section
-- Do NOT use ## headers or **double asterisks**
-- Do NOT add a "Sources:" section"""
+- NO emojis or emoji codes
+- NO separate "Sources:" or "Confidence:" sections
+- Keep it concise but informative"""
 
         user_prompt = f"""Question: {question}
 
@@ -348,8 +354,15 @@ Answer the question based on these messages. Be comprehensive and include all re
             # Extract project links from messages
             project_links = self._extract_project_links(messages)
 
+            # Format with Style A sources (conversational with "What I found:")
+            formatted_answer = self._format_style_a_response(
+                answer_text,
+                messages,
+                max_sources=3
+            )
+
             return {
-                'answer': answer_text,
+                'answer': formatted_answer,
                 'sources': self._format_sources(messages),
                 'confidence': confidence,
                 'confidence_explanation': confidence_explanation,
@@ -384,21 +397,28 @@ Answer the question based on these messages. Be comprehensive and include all re
         Returns:
             Mock answer dict
         """
-        # Simple mock: return the most relevant message
-        top_message = messages[0] if messages else None
+        # Simple mock: return the most relevant message in Style A format
+        if messages:
+            top_message = messages[0]
+            user = top_message['metadata'].get('user_name', 'someone')
+            channel = top_message['metadata'].get('channel_name', 'unknown')
 
-        if top_message:
             answer = (
-                f"Based on the Slack history, here's what I found:\n\n"
-                f"{top_message['text'][:300]}...\n\n"
-                f"(This was mentioned in #{top_message['metadata']['channel_name']} "
-                f"by {top_message['metadata']['user_name']})"
+                f"Hey! Based on what I saw, {user} mentioned this in #{channel}. "
+                f"{top_message['text'][:200]}"
+            )
+
+            # Add Style A sources
+            formatted_answer = self._format_style_a_response(
+                answer,
+                messages,
+                max_sources=3
             )
         else:
-            answer = "I couldn't find relevant information to answer this question."
+            formatted_answer = "I couldn't find relevant information to answer this question."
 
         return {
-            'answer': answer,
+            'answer': formatted_answer,
             'sources': self._format_sources(messages),
             'confidence': 50,
             'confidence_explanation': 'Mock mode - medium confidence estimate',
@@ -497,6 +517,90 @@ Answer the question based on these messages. Be comprehensive and include all re
                         })
 
         return links
+
+    def _format_friendly_timestamp(self, timestamp: str) -> str:
+        """
+        Format timestamp in friendly format like 'Dec 15, 2pm'.
+
+        Args:
+            timestamp: ISO timestamp or Slack timestamp
+
+        Returns:
+            Friendly formatted timestamp
+        """
+        from datetime import datetime
+
+        try:
+            # Handle Slack timestamp (Unix timestamp with decimal)
+            if '.' in timestamp and len(timestamp.split('.')[0]) == 10:
+                dt = datetime.fromtimestamp(float(timestamp))
+            else:
+                # Handle ISO format
+                dt = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+
+            # Format as "Dec 15, 2pm"
+            month = dt.strftime('%b')
+            day = dt.day
+            hour = dt.hour
+
+            # Convert to 12-hour format
+            if hour == 0:
+                time_str = "12am"
+            elif hour < 12:
+                time_str = f"{hour}am"
+            elif hour == 12:
+                time_str = "12pm"
+            else:
+                time_str = f"{hour-12}pm"
+
+            return f"{month} {day}, {time_str}"
+        except Exception:
+            return "recently"
+
+    def _format_style_a_response(
+        self,
+        answer_text: str,
+        messages: List[Dict],
+        max_sources: int = 3
+    ) -> str:
+        """
+        Format response in Style A with 'What I found:' section.
+
+        Args:
+            answer_text: Claude's generated answer
+            messages: Source messages
+            max_sources: Maximum sources to show (default 3)
+
+        Returns:
+            Formatted response with sources
+        """
+        # Build "What I found:" section
+        if not messages:
+            return answer_text
+
+        sources_lines = ["\n\nWhat I found:"]
+
+        for i, msg in enumerate(messages[:max_sources], 1):
+            metadata = msg['metadata']
+            channel = metadata.get('channel_name', 'unknown')
+            user = metadata.get('user_name', 'unknown')
+            timestamp_str = self._format_friendly_timestamp(metadata.get('timestamp', ''))
+
+            # Get quote (truncate if too long)
+            quote = msg['text'].strip()
+            if len(quote) > 150:
+                quote = quote[:147] + "..."
+
+            # Format: • User's update in #channel (timestamp): "quote"
+            sources_lines.append(
+                f'• {user}\'s update in #{channel} ({timestamp_str}): "{quote}"'
+            )
+
+        # Add indicator if there are more sources
+        if len(messages) > max_sources:
+            sources_lines.append(f"\n...and {len(messages) - max_sources} more")
+
+        return answer_text + "\n".join(sources_lines)
 
     def _format_sources(self, messages: List[Dict]) -> List[Dict]:
         """

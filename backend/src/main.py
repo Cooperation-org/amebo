@@ -97,7 +97,7 @@ class SlackHelperApp:
         import os
         from slack_sdk.web.async_client import AsyncWebClient
         from slack_sdk.socket_mode.aiohttp import SocketModeClient
-        from src.services.slack_commands_simple import process_slash_command, process_events
+        from src.services.slack_commands import process_slash_command, process_events
 
         # Check if using Event Subscriptions instead
         if os.getenv("USE_EVENT_SUBSCRIPTIONS", "false").lower() == "true":
