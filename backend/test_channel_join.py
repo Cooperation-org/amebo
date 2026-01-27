@@ -20,16 +20,16 @@ class Colors:
     END = '\033[0m'
 
 def print_success(msg):
-    print(f"{Colors.GREEN}✅ {msg}{Colors.END}")
+    print(f"{Colors.GREEN}{msg}{Colors.END}")
 
 def print_error(msg):
-    print(f"{Colors.RED}❌ {msg}{Colors.END}")
+    print(f"{Colors.RED}{msg}{Colors.END}")
 
 def print_info(msg):
     print(f"{Colors.BLUE}ℹ️  {msg}{Colors.END}")
 
 def print_warning(msg):
-    print(f"{Colors.YELLOW}⚠️  {msg}{Colors.END}")
+    print(f"{Colors.YELLOW} {msg}{Colors.END}")
 
 def test_database_connection():
     """Test 1: Database connection works"""
@@ -320,7 +320,7 @@ def test_error_handling():
             print_warning("Error logging not found")
 
         # Check for error message to channel
-        if '⚠️ Sorry, I encountered an error' in content or 'error while indexing' in content:
+        if 'Sorry, I encountered an error' in content or 'error while indexing' in content:
             print_success("User-facing error messages implemented")
         else:
             print_warning("User-facing error messages not found")
@@ -361,7 +361,7 @@ def run_all_tests():
     total = len(results)
 
     for test_name, result in results.items():
-        status = "✅ PASS" if result else "❌ FAIL"
+        status = "PASS" if result else "FAIL"
         print(f"{status} - {test_name}")
 
     print("\n" + "="*70)

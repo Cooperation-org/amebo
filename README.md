@@ -11,7 +11,7 @@
 
 Amebo is an enterprise-grade SaaS platform that serves as your team's intelligent knowledge companion. It transforms your Slack conversations, uploaded documents, and institutional knowledge into a searchable, AI-powered Q&A system.
 
-### 🚀 Key Benefits
+### Key Benefits
 - **Instant Knowledge Access** - Find answers in seconds, not minutes
 - **Context-Aware Intelligence** - Understands conversation threads and document relationships
 - **Multi-Workspace Support** - Manage multiple Slack workspaces from one dashboard
@@ -41,7 +41,7 @@ Amebo is an enterprise-grade SaaS platform that serves as your team's intelligen
 
 ```
 slack-helper/
-├── 📂 backend/              # Python FastAPI backend
+├── backend/              # Python FastAPI backend
 │   ├── src/
 │   │   ├── api/             # REST API routes
 │   │   ├── services/        # Business logic
@@ -49,7 +49,7 @@ slack-helper/
 │   │   └── models/          # Data models
 │   ├── requirements.txt     # Python dependencies
 │   └── README.md           # Backend setup guide
-├── 📂 frontend/             # Next.js 14 frontend
+├── frontend/             # Next.js 14 frontend
 │   ├── app/                # App router pages
 │   ├── src/
 │   │   ├── components/     # React components
@@ -58,14 +58,14 @@ slack-helper/
 │   │   └── store/          # State management
 │   ├── package.json        # Node dependencies
 │   └── README.md          # Frontend setup guide
-├── 📂 docs/                # Documentation
+├── docs/                # Documentation
 │   ├── ARCHITECTURE.md     # System architecture
 │   ├── API.md             # API documentation
 │   └── DEPLOYMENT.md      # Deployment guide
 └── README.md              # This file
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Prerequisites
 - Python 3.9+
@@ -114,31 +114,31 @@ npm run dev
 
 ## 🎯 Core Features
 
-### ✅ Intelligent Q&A System
+### Intelligent Q&A System
 - Natural language processing with Anthropic Claude
 - Context-aware responses from Slack messages and documents
 - Source attribution with confidence scoring
 - Real-time search across indexed content
 
-### ✅ Multi-Workspace Management
+### Multi-Workspace Management
 - Secure workspace isolation with 4-layer architecture
 - Multiple Slack workspace integration per organization
 - Encrypted credential storage using Fernet encryption
 - Automated message backfilling with configurable schedules
 
-### ✅ Document Intelligence
+### Document Intelligence
 - Multi-format support (PDF, DOCX, TXT, Markdown)
 - Automatic text extraction and chunking
 - Vector indexing for semantic search
 - Workspace-specific document tagging
 
-### ✅ Team Collaboration
+### Team Collaboration
 - Role-based access control (Admin, Member, Viewer)
 - User invitation system with email notifications
 - Team management with activation/deactivation
 - Organization-level settings and AI configuration
 
-### ✅ Enterprise Security
+### Enterprise Security
 - Multi-tenant data isolation
 - JWT authentication with secure token handling
 - Encrypted credential storage

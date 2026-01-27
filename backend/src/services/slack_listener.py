@@ -85,7 +85,7 @@ class SlackListener:
             self.workspace_apps[workspace_id] = app
             self.handlers[workspace_id] = handler
 
-            logger.info(f"✅ Set up listener for workspace {workspace_id}")
+            logger.info(f"Set up listener for workspace {workspace_id}")
 
         except Exception as e:
             logger.error(f"Failed to setup workspace {workspace_id}: {e}", exc_info=True)
@@ -345,7 +345,7 @@ class SlackListener:
                 )
 
                 conn.commit()
-                logger.info(f"✅ Stored message {message_id} from {message_data['channel_name']}")
+                logger.info(f"Stored message {message_id} from {message_data['channel_name']}")
 
         except Exception as e:
             conn.rollback()
@@ -393,7 +393,7 @@ class SlackListener:
                 )
 
                 conn.commit()
-                logger.info(f"✅ Stored reaction {reaction_data['reaction_name']}")
+                logger.info(f"Stored reaction {reaction_data['reaction_name']}")
 
         except Exception as e:
             conn.rollback()
@@ -548,26 +548,26 @@ class SlackListener:
             # Post completion message
             await client.chat_postMessage(
                 channel=channel_id,
-                text=f"✅ Indexed {message_count} messages from the last 90 days! Ask me anything with `/ask <question>`"
+                text=f"Indexed {message_count} messages from the last 90 days! Ask me anything with `/ask <question>`"
             )
 
-            logger.info(f"✅ Completed immediate backfill for #{channel_name}: {message_count} messages")
+            logger.info(f"Completed immediate backfill for #{channel_name}: {message_count} messages")
 
         except Exception as e:
-            logger.error(f"❌ Failed immediate backfill for #{channel_name}: {e}", exc_info=True)
+            logger.error(f"Failed immediate backfill for #{channel_name}: {e}", exc_info=True)
 
             # Post error message to channel
             try:
                 await client.chat_postMessage(
                     channel=channel_id,
-                    text="⚠️ Sorry, I encountered an error while indexing this channel. Please contact your admin."
+                    text="Sorry, I encountered an error while indexing this channel. Please contact your admin."
                 )
             except Exception:
                 pass  # Don't fail if we can't post error message
 
     async def start(self):
         """Start listening to all workspaces"""
-        logger.info("🚀 Starting Slack listener...")
+        logger.info("Starting Slack listener...")
 
         # Load all workspace installations
         installations = await self.load_workspaces()
@@ -591,21 +591,21 @@ class SlackListener:
             for handler in self.handlers.values()
         ]
 
-        logger.info(f"✅ Listening to {len(tasks)} workspaces")
+        logger.info(f"Listening to {len(tasks)} workspaces")
 
         # Wait for all handlers
         await asyncio.gather(*tasks)
 
     async def stop(self):
         """Stop all listeners"""
-        logger.info("🛑 Stopping Slack listener...")
+        logger.info("Stopping Slack listener...")
         self.running = False
 
         # Close all handlers
         for handler in self.handlers.values():
             await handler.close_async()
 
-        logger.info("✅ Slack listener stopped")
+        logger.info("Slack listener stopped")
 
 
 async def main():

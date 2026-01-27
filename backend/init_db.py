@@ -29,7 +29,7 @@ def init_database():
     schema_path = Path(__file__).parent / "src" / "db" / "schema.sql"
 
     if not schema_path.exists():
-        print(f"❌ Schema file not found: {schema_path}")
+        print(f"Schema file not found: {schema_path}")
         sys.exit(1)
 
     print(f"📄 Reading schema from: {schema_path}")
@@ -48,11 +48,11 @@ def init_database():
             cur.execute(schema_sql)
             conn.commit()
 
-        print("✅ Database tables created successfully!")
+        print("Database tables created successfully!")
         print()
 
         # Verify tables
-        print("📋 Verifying tables...")
+        print("Verifying tables...")
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT table_name
@@ -68,11 +68,11 @@ def init_database():
 
         print()
         print("=" * 70)
-        print("✅ DATABASE INITIALIZATION COMPLETE")
+        print("DATABASE INITIALIZATION COMPLETE")
         print("=" * 70)
 
     except Exception as e:
-        print(f"❌ Error initializing database: {e}")
+        print(f"Error initializing database: {e}")
         conn.rollback()
         sys.exit(1)
     finally:

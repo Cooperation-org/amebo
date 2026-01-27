@@ -130,7 +130,7 @@ async def create_backfill_schedule(
         conn.commit()
 
         logger.info(
-            f"✅ Created backfill schedule {schedule_id} for workspace {request.workspace_id}"
+            f"Created backfill schedule {schedule_id} for workspace {request.workspace_id}"
         )
 
         # Note: The scheduler will pick this up on next restart or via reload endpoint
@@ -153,7 +153,7 @@ async def create_backfill_schedule(
         raise
     except Exception as e:
         conn.rollback()
-        logger.error(f"❌ Error creating backfill schedule: {e}", exc_info=True)
+        logger.error(f"Error creating backfill schedule: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=get_safe_error('database'))
     finally:
         cur.close()
@@ -246,7 +246,7 @@ async def delete_backfill_schedule(
         raise
     except Exception as e:
         conn.rollback()
-        logger.error(f"❌ Error deleting schedule: {e}", exc_info=True)
+        logger.error(f"Error deleting schedule: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=get_safe_error('database'))
     finally:
         cur.close()
@@ -296,7 +296,7 @@ async def trigger_manual_backfill(
         return ManualBackfillResponse(**result)
 
     except Exception as e:
-        logger.error(f"❌ Error triggering manual backfill: {e}", exc_info=True)
+        logger.error(f"Error triggering manual backfill: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=get_safe_error('database'))
 
 

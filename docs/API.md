@@ -34,7 +34,7 @@ Response:
 }
 ```
 
-## 📋 Base URL
+## Base URL
 ```
 Development: http://localhost:8000
 Production: https://api.slackhelper.com

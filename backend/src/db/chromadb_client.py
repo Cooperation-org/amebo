@@ -406,8 +406,8 @@ if __name__ == "__main__":
         client.delete_workspace(workspace_id)
         print("   Test workspace deleted\n")
 
-        print("✅ All ChromaDB tests passed!")
+        print("All ChromaDB tests passed!")
 
     except Exception as e:
-        print(f"❌ Test failed: {e}")
+        print(f"Test failed: {e}")
         raise

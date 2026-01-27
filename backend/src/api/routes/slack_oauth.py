@@ -458,22 +458,25 @@ async def slack_events(request: Request):
     Slack Events API endpoint
     Handles URL verification and incoming events
     """
-    # Get request body and headers
+    # Read body once
     body = await request.body()
-    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
-    signature = request.headers.get("X-Slack-Signature", "")
 
-    # Verify signature for non-challenge requests
+    # Parse JSON from body
     try:
-        payload = await request.json()
+        import json
+        payload = json.loads(body.decode('utf-8'))
     except Exception as e:
         logger.error(f"Failed to parse Slack event payload: {e}")
         raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    # Handle URL verification challenge
+    # Handle URL verification challenge (no signature verification needed)
     if payload.get("type") == "url_verification":
         logger.info("Slack URL verification challenge received")
         return JSONResponse(content={"challenge": payload.get("challenge")})
+
+    # Get headers for signature verification
+    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
+    signature = request.headers.get("X-Slack-Signature", "")
 
     # Verify signature for actual events
     if not verify_slack_signature(body, timestamp, signature):
@@ -496,10 +499,13 @@ async def slack_events(request: Request):
 
         logger.info(f"App mentioned in channel {channel} by {user}")
 
-        # Process the mention asynchronously
-        import asyncio
-        from src.services.slack_commands_simple import handle_app_mention
-        asyncio.create_task(handle_app_mention(team_id, channel, text, user, ts))
+        # Process the mention - await it to catch errors
+        try:
+            from src.services.slack_commands_simple import handle_app_mention
+            await handle_app_mention(team_id, channel, text, user, ts)
+            logger.info("App mention handled successfully")
+        except Exception as e:
+            logger.error(f"Error handling app mention: {e}", exc_info=True)
 
     elif event_type == "message":
         # Ignore bot messages to prevent loops
@@ -511,6 +517,68 @@ async def slack_events(request: Request):
 
     # Always return 200 OK to acknowledge receipt
     return JSONResponse(content={"ok": True})
+
+
+@router.post("/commands")
+async def slack_commands(request: Request):
+    """
+    Slack Slash Commands endpoint
+    Handles /ask and /askall commands via Request URL
+    """
+    # Read body for signature verification
+    body = await request.body()
+    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
+    signature = request.headers.get("X-Slack-Signature", "")
+
+    # Verify signature
+    if not verify_slack_signature(body, timestamp, signature):
+        logger.warning("Invalid Slack signature for command")
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
+    # Parse form data from body
+    from urllib.parse import parse_qs
+    form_dict = parse_qs(body.decode('utf-8'))
+
+    # Get command details (parse_qs returns lists, so get first item)
+    command = form_dict.get("command", [""])[0]
+    text = form_dict.get("text", [""])[0].strip()
+    user_id = form_dict.get("user_id", [""])[0]
+    channel_id = form_dict.get("channel_id", [""])[0]
+    team_id = form_dict.get("team_id", [""])[0]
+
+    logger.info(f"Received slash command: {command} from {user_id}: {text}")
+
+    # Handle commands
+    if command == "/ask":
+        # Import here to avoid circular imports
+        from src.services.slack_commands_simple import handle_ask
+        from slack_sdk.web.async_client import AsyncWebClient
+        import os
+
+        web_client = AsyncWebClient(token=os.getenv("SLACK_BOT_TOKEN"))
+
+        try:
+            await handle_ask(web_client, user_id, channel_id, text, private=True)
+            return JSONResponse(content={"text": "Processing your question..."})
+        except Exception as e:
+            logger.error(f"Error handling /ask: {e}", exc_info=True)
+            return JSONResponse(content={"text": f"Sorry, an error occurred: {str(e)}"})
+
+    elif command == "/askall":
+        from src.services.slack_commands_simple import handle_ask
+        from slack_sdk.web.async_client import AsyncWebClient
+        import os
+
+        web_client = AsyncWebClient(token=os.getenv("SLACK_BOT_TOKEN"))
+
+        try:
+            await handle_ask(web_client, user_id, channel_id, text, private=False)
+            return JSONResponse(content={"text": "Processing your question..."})
+        except Exception as e:
+            logger.error(f"Error handling /askall: {e}", exc_info=True)
+            return JSONResponse(content={"text": f"Sorry, an error occurred: {str(e)}"})
+
+    return JSONResponse(content={"text": "Unknown command"})
 
 
 @router.post("/workspaces/{workspace_id}/backfill")

@@ -82,14 +82,14 @@ def handle_ask_command(ack, command, say, client):
             text=answer_text
         )
 
-        logger.info(f"✅ Answered question from {user_id}")
+        logger.info(f"Answered question from {user_id}")
 
     except Exception as e:
-        logger.error(f"❌ Error: {e}", exc_info=True)
+        logger.error(f"Error: {e}", exc_info=True)
         client.chat_postEphemeral(
             channel=channel_id,
             user=user_id,
-            text=f"❌ Sorry, I encountered an error:\n```{str(e)}```\n\nPlease try again."
+            text=f"Sorry, I encountered an error:\n```{str(e)}```\n\nPlease try again."
         )
 
 
@@ -136,14 +136,14 @@ def handle_askall_command(ack, command, client):
             text=answer_text
         )
 
-        logger.info(f"✅ Answered public question from {user_id}")
+        logger.info(f"Answered public question from {user_id}")
 
     except Exception as e:
-        logger.error(f"❌ Error: {e}", exc_info=True)
+        logger.error(f"Error: {e}", exc_info=True)
         client.chat_update(
             channel=channel_id,
             ts=thinking_msg['ts'],
-            text=f"❌ Sorry, I encountered an error: {str(e)}"
+            text=f"Sorry, I encountered an error: {str(e)}"
         )
 
 
@@ -182,24 +182,24 @@ def handle_mention(event, say):
 
 def start_command_handler():
     """Start the Slack command handler with Socket Mode"""
-    logger.info("🚀 Starting Slack command handler (single workspace mode)...")
+    logger.info("Starting Slack command handler (single workspace mode)...")
 
     if not APP_TOKEN:
-        logger.error("❌ SLACK_APP_TOKEN not set!")
+        logger.error("SLACK_APP_TOKEN not set!")
         logger.error("   Please enable Socket Mode and add SLACK_APP_TOKEN to .env")
         return
 
     if not BOT_TOKEN:
-        logger.error("❌ SLACK_BOT_TOKEN not set!")
+        logger.error("SLACK_BOT_TOKEN not set!")
         return
 
-    logger.info(f"✅ Bot token: {BOT_TOKEN[:20]}...")
-    logger.info(f"✅ App token: {APP_TOKEN[:20]}...")
-    logger.info(f"✅ Workspace: {WORKSPACE_ID}")
+    logger.info(f"Bot token: {BOT_TOKEN[:20]}...")
+    logger.info(f"App token: {APP_TOKEN[:20]}...")
+    logger.info(f"Workspace: {WORKSPACE_ID}")
 
     handler = SocketModeHandler(app, APP_TOKEN)
 
-    logger.info("✅ Ready! You can now use /ask in Slack")
+    logger.info("Ready! You can now use /ask in Slack")
     handler.start()
 
 

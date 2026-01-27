@@ -600,6 +600,6 @@ if __name__ == "__main__":
         print(f"      Engagement: {topic['engagement']} reactions")
     print()
 
-    print("✅ Query service tests complete!")
+    print("Query service tests complete!")
 
     DatabaseConnection.close_all_connections()

@@ -35,20 +35,20 @@ class TaskScheduler:
 
     async def start(self):
         """Start the scheduler and load jobs from database"""
-        logger.info("🚀 Starting task scheduler...")
+        logger.info("Starting task scheduler...")
 
         # Load scheduled jobs from database
         await self.load_scheduled_jobs()
 
         # Start the scheduler
         self.scheduler.start()
-        logger.info("✅ Task scheduler started successfully")
+        logger.info("Task scheduler started successfully")
 
     async def stop(self):
         """Stop the scheduler gracefully"""
-        logger.info("🛑 Stopping task scheduler...")
+        logger.info("Stopping task scheduler...")
         self.scheduler.shutdown(wait=True)
-        logger.info("✅ Task scheduler stopped")
+        logger.info("Task scheduler stopped")
 
     async def load_scheduled_jobs(self):
         """Load all scheduled backfill jobs from database"""
@@ -72,7 +72,7 @@ class TaskScheduler:
             """)
 
             schedules = cur.fetchall()
-            logger.info(f"📋 Loading {len(schedules)} scheduled jobs from database")
+            logger.info(f"Loading {len(schedules)} scheduled jobs from database")
 
             for schedule in schedules:
                 (schedule_id, workspace_id, schedule_type,
@@ -90,10 +90,10 @@ class TaskScheduler:
                     org_name=team_name
                 )
 
-            logger.info(f"✅ Loaded {len(self.jobs)} scheduled jobs")
+            logger.info(f"Loaded {len(self.jobs)} scheduled jobs")
 
         except Exception as e:
-            logger.error(f"❌ Error loading scheduled jobs: {e}", exc_info=True)
+            logger.error(f"Error loading scheduled jobs: {e}", exc_info=True)
         finally:
             cur.close()
             conn.close()
@@ -131,7 +131,7 @@ class TaskScheduler:
             next_run = "pending (scheduler not started)" if not self.scheduler.running else str(job.next_run_time)
 
             logger.info(
-                f"📅 Scheduled backfill job: {job_id}\n"
+                f"Scheduled backfill job: {job_id}\n"
                 f"   Organization: {org_name}\n"
                 f"   Workspace: {workspace_id}\n"
                 f"   Schedule: {cron_expression}\n"
@@ -140,7 +140,7 @@ class TaskScheduler:
             )
 
         except Exception as e:
-            logger.error(f"❌ Error adding backfill job {job_id}: {e}", exc_info=True)
+            logger.error(f"Error adding backfill job {job_id}: {e}", exc_info=True)
 
     async def trigger_manual_backfill(
         self,
@@ -180,7 +180,7 @@ class TaskScheduler:
             }
 
         except Exception as e:
-            logger.error(f"❌ Error triggering manual backfill: {e}", exc_info=True)
+            logger.error(f"Error triggering manual backfill: {e}", exc_info=True)
             return {
                 "job_id": job_id,
                 "status": "failed",
@@ -200,7 +200,7 @@ class TaskScheduler:
         """
         job_type = "scheduled" if schedule_id else "manual"
         logger.info(
-            f"▶️  Starting {job_type} backfill:\n"
+            f"Starting {job_type} backfill:\n"
             f"   Workspace: {workspace_id}\n"
             f"   Days: {days}\n"
             f"   All channels: {include_all}"
@@ -238,13 +238,13 @@ class TaskScheduler:
             )
 
             logger.info(
-                f"✅ Backfill completed successfully:\n"
+                f"Backfill completed successfully:\n"
                 f"   Messages collected: {result.get('total_messages', 0)}\n"
                 f"   Channels processed: {result.get('channels_processed', 0)}"
             )
 
         except Exception as e:
-            logger.error(f"❌ Backfill job failed: {e}", exc_info=True)
+            logger.error(f"Backfill job failed: {e}", exc_info=True)
 
             # Record failure
             await self._record_job_completion(
@@ -370,5 +370,5 @@ class TaskScheduler:
             logger.info(f"🗑️  Removed job: {job_id}")
             return True
         except Exception as e:
-            logger.error(f"❌ Error removing job {job_id}: {e}")
+            logger.error(f"Error removing job {job_id}: {e}")
             return False

@@ -31,11 +31,11 @@ export function WorkspaceCard({ workspace, onEdit, onDelete, onSync }: Workspace
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'active':
-        return <Badge className="bg-green-100 text-green-800">✅ Active</Badge>;
+        return <Badge className="bg-green-100 text-green-800">Active</Badge>;
       case 'syncing':
         return <Badge className="bg-blue-100 text-blue-800">🔄 Syncing</Badge>;
       case 'error':
-        return <Badge className="bg-red-100 text-red-800">❌ Error</Badge>;
+        return <Badge className="bg-red-100 text-red-800">Error</Badge>;
       default:
         return <Badge variant="secondary">Unknown</Badge>;
     }

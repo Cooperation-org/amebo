@@ -79,7 +79,7 @@ class EncryptionManager:
             encrypted_bytes = self.fernet.encrypt(plaintext.encode())
             return encrypted_bytes.decode('utf-8')
         except Exception as e:
-            logger.error(f"❌ Encryption error: {e}", exc_info=True)
+            logger.error(f"Encryption error: {e}", exc_info=True)
             raise ValueError(f"Failed to encrypt data: {e}")
 
     def decrypt(self, encrypted_text: str) -> str:
@@ -108,7 +108,7 @@ class EncryptionManager:
             decrypted_bytes = self.fernet.decrypt(encrypted_text.encode())
             return decrypted_bytes.decode('utf-8')
         except Exception as e:
-            logger.error(f"❌ Decryption error: {e}", exc_info=True)
+            logger.error(f"Decryption error: {e}", exc_info=True)
             raise ValueError(f"Failed to decrypt data: {e}")
 
     def encrypt_dict(self, data: dict, fields: list) -> dict:
@@ -279,7 +279,7 @@ def test_encryption():
     decrypted = manager.decrypt(encrypted)
 
     assert decrypted == test_string, "String encryption failed"
-    print(f"✅ String encryption: {test_string[:20]}... → {encrypted[:30]}...")
+    print(f"String encryption: {test_string[:20]}... → {encrypted[:30]}...")
 
     # Test 2: Credential encryption
     credentials = {
@@ -292,14 +292,14 @@ def test_encryption():
     decrypted_creds = decrypt_credentials(encrypted_creds)
 
     assert decrypted_creds['bot_token'] == credentials['bot_token'], "Credential encryption failed"
-    print(f"✅ Credential encryption: bot_token → {encrypted_creds['bot_token_encrypted'][:30]}...")
+    print(f"Credential encryption: bot_token → {encrypted_creds['bot_token_encrypted'][:30]}...")
 
     # Test 3: Empty string handling
     assert manager.encrypt("") == ""
     assert manager.decrypt("") == ""
-    print("✅ Empty string handling: OK")
+    print("Empty string handling: OK")
 
-    print("✅ All encryption tests passed!")
+    print("All encryption tests passed!")
 
 
 if __name__ == "__main__":

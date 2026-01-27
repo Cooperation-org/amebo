@@ -63,7 +63,7 @@ class BackfillService:
             Dict with backfill results (total_messages, channels_processed, etc.)
         """
         logger.info(
-            f"🚀 Starting backfill for workspace {self.workspace_id}\n"
+            f"Starting backfill for workspace {self.workspace_id}\n"
             f"   Days: {days}\n"
             f"   All channels: {include_all_channels}"
         )
@@ -82,7 +82,7 @@ class BackfillService:
         else:
             raise ValueError("Must specify either include_all_channels=True or provide channel_ids")
 
-        logger.info(f"📋 Processing {len(channels)} channels")
+        logger.info(f"Processing {len(channels)} channels")
 
         # Track results
         total_messages = 0
@@ -108,7 +108,7 @@ class BackfillService:
                     channels_processed += 1
 
                     logger.info(
-                        f"✅ #{channel_name}: {len(messages)} messages collected"
+                        f"#{channel_name}: {len(messages)} messages collected"
                     )
                 else:
                     logger.debug(f"⏭️  #{channel_name}: No messages in date range")
@@ -123,7 +123,7 @@ class BackfillService:
                 errors.append(error_msg)
 
         logger.info(
-            f"✅ Backfill complete:\n"
+            f"Backfill complete:\n"
             f"   Total messages: {total_messages}\n"
             f"   Channels processed: {channels_processed}/{len(channels)}\n"
             f"   Errors: {len(errors)}"
@@ -148,11 +148,11 @@ class BackfillService:
             )
 
             channels = response.get("channels", [])
-            logger.info(f"📋 Found {len(channels)} public channels")
+            logger.info(f"Found {len(channels)} public channels")
             return channels
 
         except SlackApiError as e:
-            logger.error(f"❌ Error fetching channels: {e.response['error']}")
+            logger.error(f"Error fetching channels: {e.response['error']}")
             return []
 
     async def _fetch_channel_messages(
@@ -218,7 +218,7 @@ class BackfillService:
                     break
 
             except SlackApiError as e:
-                logger.error(f"❌ Error fetching messages from #{channel_name}: {e}")
+                logger.error(f"Error fetching messages from #{channel_name}: {e}")
                 break
 
         return messages
@@ -283,10 +283,10 @@ class BackfillService:
                 ids=ids
             )
 
-            logger.debug(f"✅ Stored {len(messages)} messages in ChromaDB")
+            logger.debug(f"Stored {len(messages)} messages in ChromaDB")
 
         except Exception as e:
-            logger.error(f"❌ Error storing in ChromaDB: {e}", exc_info=True)
+            logger.error(f"Error storing in ChromaDB: {e}", exc_info=True)
 
     async def _get_user_info(self, user_ids: List[str]) -> Dict[str, str]:
         """

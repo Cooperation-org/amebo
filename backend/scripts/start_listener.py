@@ -32,10 +32,10 @@ async def main():
     try:
         await listener.start()
     except KeyboardInterrupt:
-        logger.info("\n🛑 Shutting down listener...")
+        logger.info("\nShutting down listener...")
         await listener.stop()
     except Exception as e:
-        logger.error(f"❌ Listener error: {e}", exc_info=True)
+        logger.error(f"Listener error: {e}", exc_info=True)
         await listener.stop()
         sys.exit(1)
 

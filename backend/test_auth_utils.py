@@ -19,16 +19,16 @@ class Colors:
     END = '\033[0m'
 
 def print_success(msg):
-    print(f"{Colors.GREEN}✅ {msg}{Colors.END}")
+    print(f"{Colors.GREEN}{msg}{Colors.END}")
 
 def print_error(msg):
-    print(f"{Colors.RED}❌ {msg}{Colors.END}")
+    print(f"{Colors.RED}{msg}{Colors.END}")
 
 def print_info(msg):
     print(f"{Colors.BLUE}ℹ️  {msg}{Colors.END}")
 
 def print_warning(msg):
-    print(f"{Colors.YELLOW}⚠️  {msg}{Colors.END}")
+    print(f"{Colors.YELLOW} {msg}{Colors.END}")
 
 def test_env_file_exists():
     """Test 1: .env file exists"""
@@ -247,7 +247,7 @@ def run_all_tests():
     total = len(results)
 
     for test_name, result in results.items():
-        status = "✅ PASS" if result else "❌ FAIL"
+        status = "PASS" if result else "FAIL"
         print(f"{status} - {test_name}")
 
     print("\n" + "="*70)

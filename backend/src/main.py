@@ -66,7 +66,7 @@ class SlackHelperApp:
         # Get port from environment variable, default to 8003
         api_port = int(os.getenv('API_PORT', 8003))
 
-        logger.info(f"🚀 Starting FastAPI server on http://0.0.0.0:{api_port}")
+        logger.info(f"Starting FastAPI server on http://0.0.0.0:{api_port}")
 
         config = Config(
             app=fastapi_app,
@@ -91,21 +91,28 @@ class SlackHelperApp:
         """
         Start the Slack Socket Mode listener.
         Handles slash commands (/ask, /askall) and app mentions.
+
+        NOTE: Disabled when using Event Subscriptions API (USE_EVENT_SUBSCRIPTIONS=true)
         """
         import os
         from slack_sdk.web.async_client import AsyncWebClient
         from slack_sdk.socket_mode.aiohttp import SocketModeClient
         from src.services.slack_commands_simple import process_slash_command, process_events
 
+        # Check if using Event Subscriptions instead
+        if os.getenv("USE_EVENT_SUBSCRIPTIONS", "false").lower() == "true":
+            logger.info("Using Event Subscriptions API - Socket Mode disabled")
+            return
+
         bot_token = os.getenv("SLACK_BOT_TOKEN")
         app_token = os.getenv("SLACK_APP_TOKEN")
 
         if not bot_token or not app_token:
-            logger.warning("⚠️  Slack tokens not configured - Slack features disabled")
+            logger.warning(" Slack tokens not configured - Slack features disabled")
             logger.warning("   Set SLACK_BOT_TOKEN and SLACK_APP_TOKEN to enable")
             return
 
-        logger.info("🚀 Starting Slack Socket Mode listener")
+        logger.info("Starting Slack Socket Mode listener")
         logger.info(f"   Bot token: {bot_token[:20]}...")
         logger.info(f"   App token: {app_token[:20]}...")
 
@@ -120,7 +127,7 @@ class SlackHelperApp:
             client.socket_mode_request_listeners.append(process_slash_command)
             client.socket_mode_request_listeners.append(process_events)
 
-            logger.info("✅ Slack listener ready - slash commands enabled")
+            logger.info("Slack listener ready - slash commands enabled")
 
             # Connect and keep running
             await client.connect()
@@ -299,11 +306,11 @@ class SlackHelperApp:
 
         logger.info("")
         logger.info("=" * 70)
-        logger.info("✅ All services started successfully")
+        logger.info("All services started successfully")
         logger.info("=" * 70)
         logger.info("")
-        logger.info(f"📍 API Documentation: http://localhost:{api_port}/api/docs")
-        logger.info(f"📍 Health Check: http://localhost:{api_port}/health")
+        logger.info(f"API Documentation: http://localhost:{api_port}/api/docs")
+        logger.info(f"Health Check: http://localhost:{api_port}/health")
         logger.info("")
         logger.info("Press Ctrl+C to shutdown")
         logger.info("")
@@ -325,7 +332,7 @@ class SlackHelperApp:
         """
         logger.info("")
         logger.info("=" * 70)
-        logger.info("🛑 Shutting down Slack Helper Bot...")
+        logger.info("Shutting down Slack Helper Bot...")
         logger.info("=" * 70)
 
         # Signal all services to shutdown
@@ -357,7 +364,7 @@ class SlackHelperApp:
         from src.db.connection import DatabaseConnection
         DatabaseConnection.close_all_connections()
 
-        logger.info("✅ Shutdown complete")
+        logger.info("Shutdown complete")
         logger.info("=" * 70)
 
 

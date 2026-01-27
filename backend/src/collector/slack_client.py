@@ -50,10 +50,10 @@ class SlackClient:
         """
         try:
             response = self.client.auth_test()
-            logger.info(f"✅ Connected as: {response['user']} in team: {response['team']}")
+            logger.info(f"Connected as: {response['user']} in team: {response['team']}")
             return response
         except SlackApiError as e:
-            logger.error(f"❌ Authentication failed: {e.response['error']}")
+            logger.error(f"Authentication failed: {e.response['error']}")
             raise
 
     def get_workspace_info(self) -> Dict:
@@ -356,8 +356,8 @@ if __name__ == "__main__":
         human_users = [u for u in users if not u.get('is_bot', False) and not u.get('deleted', False)]
         print(f"   Found {len(human_users)} human users (out of {len(users)} total)\n")
 
-        print("✅ All tests passed! Slack client is ready.\n")
+        print("All tests passed! Slack client is ready.\n")
 
     except Exception as e:
-        print(f"❌ Test failed: {e}")
+        print(f"Test failed: {e}")
         raise

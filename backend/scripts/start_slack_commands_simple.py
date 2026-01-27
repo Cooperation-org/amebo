@@ -35,7 +35,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("\n🛑 Shutting down...")
+        logger.info("\nShutting down...")
     except Exception as e:
-        logger.error(f"❌ Error: {e}", exc_info=True)
+        logger.error(f"Error: {e}", exc_info=True)
         sys.exit(1)

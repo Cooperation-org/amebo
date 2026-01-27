@@ -116,9 +116,10 @@ async def root():
     }
 
 
-# Slack Events endpoint (at root level, not under /api)
-from src.api.routes.slack_oauth import slack_events
+# Slack Events and Commands endpoints (at root level, not under /api)
+from src.api.routes.slack_oauth import slack_events, slack_commands
 app.add_api_route("/slack/events", slack_events, methods=["POST"], tags=["Slack Events"])
+app.add_api_route("/slack/commands", slack_commands, methods=["POST"], tags=["Slack Commands"])
 
 
 # Include routers

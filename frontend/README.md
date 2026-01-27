@@ -23,13 +23,13 @@
                        └─────────────────┘
 ```
 
-## 📋 Prerequisites
+## Prerequisites
 
 - **Node.js 18+**
 - **npm or yarn**
 - **Backend API** running on port 8000
 
-## 🚀 Quick Setup
+## Quick Setup
 
 ### 1. Environment Setup
 
@@ -388,7 +388,7 @@ test('authentication store', () => {
 });
 ```
 
-## 🚀 Production Build
+## Production Build
 
 ```bash
 # Build for production

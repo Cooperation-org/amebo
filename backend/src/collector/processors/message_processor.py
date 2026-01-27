@@ -296,23 +296,23 @@ if __name__ == "__main__":
 
     # Parse message
     parsed = processor.parse_message(test_message, 'C123', 'engineering')
-    print(f"✅ Parsed message:")
+    print(f"Parsed message:")
     print(f"   Type: {parsed['message_type']}")
     print(f"   Mentions: {parsed['mentions']}")
     print()
 
     # Extract links
     links = processor.extract_links(test_message['text'], test_message['attachments'])
-    print(f"✅ Extracted {len(links)} links:")
+    print(f"Extracted {len(links)} links:")
     for link in links:
         print(f"   - {link['link_type']}: {link['url']}")
     print()
 
     # Extract reactions
     reactions = processor.extract_reactions(test_message)
-    print(f"✅ Extracted {len(reactions)} reactions:")
+    print(f"Extracted {len(reactions)} reactions:")
     for r in reactions:
         print(f"   - {r['reaction_name']} by {r['user_id']}")
     print()
 
-    print("✅ Message processor working correctly!")
+    print("Message processor working correctly!")

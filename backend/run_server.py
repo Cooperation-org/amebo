@@ -200,5 +200,5 @@ async def health_check():
     return {"status": "healthy", "service": "slack-helper-qa"}
 
 if __name__ == "__main__":
-    print("🚀 Starting Slack Helper Q&A API...")
+    print("Starting Slack Helper Q&A API...")
     uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")

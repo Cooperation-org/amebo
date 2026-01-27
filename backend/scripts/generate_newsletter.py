@@ -52,7 +52,7 @@ def generate_and_display_newsletter(
     if output_file:
         with open(output_file, 'w') as f:
             f.write(output)
-        print(f"✅ Newsletter saved to: {output_file}")
+        print(f"Newsletter saved to: {output_file}")
         print(f"\nPreview (first 500 characters):")
         print(output[:500])
         print("...")

@@ -89,10 +89,10 @@ id amebo  # Should show docker in groups
 ```
 
 **Why use a dedicated user?**
-- ✅ **Security**: Limits damage if app is compromised
-- ✅ **Isolation**: Clear separation from personal/system files
-- ✅ **No sudo**: App runs with minimal permissions
-- ✅ **Clean auditing**: All app actions tied to one user
+- **Security**: Limits damage if app is compromised
+- **Isolation**: Clear separation from personal/system files
+- **No sudo**: App runs with minimal permissions
+- **Clean auditing**: All app actions tied to one user
 
 **Alternative:** If this is a personal dev server, you can use your own user account. Just ensure you're in the `docker` group and **never run as root**.
 
@@ -234,7 +234,7 @@ docker compose exec backend python init_db.py
 docker-compose exec backend python init_db.py
 
 # Verify connection
-docker compose exec backend python -c "from src.db.connection import DatabaseConnection; DatabaseConnection.initialize_pool(); print('✅ DB Connected')"
+docker compose exec backend python -c "from src.db.connection import DatabaseConnection; DatabaseConnection.initialize_pool(); print('DB Connected')"
 ```
 
 ## Running the Application

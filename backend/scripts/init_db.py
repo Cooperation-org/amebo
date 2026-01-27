@@ -27,7 +27,7 @@ def run_sql_file(conn, file_path: str):
         cur.execute(sql)
 
     conn.commit()
-    logger.info(f"✅ {file_path} executed successfully")
+    logger.info(f"{file_path} executed successfully")
 
 
 def main():
@@ -57,10 +57,10 @@ def main():
         )
         run_sql_file(conn, auth_schema_path)
 
-        logger.info("✅ Database initialized successfully!")
+        logger.info("Database initialized successfully!")
 
     except Exception as e:
-        logger.error(f"❌ Database initialization failed: {e}", exc_info=True)
+        logger.error(f"Database initialization failed: {e}", exc_info=True)
         conn.rollback()
         sys.exit(1)
 

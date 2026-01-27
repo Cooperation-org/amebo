@@ -34,7 +34,7 @@ if __name__ == "__main__":
     try:
         start_command_handler()
     except KeyboardInterrupt:
-        logger.info("\n🛑 Shutting down command handler...")
+        logger.info("\nShutting down command handler...")
     except Exception as e:
-        logger.error(f"❌ Error: {e}", exc_info=True)
+        logger.error(f"Error: {e}", exc_info=True)
         sys.exit(1)

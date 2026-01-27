@@ -10,18 +10,18 @@ Slack Helper Bot is a hybrid PostgreSQL + ChromaDB system for collecting, indexi
 
 ## What's Been Built
 
-### ✅ Hybrid Architecture
+### Hybrid Architecture
 - **PostgreSQL**: Structured metadata (users, channels, reactions, links)
 - **ChromaDB**: Message content + semantic search
 
-### ✅ Data Collection
+### Data Collection
 - **722 messages** synced across 4 channels
 - **330 reactions** captured
 - **26 users** cached
 - **277 links** extracted
 - **90-day backfill** working
 
-### ✅ Query Layer
+### Query Layer
 - Most reacted messages
 - Semantic search
 - Channel activity summaries

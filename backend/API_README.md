@@ -205,7 +205,7 @@ curl http://localhost:8000/health
 
 ## Next Steps
 
-1. ✅ **Backend Foundation** - Complete!
+1. **Backend Foundation** - Complete!
    - FastAPI setup
    - JWT authentication
    - Organization/user management

@@ -65,7 +65,7 @@ python scripts/start_slack_commands.py
 
 You should see:
 ```
-🚀 Starting Slack command handler...
+Starting Slack command handler...
 ⚡️ Bolt app is running!
 ```
 

@@ -16,13 +16,13 @@ def test_qa_api():
         try:
             response = requests.get(f"{base_url}/health", timeout=2)
             if response.status_code == 200:
-                print("✅ Server is ready!")
+                print("Server is ready!")
                 break
         except:
             pass
         time.sleep(1)
     else:
-        print("❌ Server not ready after 10 seconds")
+        print("Server not ready after 10 seconds")
         return
     
     # Test Q&A endpoint
@@ -58,10 +58,10 @@ def test_qa_api():
                 print(f"💬 Answer: {data.get('answer', 'No answer')}")
                 print(f"🎯 Confidence: {data.get('confidence', 'N/A')}")
             else:
-                print(f"❌ Error: {response.text}")
+                print(f"Error: {response.text}")
                 
         except Exception as e:
-            print(f"❌ Request failed: {e}")
+            print(f"Request failed: {e}")
 
 if __name__ == "__main__":
     test_qa_api()

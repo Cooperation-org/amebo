@@ -30,14 +30,14 @@ def create_test_user():
 
     if response.status_code == 201:
         data = response.json()
-        print(f"✅ User created successfully!")
+        print(f"User created successfully!")
         return data['access_token']
     elif response.status_code == 400 and "already registered" in response.json().get('detail', ''):
         # User exists, try login
         print("User exists, logging in...")
         return login_user()
     else:
-        print(f"❌ Failed to create user: {response.text}")
+        print(f"Failed to create user: {response.text}")
         return None
 
 
@@ -53,10 +53,10 @@ def login_user():
 
     if response.status_code == 200:
         data = response.json()
-        print("✅ Logged in successfully!")
+        print("Logged in successfully!")
         return data['access_token']
     else:
-        print(f"❌ Login failed: {response.text}")
+        print(f"Login failed: {response.text}")
         return None
 
 
@@ -73,7 +73,7 @@ def link_workspace_to_org(token):
     )
 
     if response.status_code != 200:
-        print(f"❌ Failed to get user info: {response.text}")
+        print(f"Failed to get user info: {response.text}")
         return
 
     user_data = response.json()
@@ -91,7 +91,7 @@ def link_workspace_to_org(token):
             ''', (org_id,))
 
             conn.commit()
-            print("✅ W_DEFAULT workspace linked!")
+            print("W_DEFAULT workspace linked!")
 
     finally:
         DatabaseConnection.return_connection(conn)
@@ -138,7 +138,7 @@ def ask_question(token, question):
         print("=" * 70)
 
     else:
-        print(f"❌ Error: {response.text}")
+        print(f"Error: {response.text}")
 
 
 def main():
@@ -150,7 +150,7 @@ def main():
     try:
         requests.get(f"{API_BASE_URL}/health", timeout=2)
     except requests.exceptions.ConnectionError:
-        print("\n❌ Error: FastAPI server is not running!")
+        print("\nError: FastAPI server is not running!")
         print("\nPlease start the server first:")
         print("  PYTHONPATH=. uvicorn src.api.main:app --reload --host 0.0.0.0 --port 8000")
         sys.exit(1)
@@ -202,7 +202,7 @@ def main():
             print("\n\n👋 Goodbye!")
             break
         except Exception as e:
-            print(f"\n❌ Error: {e}")
+            print(f"\nError: {e}")
 
 
 if __name__ == "__main__":

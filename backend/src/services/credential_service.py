@@ -91,11 +91,11 @@ class CredentialService:
 
             conn.commit()
 
-            logger.info(f"✅ Stored encrypted credentials for workspace {workspace_id}")
+            logger.info(f"Stored encrypted credentials for workspace {workspace_id}")
             return True
 
         except Exception as e:
-            logger.error(f"❌ Error storing credentials for {workspace_id}: {e}", exc_info=True)
+            logger.error(f"Error storing credentials for {workspace_id}: {e}", exc_info=True)
             conn.rollback()
             return False
         finally:
@@ -161,7 +161,7 @@ class CredentialService:
                 }
             else:
                 # Fallback to plaintext (for backward compatibility)
-                logger.warning(f"⚠️  Using plaintext credentials for {workspace_id} - consider migrating")
+                logger.warning(f" Using plaintext credentials for {workspace_id} - consider migrating")
                 return {
                     'bot_token': bot_token,
                     'app_token': app_token,
@@ -171,7 +171,7 @@ class CredentialService:
                 }
 
         except Exception as e:
-            logger.error(f"❌ Error retrieving credentials for {workspace_id}: {e}", exc_info=True)
+            logger.error(f"Error retrieving credentials for {workspace_id}: {e}", exc_info=True)
             return None
         finally:
             cur.close()
@@ -201,11 +201,11 @@ class CredentialService:
             # Update verification status
             self._update_verification_status(workspace_id, is_valid=True)
 
-            logger.info(f"✅ Credentials verified for workspace {workspace_id}")
+            logger.info(f"Credentials verified for workspace {workspace_id}")
             return True
 
         except SlackApiError as e:
-            logger.error(f"❌ Invalid credentials for {workspace_id}: {e.response['error']}")
+            logger.error(f"Invalid credentials for {workspace_id}: {e.response['error']}")
             self._update_verification_status(workspace_id, is_valid=False)
             return False
 
@@ -293,10 +293,10 @@ class CredentialService:
 
                     conn.commit()
                     migrated += 1
-                    logger.info(f"✅ Migrated credentials for {workspace_id}")
+                    logger.info(f"Migrated credentials for {workspace_id}")
 
                 except Exception as e:
-                    logger.error(f"❌ Failed to migrate {workspace_id}: {e}")
+                    logger.error(f"Failed to migrate {workspace_id}: {e}")
                     conn.rollback()
                     failed += 1
 
@@ -328,16 +328,16 @@ if __name__ == "__main__":
         signing_secret="test-secret-789",
         bot_user_id="U_TEST123"
     )
-    print(f"✅ Store: {success}")
+    print(f"Store: {success}")
 
     # Test 2: Retrieve credentials
     print("\nTest 2: Retrieving credentials...")
     creds = service.get_credentials("TEST_WORKSPACE")
     if creds:
-        print(f"✅ Retrieved: bot_token={creds['bot_token'][:20]}...")
+        print(f"Retrieved: bot_token={creds['bot_token'][:20]}...")
         print(f"   Decryption successful: {creds['bot_token'] == 'xoxb-test-token-123'}")
     else:
-        print("❌ Failed to retrieve")
+        print("Failed to retrieve")
 
     # Test 3: Verify credentials (will fail with test tokens)
     print("\nTest 3: Verifying credentials...")
@@ -345,4 +345,4 @@ if __name__ == "__main__":
     # valid = service.verify_credentials("TEST_WORKSPACE")
     # print(f"Valid: {valid}")
 
-    print("\n✅ All tests completed")
+    print("\nAll tests completed")

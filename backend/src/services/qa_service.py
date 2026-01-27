@@ -648,7 +648,7 @@ if __name__ == "__main__":
             print(f"     {source['text'][:80]}...")
 
     print("\n" + "="*60)
-    print("✅ Q&A Service test complete!")
+    print("Q&A Service test complete!")
 
     from src.db.connection import DatabaseConnection
     DatabaseConnection.close_all_connections()

@@ -51,11 +51,11 @@ export function SlackWorkspaceForm({ onSuccess, onSkip }: SlackWorkspaceFormProp
       });
       
       setConnectionStatus('success');
-      toast.success('✅ Connection verified! Your Slack workspace is ready.');
+      toast.success('Connection verified! Your Slack workspace is ready.');
     } catch (error) {
       setConnectionStatus('error');
       const errorMessage = error instanceof Error ? error.message : 'Connection failed';
-      toast.error(`❌ Connection failed: ${errorMessage}`);
+      toast.error(`Connection failed: ${errorMessage}`);
     } finally {
       setIsTestingConnection(false);
     }

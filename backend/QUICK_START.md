@@ -1,4 +1,4 @@
-# 🚀 Quick Start Guide - Slack Helper Bot
+# Quick Start Guide - Slack Helper Bot
 
 **Updated:** 2025-11-27 (Week 1, Tuesday)
 
@@ -19,13 +19,13 @@ python -m src.main
 ```
 
 **This single command starts:**
-- ✅ FastAPI server (REST API on port 8000)
-- ✅ Slack Socket Mode listener (slash commands, mentions)
-- ✅ Background task scheduler (automated backfills)
+- FastAPI server (REST API on port 8000)
+- Slack Socket Mode listener (slash commands, mentions)
+- Background task scheduler (automated backfills)
 
 ---
 
-## 📋 Prerequisites
+## Prerequisites
 
 ### Required:
 - Python 3.10+
@@ -103,20 +103,20 @@ python -m src.main
 SLACK HELPER BOT - UNIFIED BACKEND
 ======================================================================
 
-🚀 Starting FastAPI server on http://0.0.0.0:8000
-🚀 Starting Slack Socket Mode listener
+Starting FastAPI server on http://0.0.0.0:8000
+Starting Slack Socket Mode listener
    Bot token: xoxb-...
    App token: xapp-...
-✅ Slack listener ready - slash commands enabled
-🚀 Starting background task scheduler
-✅ Scheduler ready
+Slack listener ready - slash commands enabled
+Starting background task scheduler
+Scheduler ready
 
 ======================================================================
-✅ All services started successfully
+All services started successfully
 ======================================================================
 
-📍 API Documentation: http://localhost:8000/api/docs
-📍 Health Check: http://localhost:8000/health
+API Documentation: http://localhost:8000/api/docs
+Health Check: http://localhost:8000/health
 
 Press Ctrl+C to shutdown
 ```
@@ -183,7 +183,7 @@ Coming in Week 1, Thursday! Will run automatically based on org settings.
 
 ---
 
-## 🛑 Stopping the Application
+## Stopping the Application
 
 Press `Ctrl+C` in the terminal where `python -m src.main` is running.
 
@@ -272,7 +272,7 @@ python -m src.main
 
 ## 🎯 Next Steps
 
-1. ✅ **Running?** Great! Try asking questions in Slack
+1. **Running?** Great! Try asking questions in Slack
 2. 📊 **Need data?** Run a backfill to collect historical messages
 3. 👥 **Add users?** Use the API to invite team members (coming soon)
 4. ⚙️ **Configure AI?** Settings API coming in Week 5

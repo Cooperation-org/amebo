@@ -203,7 +203,7 @@ if __name__ == "__main__":
 
     print("Testing database connection...")
     if test_connection():
-        print("✅ Connection successful!")
+        print("Connection successful!")
 
         # Test query
         print("\nTesting table count...")
@@ -212,7 +212,7 @@ if __name__ == "__main__":
             FROM information_schema.tables
             WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
         """)
-        print(f"✅ Found {result[0]['table_count']} tables")
+        print(f"Found {result[0]['table_count']} tables")
 
         # List tables
         print("\nListing tables...")
@@ -226,7 +226,7 @@ if __name__ == "__main__":
             print(f"  - {table['table_name']}")
 
     else:
-        print("❌ Connection failed!")
+        print("Connection failed!")
 
     # Clean up
     DatabaseConnection.close_all_connections()

@@ -142,7 +142,7 @@ async def handle_ask(web_client, user_id, channel_id, question, private=True):
             answer_text += "🔗 *Related Links:*\n"
             for link in project_links[:5]:
                 if link['type'] == 'github':
-                    answer_text += f"• 📂 GitHub: <{link['url']}>\n"
+                    answer_text += f"• GitHub: <{link['url']}>\n"
                 else:
                     answer_text += f"• 📄 Docs: <{link['url']}>\n"
             answer_text += "\n"
@@ -174,12 +174,12 @@ async def handle_ask(web_client, user_id, channel_id, question, private=True):
                 text=answer_text
             )
 
-        logger.info(f"✅ Answered question from {user_id}")
+        logger.info(f"Answered question from {user_id}")
 
     except Exception as e:
-        logger.error(f"❌ Error: {e}", exc_info=True)
+        logger.error(f"Error: {e}", exc_info=True)
 
-        error_text = f"❌ Sorry, I encountered an error:\n```{str(e)}```"
+        error_text = f"Sorry, I encountered an error:\n```{str(e)}```"
 
         if private:
             await web_client.chat_postEphemeral(
@@ -252,7 +252,7 @@ async def process_events(client: SocketModeClient, req: SocketModeRequest):
                     response_text += "\n🔗 *Links:*\n"
                     for link in project_links[:3]:
                         if link['type'] == 'github':
-                            response_text += f"• 📂 <{link['url']}>\n"
+                            response_text += f"• <{link['url']}>\n"
                         else:
                             response_text += f"• 📄 <{link['url']}>\n"
 

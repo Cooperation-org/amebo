@@ -23,7 +23,7 @@ def run_migration():
 
     try:
         with conn.cursor() as cur:
-            print("\n📋 Step 1: Updating backfill_schedules table...")
+            print("\nStep 1: Updating backfill_schedules table...")
 
             # Add new columns to backfill_schedules if they don't exist
             cur.execute("""
@@ -48,9 +48,9 @@ def run_migration():
                 ALTER COLUMN days_to_backfill SET DEFAULT 90;
             """)
 
-            print("✅ Updated backfill_schedules table")
+            print("Updated backfill_schedules table")
 
-            print("\n📋 Step 2: Creating indexing_status table...")
+            print("\nStep 2: Creating indexing_status table...")
 
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS indexing_status (
@@ -85,9 +85,9 @@ def run_migration():
                 ON indexing_status(last_sync_at);
             """)
 
-            print("✅ Created indexing_status table")
+            print("Created indexing_status table")
 
-            print("\n📋 Step 3: Creating conversation_history table...")
+            print("\nStep 3: Creating conversation_history table...")
 
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS conversation_history (
@@ -118,13 +118,13 @@ def run_migration():
                 ON conversation_history(workspace_id, channel_id);
             """)
 
-            print("✅ Created conversation_history table")
+            print("Created conversation_history table")
 
             # Commit all changes
             conn.commit()
 
             print("\n" + "=" * 70)
-            print("✅ MIGRATION COMPLETED SUCCESSFULLY")
+            print("MIGRATION COMPLETED SUCCESSFULLY")
             print("=" * 70)
 
             # Verify tables
@@ -152,7 +152,7 @@ def run_migration():
                 print(f"   ✓ {col[0]}")
 
     except Exception as e:
-        print(f"\n❌ Migration failed: {e}")
+        print(f"\nMigration failed: {e}")
         conn.rollback()
         import traceback
         traceback.print_exc()

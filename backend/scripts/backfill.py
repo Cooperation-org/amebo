@@ -179,14 +179,14 @@ class BackfillService:
                     logger.info(f"  Progress: {messages_synced} messages synced")
 
             # Complete sync
-            logger.info(f"  ✅ Synced {messages_synced} messages from #{channel_name}")
+            logger.info(f"  Synced {messages_synced} messages from #{channel_name}")
 
             if not self.dry_run:
                 sync_repo.complete_sync(sync_id, messages_synced)
                 channel_repo.update_last_sync(channel_id, last_ts)
 
         except Exception as e:
-            logger.error(f"  ❌ Error syncing channel: {e}")
+            logger.error(f"  Error syncing channel: {e}")
             if not self.dry_run and sync_id:
                 sync_repo.fail_sync(sync_id, str(e))
             raise
@@ -318,20 +318,20 @@ def main():
             service.sync_all_channels(days_back=args.days)
 
             logger.info("=" * 60)
-            logger.info("✅ Backfill completed successfully!")
+            logger.info("Backfill completed successfully!")
             logger.info("=" * 60)
 
         elif args.channels:
             channel_ids = [ch.strip() for ch in args.channels.split(',')]
             logger.info(f"Syncing {len(channel_ids)} specific channels")
             service.sync_specific_channels(channel_ids, days_back=args.days)
-            logger.info("✅ Channel sync completed!")
+            logger.info("Channel sync completed!")
 
     except KeyboardInterrupt:
-        logger.info("\n⚠️  Backfill interrupted by user")
+        logger.info("\n Backfill interrupted by user")
         sys.exit(1)
     except Exception as e:
-        logger.error(f"❌ Backfill failed: {e}", exc_info=True)
+        logger.error(f"Backfill failed: {e}", exc_info=True)
         sys.exit(1)
     finally:
         if not args.dry_run:

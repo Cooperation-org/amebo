@@ -22,11 +22,11 @@ def register_workspace():
     signing_secret = os.getenv("SLACK_SIGNING_SECRET")
 
     if not bot_token:
-        print("❌ SLACK_BOT_TOKEN not found in .env")
+        print("SLACK_BOT_TOKEN not found in .env")
         return False
 
     if not app_token:
-        print("❌ SLACK_APP_TOKEN not found in .env")
+        print("SLACK_APP_TOKEN not found in .env")
         print("   You need to enable Socket Mode and generate an app-level token")
         return False
 
@@ -48,7 +48,7 @@ def register_workspace():
                     VALUES ('W_DEFAULT', 'Default Workspace', true)
                     ON CONFLICT (workspace_id) DO NOTHING
                 """)
-                print("✅ Workspace created")
+                print("Workspace created")
 
             # Update or create installation
             cur.execute("""
@@ -64,7 +64,7 @@ def register_workspace():
             """, (bot_token, app_token, signing_secret))
 
             conn.commit()
-            print("✅ Installation registered successfully!")
+            print("Installation registered successfully!")
             print("")
             print("You can now:")
             print("1. Run: python scripts/start_slack_commands.py")
@@ -73,7 +73,7 @@ def register_workspace():
             return True
 
     except Exception as e:
-        print(f"❌ Error: {e}")
+        print(f"Error: {e}")
         conn.rollback()
         return False
     finally:
@@ -90,11 +90,11 @@ if __name__ == "__main__":
     if register_workspace():
         print("")
         print("=" * 70)
-        print("✅ SUCCESS!")
+        print("SUCCESS!")
         print("=" * 70)
     else:
         print("")
         print("=" * 70)
-        print("❌ FAILED - Please check the errors above")
+        print("FAILED - Please check the errors above")
         print("=" * 70)
         sys.exit(1)

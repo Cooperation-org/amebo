@@ -15,14 +15,14 @@
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
-## 📋 Prerequisites
+## Prerequisites
 
 - **Python 3.9+**
 - **PostgreSQL 13+**
 - **Slack App** with Bot Token, App Token, and Signing Secret
 - **Anthropic API Key** for Claude AI
 
-## 🚀 Quick Setup
+## Quick Setup
 
 ### 1. Environment Setup
 
@@ -309,7 +309,7 @@ logging.basicConfig(level=logging.DEBUG)
 - **Background Tasks** - APScheduler for non-blocking operations
 - **Caching** - ChromaDB vector caching for fast similarity search
 
-## 🚀 Production Deployment
+## Production Deployment
 
 ```bash
 # Install production dependencies
@@ -361,7 +361,7 @@ docker run -p 8000:8000 slack-helper-backend
 | `DEV_AUTH_EMAIL` | Email for dev login | - |
 | `DEV_AUTH_PASSWORD` | Password for dev login | - |
 
-> ⚠️ **Never enable `DEV_AUTH_ENABLED` in production!**
+> **Never enable `DEV_AUTH_ENABLED` in production!**
 
 ## 🤝 Contributing
 

@@ -4,12 +4,12 @@ Real-time message collection service using Slack Socket Mode. Automatically coll
 
 ## Features
 
-✅ **Multi-Workspace Support** - Listens to all connected workspaces simultaneously
-✅ **Real-Time Collection** - Instant message collection via WebSocket
-✅ **Dual Storage** - Metadata in PostgreSQL, content in ChromaDB
-✅ **Event Handling** - Messages, reactions, user changes, channels
-✅ **Error Recovery** - Graceful error handling and logging
-✅ **No Webhooks Required** - Uses Socket Mode (no public URL needed)
+**Multi-Workspace Support** - Listens to all connected workspaces simultaneously
+**Real-Time Collection** - Instant message collection via WebSocket
+**Dual Storage** - Metadata in PostgreSQL, content in ChromaDB
+**Event Handling** - Messages, reactions, user changes, channels
+**Error Recovery** - Graceful error handling and logging
+**No Webhooks Required** - Uses Socket Mode (no public URL needed)
 
 ## How It Works
 
@@ -223,8 +223,8 @@ print(f'Total messages: {collection.count()}')
 
 | Feature | Socket Mode (Current) | Webhooks (Events API) |
 |---------|----------------------|----------------------|
-| Public URL | ❌ Not required | ✅ Required |
-| Real-time | ✅ WebSocket | ✅ HTTP POST |
+| Public URL | Not required | Required |
+| Real-time | WebSocket | HTTP POST |
 | Setup | Easier (no ngrok for dev) | Harder (need public endpoint) |
 | Scalability | Good (up to ~100 workspaces) | Better (unlimited) |
 | Latency | Very low | Low |
