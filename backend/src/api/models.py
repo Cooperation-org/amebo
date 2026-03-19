@@ -40,10 +40,45 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int = 3600  # seconds
+    must_change_password: bool = False
 
 
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(..., min_length=8, max_length=100)
+
+    @validator('new_password')
+    def password_strength(cls, v):
+        if not any(c.isupper() for c in v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not any(c.islower() for c in v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not any(c.isdigit() for c in v):
+            raise ValueError('Password must contain at least one digit')
+        return v
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(..., min_length=8, max_length=100)
+
+    @validator('new_password')
+    def password_strength(cls, v):
+        if not any(c.isupper() for c in v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        if not any(c.islower() for c in v):
+            raise ValueError('Password must contain at least one lowercase letter')
+        if not any(c.isdigit() for c in v):
+            raise ValueError('Password must contain at least one digit')
+        return v
 
 
 class UserResponse(BaseModel):
@@ -151,8 +186,8 @@ class DocumentListResponse(BaseModel):
 class QARequest(BaseModel):
     question: str = Field(..., min_length=3, max_length=1000)
     workspace_id: Optional[str] = None
-    channel_filter: Optional[str] = None
-    days_back: Optional[int] = Field(default=30, ge=1, le=365)
+    channel_filter: Optional[List[str]] = None  # List of channel names for multi-channel filter
+    days_back: Optional[int] = Field(default=None, ge=0, le=365)
     include_documents: bool = True
     include_slack: bool = True
     max_sources: int = Field(default=10, ge=1, le=50)

@@ -11,6 +11,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { apiClient } from '@/src/lib/api';
+import { usePermissions } from '@/src/hooks/usePermissions';
 
 const editWorkspaceSchema = z.object({
   team_name: z.string().min(1, 'Workspace name is required'),
@@ -50,6 +51,7 @@ export function EditWorkspaceModal({
   onWorkspaceUpdated,
   onWorkspaceDeleted 
 }: EditWorkspaceModalProps) {
+  const { canDeleteWorkspace } = usePermissions();
   const [showTokens, setShowTokens] = useState(false);
   const [isTestingConnection, setIsTestingConnection] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'error'>('idle');
@@ -74,17 +76,13 @@ export function EditWorkspaceModal({
   });
 
   const testConnection = async () => {
-    const values = getValues();
     setIsTestingConnection(true);
     setConnectionStatus('idle');
 
     try {
-      await apiClient.testWorkspaceConnection(workspace!.workspace_id, {
-        bot_token: values.bot_token,
-        app_token: values.app_token,
-        signing_secret: values.signing_secret,
-      });
-      setConnectionStatus('success');
+      // Test using stored credentials (GET endpoint)
+      const result = await apiClient.testWorkspaceConnection(workspace!.workspace_id) as any;
+      setConnectionStatus(result?.success ? 'success' : 'error');
     } catch (error) {
       setConnectionStatus('error');
     } finally {
@@ -267,6 +265,7 @@ export function EditWorkspaceModal({
             </Card>
 
             <div className="flex gap-2 pt-4">
+              {canDeleteWorkspace && (
               <Button
                 type="button"
                 variant="outline"
@@ -276,6 +275,7 @@ export function EditWorkspaceModal({
                 <Trash2 className="h-4 w-4 mr-2" />
                 Delete
               </Button>
+              )}
               <div className="flex-1" />
               <Button
                 type="button"

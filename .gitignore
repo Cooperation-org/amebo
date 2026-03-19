@@ -6,6 +6,10 @@ env/
 *.pyc
 __pycache__/
 
+amebo_backup.dump
+backend/.env.old
+chromadb_backup.tar.gz
+
 # IDE
 .vscode/
 .idea/

@@ -11,6 +11,7 @@ import { useWorkspaceSync } from '@/src/hooks/useWorkspaceSync';
 import { WorkspaceCard } from '@/src/components/workspaces/WorkspaceCard';
 import { AddWorkspaceModal } from '@/src/components/workspaces/AddWorkspaceModal';
 import { EditWorkspaceModal } from '@/src/components/workspaces/EditWorkspaceModal';
+import { usePermissions } from '@/src/hooks/usePermissions';
 
 export default function WorkspacesPage() {
   const { data: workspacesData, isLoading } = useWorkspaces();
@@ -20,6 +21,7 @@ export default function WorkspacesPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [editingWorkspace, setEditingWorkspace] = useState<any>(null);
 
+  const { canAddWorkspace, canEditWorkspace, canDeleteWorkspace, canSyncWorkspace } = usePermissions();
   const workspaces = workspacesData?.workspaces || [];
 
   const filteredWorkspaces = workspaces.filter(workspace => {
@@ -60,7 +62,7 @@ export default function WorkspacesPage() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Workspaces</h1>
-        <AddWorkspaceModal onWorkspaceAdded={() => window.location.reload()} />
+        {canAddWorkspace && <AddWorkspaceModal onWorkspaceAdded={() => window.location.reload()} />}
       </div>
 
       {/* Filters */}
@@ -121,7 +123,7 @@ export default function WorkspacesPage() {
                 <Plus className="h-12 w-12 mx-auto mb-4 text-gray-300" />
                 <h3 className="text-lg font-medium mb-2">No workspaces yet</h3>
                 <p className="mb-4">Connect your first Slack workspace to get started.</p>
-                <AddWorkspaceModal onWorkspaceAdded={() => window.location.reload()} />
+                {canAddWorkspace && <AddWorkspaceModal onWorkspaceAdded={() => window.location.reload()} />}
               </>
             )}
           </div>
@@ -135,9 +137,9 @@ export default function WorkspacesPage() {
             <WorkspaceCard
               key={workspace.workspace_id}
               workspace={workspace}
-              onEdit={(ws) => setEditingWorkspace(ws)}
-              onDelete={(ws) => setEditingWorkspace(ws)}
-              onSync={(ws) => syncWorkspace.mutate(ws.workspace_id)}
+              onEdit={canEditWorkspace ? (ws) => setEditingWorkspace(ws) : undefined}
+              onDelete={canDeleteWorkspace ? (ws) => setEditingWorkspace(ws) : undefined}
+              onSync={canSyncWorkspace ? (ws) => syncWorkspace.mutate(ws.workspace_id) : undefined}
             />
           ))}
         </div>

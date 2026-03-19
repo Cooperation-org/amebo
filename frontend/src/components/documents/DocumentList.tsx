@@ -20,7 +20,7 @@ interface Document {
 interface DocumentListProps {
   documents: Document[];
   isLoading?: boolean;
-  onDelete: (documentId: string) => void;
+  onDelete?: (documentId: string) => void;
   isDeleting?: boolean;
 }
 
@@ -100,7 +100,7 @@ export function DocumentList({
   };
 
   const handleDelete = (documentId: string, filename: string) => {
-    if (window.confirm(`Are you sure you want to delete "${filename}"?`)) {
+    if (onDelete && window.confirm(`Are you sure you want to delete "${filename}"?`)) {
       onDelete(documentId);
     }
   };
@@ -178,6 +178,7 @@ export function DocumentList({
                 >
                   <Download className="h-4 w-4" />
                 </Button>
+                {onDelete && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -188,6 +189,7 @@ export function DocumentList({
                 >
                   <Trash2 className="h-4 w-4" />
                 </Button>
+                )}
               </div>
             </div>
           </CardContent>

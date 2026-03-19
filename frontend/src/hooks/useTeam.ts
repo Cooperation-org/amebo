@@ -5,7 +5,7 @@ interface TeamMember {
   user_id: number;
   name: string;
   email: string;
-  role: 'admin' | 'member' | 'viewer';
+  role: 'owner' | 'admin' | 'member' | 'viewer';
   status: 'active' | 'pending' | 'inactive';
   last_active?: string;
   invited_at: string;
@@ -13,7 +13,7 @@ interface TeamMember {
 
 interface InviteUserRequest {
   email: string;
-  role: 'admin' | 'member' | 'viewer';
+  role: 'owner' | 'admin' | 'member' | 'viewer';
 }
 
 export function useTeamMembers() {

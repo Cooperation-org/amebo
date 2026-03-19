@@ -9,9 +9,11 @@ import Link from 'next/link';
 import { useWorkspaces } from '@/src/hooks/useWorkspaces';
 import { useDocuments } from '@/src/hooks/useDocuments';
 import { useQueryHistory } from '@/src/hooks/useQA';
+import { usePermissions } from '@/src/hooks/usePermissions';
 
 export default function DashboardPage() {
   const { user } = useAuthStore();
+  const { canAskQuestions, canAddWorkspace, canUploadDocuments, canInviteUsers } = usePermissions();
   const { data: workspacesData } = useWorkspaces();
   const { data: documentsData } = useDocuments();
   const documents = documentsData?.documents || [];
@@ -63,21 +65,21 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="px-4 py-6 sm:px-0">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">
-          Welcome back, {user?.email}!
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+          Welcome back, {user?.full_name || user?.email}!
         </h1>
-        <p className="mt-2 text-gray-600">
+        <p className="mt-1 text-sm sm:text-base text-gray-600">
           Here's what's happening with your AI assistant
         </p>
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6">
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex items-center justify-between gap-2">
               <div>
                 <p className="text-sm font-medium text-gray-600">Active Workspaces</p>
                 <p className="text-2xl font-bold text-gray-900">{activeWorkspaces}</p>
@@ -88,8 +90,8 @@ export default function DashboardPage() {
         </Card>
         
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex items-center justify-between gap-2">
               <div>
                 <p className="text-sm font-medium text-gray-600">Messages Indexed</p>
                 <p className="text-2xl font-bold text-gray-900">{totalMessages.toLocaleString()}</p>
@@ -100,8 +102,8 @@ export default function DashboardPage() {
         </Card>
         
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex items-center justify-between gap-2">
               <div>
                 <p className="text-sm font-medium text-gray-600">Queries This Month</p>
                 <p className="text-2xl font-bold text-gray-900">{thisMonthQueries}</p>
@@ -112,8 +114,8 @@ export default function DashboardPage() {
         </Card>
         
         <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
+          <CardContent className="p-4 sm:p-6">
+            <div className="flex items-center justify-between gap-2">
               <div>
                 <p className="text-sm font-medium text-gray-600">Documents</p>
                 <p className="text-2xl font-bold text-gray-900">{indexedDocuments}</p>
@@ -132,41 +134,49 @@ export default function DashboardPage() {
               <CardTitle>Quick Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <Button 
-                asChild={hasWorkspaces} 
-                className="w-full justify-start" 
-                disabled={!hasWorkspaces}
-              >
-                {hasWorkspaces ? (
-                  <Link href="/dashboard/qa">
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    Ask a Question
+              {canAskQuestions && (
+                <Button
+                  asChild={hasWorkspaces}
+                  className="w-full justify-start"
+                  disabled={!hasWorkspaces}
+                >
+                  {hasWorkspaces ? (
+                    <Link href="/dashboard/qa">
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      Ask a Question
+                    </Link>
+                  ) : (
+                    <>
+                      <MessageSquare className="h-4 w-4 mr-2" />
+                      Ask a Question (Add workspace first)
+                    </>
+                  )}
+                </Button>
+              )}
+              {canAddWorkspace && (
+                <Button asChild variant="outline" className="w-full justify-start">
+                  <Link href="/dashboard/workspaces">
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Workspace
                   </Link>
-                ) : (
-                  <>
-                    <MessageSquare className="h-4 w-4 mr-2" />
-                    Ask a Question (Add workspace first)
-                  </>
-                )}
-              </Button>
-              <Button asChild variant="outline" className="w-full justify-start">
-                <Link href="/dashboard/workspaces">
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Workspace
-                </Link>
-              </Button>
-              <Button asChild variant="outline" className="w-full justify-start">
-                <Link href="/dashboard/documents">
-                  <FileText className="h-4 w-4 mr-2" />
-                  Upload Document
-                </Link>
-              </Button>
-              <Button asChild variant="outline" className="w-full justify-start">
-                <Link href="/dashboard/team">
-                  <Users className="h-4 w-4 mr-2" />
-                  Invite Team Member
-                </Link>
-              </Button>
+                </Button>
+              )}
+              {canUploadDocuments && (
+                <Button asChild variant="outline" className="w-full justify-start">
+                  <Link href="/dashboard/documents">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Upload Document
+                  </Link>
+                </Button>
+              )}
+              {canInviteUsers && (
+                <Button asChild variant="outline" className="w-full justify-start">
+                  <Link href="/dashboard/team">
+                    <Users className="h-4 w-4 mr-2" />
+                    Invite Team Member
+                  </Link>
+                </Button>
+              )}
             </CardContent>
           </Card>
         </div>

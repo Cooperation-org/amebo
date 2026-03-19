@@ -1,27 +1,20 @@
 'use client';
 
+import { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { ProtectedRoute } from '@/src/components/auth/ProtectedRoute';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { Button } from '@/components/ui/button';
-import { 
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { User, Settings, LogOut, MessageSquare, Building2, Users, FileText } from 'lucide-react';
-
-const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: MessageSquare },
-  { name: 'Q&A', href: '/dashboard/qa', icon: MessageSquare },
-  { name: 'Workspaces', href: '/dashboard/workspaces', icon: Building2 },
-  { name: 'Documents', href: '/dashboard/documents', icon: FileText },
-  { name: 'Team', href: '/dashboard/team', icon: Users },
-  { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-];
+import { User, Settings, LogOut, MessageSquare, Building2, Users, FileText, Menu, X } from 'lucide-react';
+import { usePermissions } from '@/src/hooks/usePermissions';
 
 export default function DashboardLayout({
   children,
@@ -30,6 +23,17 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const { user, logout } = useAuthStore();
+  const { canInviteUsers } = usePermissions();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const navigation = [
+    { name: 'Dashboard', href: '/dashboard', icon: MessageSquare },
+    { name: 'Q&A', href: '/dashboard/qa', icon: MessageSquare },
+    { name: 'Workspaces', href: '/dashboard/workspaces', icon: Building2 },
+    { name: 'Documents', href: '/dashboard/documents', icon: FileText },
+    ...(canInviteUsers ? [{ name: 'Team', href: '/dashboard/team', icon: Users }] : []),
+    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+  ];
 
   const handleLogout = async () => {
     await logout();
@@ -67,7 +71,16 @@ export default function DashboardLayout({
                 </div>
               </div>
               <div className="flex items-center space-x-4">
-                <span className="text-sm text-gray-600">{user?.org_name}</span>
+                {/* Mobile hamburger button */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="md:hidden"
+                  onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                >
+                  {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+                </Button>
+                <span className="hidden sm:block text-sm text-gray-600">{user?.org_name}</span>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="sm" className="flex items-center space-x-2">
@@ -93,7 +106,35 @@ export default function DashboardLayout({
             </div>
           </div>
         </nav>
-        <main className="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+
+        {/* Mobile menu */}
+        {mobileMenuOpen && (
+          <div className="md:hidden bg-white border-b shadow-sm">
+            <div className="px-4 py-2 space-y-1">
+              {navigation.map((item) => {
+                const Icon = item.icon;
+                const isActive = pathname === item.href;
+                return (
+                  <Link
+                    key={item.name}
+                    href={item.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                      isActive
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Icon className="h-4 w-4 mr-2" />
+                    {item.name}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <main className="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
           {children}
         </main>
       </div>

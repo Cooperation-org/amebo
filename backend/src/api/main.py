@@ -7,6 +7,7 @@ import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 import logging
 import time
 
@@ -42,8 +43,12 @@ app.add_middleware(
     allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-Requested-With"],
+    allow_headers=["*"],
 )
+
+# Proxy headers middleware - trust X-Forwarded-Proto/X-Forwarded-For from reverse proxy
+# This ensures redirects use HTTPS when behind a load balancer/reverse proxy
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=["*"])
 
 # Rate limiting middleware (applied after CORS)
 # Configure limits via environment variables:

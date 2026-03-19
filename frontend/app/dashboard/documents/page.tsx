@@ -9,17 +9,19 @@ import { DocumentList } from '@/src/components/documents/DocumentList';
 import { FileText, Upload, Trash2, Building2, Plus } from 'lucide-react';
 import { useDocuments, useUploadDocuments, useDeleteDocument, useClearAllDocuments } from '@/src/hooks/useDocuments';
 import { useWorkspaces } from '@/src/hooks/useWorkspaces';
+import { usePermissions } from '@/src/hooks/usePermissions';
 import { toast } from 'sonner';
 import Link from 'next/link';
 
 export default function DocumentsPage() {
-  const { data: documentsData, isLoading } = useDocuments();
+  const { data: documentsData, isLoading, error } = useDocuments();
   const documents = documentsData?.documents || [];
   const { data: workspacesData } = useWorkspaces();
   const uploadMutation = useUploadDocuments();
   const deleteMutation = useDeleteDocument();
   const clearAllMutation = useClearAllDocuments();
   
+  const { canUploadDocuments, canDeleteDocuments, canClearAllDocuments } = usePermissions();
   const workspaces = workspacesData?.workspaces || [];
   const hasWorkspaces = workspaces.length > 0;
 
@@ -57,7 +59,7 @@ export default function DocumentsPage() {
   const stats = getStatusStats();
 
   return (
-    <div className="px-4 py-6 sm:px-0">
+    <div className="space-y-6">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
           <FileText className="h-8 w-8 text-green-600" />
@@ -67,6 +69,14 @@ export default function DocumentsPage() {
           Upload and manage documents for AI-powered search
         </p>
       </div>
+
+      {/* Error Banner */}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+          <p className="text-red-800 text-sm font-medium">Failed to load documents</p>
+          <p className="text-red-600 text-sm mt-1">{error.message || 'Unknown error'}</p>
+        </div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
@@ -127,6 +137,7 @@ export default function DocumentsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Upload Section */}
+        {canUploadDocuments && (
         <div className="lg:col-span-1">
           <Card>
             <CardHeader>
@@ -171,14 +182,15 @@ export default function DocumentsPage() {
             </CardContent>
           </Card>
         </div>
+        )}
 
         {/* Document List */}
-        <div className="lg:col-span-2">
+        <div className={canUploadDocuments ? "lg:col-span-2" : "lg:col-span-3"}>
           <Card>
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Your Documents</CardTitle>
-                {documents.length > 0 && (
+                {canClearAllDocuments && documents.length > 0 && (
                   <Button
                     variant="outline"
                     size="sm"
@@ -200,7 +212,7 @@ export default function DocumentsPage() {
               <DocumentList
                 documents={documents}
                 isLoading={isLoading}
-                onDelete={handleDeleteDocument}
+                onDelete={canDeleteDocuments ? handleDeleteDocument : undefined}
                 isDeleting={deleteMutation.isPending}
               />
             </CardContent>

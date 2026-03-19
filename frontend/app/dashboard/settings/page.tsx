@@ -1,14 +1,21 @@
 'use client';
 
 import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { Settings, Save, RotateCcw } from 'lucide-react';
+import { Settings, Save, RotateCcw, Lock } from 'lucide-react';
+import { toast } from 'sonner';
+import { apiClient } from '@/src/lib/api';
+import { changePasswordSchema, type ChangePasswordFormData } from '@/src/lib/validations';
+import { usePermissions } from '@/src/hooks/usePermissions';
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState({
@@ -27,6 +34,7 @@ export default function SettingsPage() {
     weekly_digest_enabled: false,
   });
 
+  const { canChangeAISettings, canChangeOrgSettings } = usePermissions();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSave = async () => {
@@ -63,6 +71,7 @@ export default function SettingsPage() {
           <h1 className="text-3xl font-bold">Settings</h1>
           <p className="text-gray-600">Configure AI behavior and organization preferences</p>
         </div>
+        {canChangeAISettings && (
         <div className="flex gap-2">
           <Button variant="outline" onClick={handleReset}>
             <RotateCcw className="h-4 w-4 mr-2" />
@@ -73,6 +82,7 @@ export default function SettingsPage() {
             {isLoading ? 'Saving...' : 'Save Changes'}
           </Button>
         </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -228,6 +238,9 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
+        {/* Account Security */}
+        <ChangePasswordCard />
+
         {/* Organization Info */}
         <Card>
           <CardHeader>
@@ -256,5 +269,80 @@ export default function SettingsPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+function ChangePasswordCard() {
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<ChangePasswordFormData>({
+    resolver: zodResolver(changePasswordSchema),
+  });
+
+  const onSubmit = async (data: ChangePasswordFormData) => {
+    try {
+      await apiClient.changePassword(data.currentPassword, data.newPassword);
+      toast.success('Password changed successfully!');
+      reset();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to change password');
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Lock className="h-5 w-5" />
+          Account Security
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="currentPassword">Current password</Label>
+            <Input
+              id="currentPassword"
+              type="password"
+              placeholder="Enter current password"
+              {...register('currentPassword')}
+            />
+            {errors.currentPassword && (
+              <p className="text-sm text-red-600">{errors.currentPassword.message}</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="newPassword">New password</Label>
+            <Input
+              id="newPassword"
+              type="password"
+              placeholder="Enter new password"
+              {...register('newPassword')}
+            />
+            {errors.newPassword && (
+              <p className="text-sm text-red-600">{errors.newPassword.message}</p>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="confirmNewPassword">Confirm new password</Label>
+            <Input
+              id="confirmNewPassword"
+              type="password"
+              placeholder="Confirm new password"
+              {...register('confirmNewPassword')}
+            />
+            {errors.confirmNewPassword && (
+              <p className="text-sm text-red-600">{errors.confirmNewPassword.message}</p>
+            )}
+          </div>
+          <Button type="submit" className="w-full" disabled={isSubmitting}>
+            {isSubmitting ? 'Changing...' : 'Change password'}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import { useAuthStore } from '@/src/store/useAuthStore';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -46,19 +46,19 @@ function LoadingSkeleton() {
 export function ProtectedRoute({ children }: ProtectedRouteProps) {
   const { isAuthenticated, isLoading, checkAuth } = useAuthStore();
   const router = useRouter();
+  const [hasChecked, setHasChecked] = useState(false);
 
   useEffect(() => {
-    checkAuth();
+    checkAuth().finally(() => setHasChecked(true));
   }, [checkAuth]);
 
-  // Temporarily disabled to debug login issues
-  // useEffect(() => {
-  //   if (!isLoading && !isAuthenticated) {
-  //     router.push('/login');
-  //   }
-  // }, [isAuthenticated, isLoading, router]);
+  useEffect(() => {
+    if (hasChecked && !isLoading && !isAuthenticated) {
+      router.push('/login');
+    }
+  }, [hasChecked, isAuthenticated, isLoading, router]);
 
-  if (isLoading) {
+  if (!hasChecked || isLoading) {
     return <LoadingSkeleton />;
   }
 

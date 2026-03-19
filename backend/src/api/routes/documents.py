@@ -81,6 +81,8 @@ async def upload_documents(
 
         # Prepare and validate file data
         file_data_list = []
+        org_id = current_user.get("org_id", 8)
+
         for file in files:
             # Validate content type
             if file.content_type not in ALLOWED_CONTENT_TYPES:
@@ -104,6 +106,25 @@ async def upload_documents(
                     detail=f"File '{file.filename}' is empty"
                 )
 
+            # Check for duplicate file (same name + size + org)
+            dup_conn = DatabaseConnection.get_connection()
+            try:
+                dup_cursor = dup_conn.cursor()
+                dup_cursor.execute("""
+                    SELECT document_id FROM documents
+                    WHERE org_id = %s AND file_name = %s AND file_size_bytes = %s AND is_active = true
+                """, (org_id, file.filename, len(content)))
+                existing = dup_cursor.fetchone()
+                dup_cursor.close()
+            finally:
+                DatabaseConnection.return_connection(dup_conn)
+
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Document '{file.filename}' has already been uploaded. Delete the existing copy first to re-upload."
+                )
+
             file_data_list.append({
                 'filename': file.filename,
                 'content_type': file.content_type,
@@ -114,7 +135,7 @@ async def upload_documents(
         document_service = DocumentService()
         results = await document_service.process_documents(
             file_data_list,
-            org_id=current_user.get("org_id", 8),
+            org_id=org_id,
             user_id=current_user.get("user_id", 1),
             workspace_id=workspace_id
         )
@@ -136,7 +157,7 @@ async def upload_documents(
         )
 
 
-@router.get("/")
+@router.get("")
 async def list_documents(
     page: int = 1,
     page_size: int = 20,
@@ -152,19 +173,23 @@ async def list_documents(
     try:
         conn = DatabaseConnection.get_connection()
         cursor = conn.cursor()
-        
+
+        org_id = current_user.get("org_id")
+        logger.info(f"Listing documents for org_id={org_id}, workspace_id={workspace_id}")
+
         # Build query with optional workspace filter
         where_clause = "WHERE org_id = %s AND is_active = true"
-        params = [current_user.get("org_id", 8)]
-        
+        params = [org_id]
+
         if workspace_id:
             where_clause += " AND workspace_id = %s"
             params.append(workspace_id)
-        
+
         # Get total count
         cursor.execute(f"SELECT COUNT(*) FROM documents {where_clause}", params)
         total = cursor.fetchone()[0]
-        
+        logger.info(f"Found {total} documents for org_id={org_id}")
+
         # Get documents with pagination
         offset = (page - 1) * page_size
         cursor.execute(f"""
@@ -174,31 +199,31 @@ async def list_documents(
             ORDER BY created_at DESC
             LIMIT %s OFFSET %s
         """, params + [page_size, offset])
-        
+
         documents = []
         for row in cursor.fetchall():
-            # Determine status based on chunk_count
-            status = 'indexed' if row[6] > 0 else 'processing'
-            
+            doc_status = 'indexed' if row[6] and row[6] > 0 else 'processing'
+
             documents.append({
                 'id': str(row[0]),
                 'filename': row[3],
                 'file_type': row[4].split('/')[-1] if '/' in row[4] else row[4],
                 'file_size': row[5],
-                'status': status,
+                'chunk_count': row[6] or 0,
+                'status': doc_status,
                 'upload_date': row[7].isoformat() if row[7] else None,
                 'workspace_id': row[1]
             })
-        
+
         return {
             'documents': documents,
             'total': total,
             'page': page,
             'page_size': page_size
         }
-        
+
     except Exception as e:
-        logger.error(f"Error listing documents: {e}")
+        logger.error(f"Error listing documents: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to list documents"

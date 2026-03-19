@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,7 +12,7 @@ import { useWorkspaces, useWorkspaceChannels } from '@/src/hooks/useWorkspaces';
 
 interface FilterOptions {
   workspaceId?: string;
-  channelFilter?: string;
+  channelFilter?: string[];
   daysBack?: number;
   includeDocuments?: boolean;
   includeSlack?: boolean;
@@ -56,13 +56,14 @@ export function FilterSidebar({
     const defaultFilters: FilterOptions = {
       workspaceId: undefined,
       channelFilter: undefined,
-      daysBack: 30,
+      daysBack: undefined,
       includeDocuments: true,
       includeSlack: true,
       maxSources: 10,
     };
     setLocalFilters(defaultFilters);
     onFiltersChange(defaultFilters);
+    setChannelSearch('');
   };
 
   return (
@@ -106,10 +107,10 @@ export function FilterSidebar({
           </Select>
         </div>
 
-        {/* Channel Filter */}
+        {/* Channel Filter (Multi-select) */}
         <div className="space-y-2">
-          <Label htmlFor="channel">Channel</Label>
-          {channels.length > 10 && (
+          <Label>Channels {localFilters.channelFilter?.length ? `(${localFilters.channelFilter.length})` : '(All)'}</Label>
+          {channels.length > 5 && (
             <div className="relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <Input
@@ -121,23 +122,36 @@ export function FilterSidebar({
               />
             </div>
           )}
-          <Select
-            value={localFilters.channelFilter || 'all'}
-            onValueChange={(value) => handleFilterChange('channelFilter', value === 'all' ? undefined : value)}
-            disabled={isLoading || !localFilters.workspaceId}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="All channels" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All channels</SelectItem>
-              {filteredChannels.map((channel) => (
-                <SelectItem key={channel.id} value={channel.name}>
-                  #{channel.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="max-h-48 overflow-y-auto border rounded-md p-2 space-y-1">
+            {!localFilters.workspaceId ? (
+              <p className="text-xs text-gray-400 py-1">Select a workspace first</p>
+            ) : filteredChannels.length === 0 ? (
+              <p className="text-xs text-gray-400 py-1">No channels found</p>
+            ) : (
+              filteredChannels.map((channel) => {
+                const isSelected = localFilters.channelFilter?.includes(channel.name) ?? false;
+                return (
+                  <div key={channel.id} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`channel-${channel.id}`}
+                      checked={isSelected}
+                      disabled={isLoading}
+                      onCheckedChange={(checked) => {
+                        const current = localFilters.channelFilter || [];
+                        const updated = checked
+                          ? [...current, channel.name]
+                          : current.filter(c => c !== channel.name);
+                        handleFilterChange('channelFilter', updated.length > 0 ? updated : undefined);
+                      }}
+                    />
+                    <Label htmlFor={`channel-${channel.id}`} className="text-sm cursor-pointer">
+                      #{channel.name}
+                    </Label>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
 
         {/* Time Range */}

@@ -13,35 +13,44 @@ export class TokenManager {
 
   static setTokens(tokenData: TokenData) {
     if (typeof window === 'undefined') return;
-    
-    const expiryTime = tokenData.expires_in 
+
+    const expiryTime = tokenData.expires_in
       ? Date.now() + (tokenData.expires_in * 1000)
-      : Date.now() + (30 * 24 * 60 * 60 * 1000); // Default 30 days for development
+      : Date.now() + (60 * 60 * 1000); // Default 1 hour
 
     localStorage.setItem(this.TOKEN_KEY, tokenData.access_token);
     localStorage.setItem(this.EXPIRY_KEY, expiryTime.toString());
   }
 
+  static setRefreshToken(token: string) {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(this.REFRESH_KEY, token);
+  }
+
+  static getRefreshToken(): string | null {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem(this.REFRESH_KEY);
+  }
+
   static getToken(): string | null {
     if (typeof window === 'undefined') return null;
-    
+
     const token = localStorage.getItem(this.TOKEN_KEY);
-    const expiry = localStorage.getItem(this.EXPIRY_KEY);
-    
     if (!token) return null;
-    
-    // For development, be more lenient with expiry
-    if (expiry && Date.now() > parseInt(expiry)) {
-      // Don't auto-clear in development, just return token anyway
-      console.warn('Token expired but keeping for development');
-    }
-    
+
     return token;
+  }
+
+  static isTokenExpired(): boolean {
+    if (typeof window === 'undefined') return true;
+    const expiry = localStorage.getItem(this.EXPIRY_KEY);
+    if (!expiry) return false;
+    return Date.now() > parseInt(expiry);
   }
 
   static clearTokens() {
     if (typeof window === 'undefined') return;
-    
+
     localStorage.removeItem(this.TOKEN_KEY);
     localStorage.removeItem(this.REFRESH_KEY);
     localStorage.removeItem(this.EXPIRY_KEY);

@@ -10,13 +10,14 @@ import { Users, UserPlus, MoreHorizontal, Mail, Shield, Eye, Loader2, Trash2, Us
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { InviteUserModal } from '@/src/components/team/InviteUserModal';
 import { useTeamMembers, useUpdateUserRole, useDeactivateUser, useDeleteUser, useActivateUser } from '@/src/hooks/useTeam';
+import { usePermissions } from '@/src/hooks/usePermissions';
 import { toast } from 'sonner';
 
 interface TeamMember {
   user_id: number;
   name: string;
   email: string;
-  role: 'admin' | 'member' | 'viewer';
+  role: 'owner' | 'admin' | 'member' | 'viewer';
   status: 'active' | 'pending' | 'inactive';
   last_active?: string;
   invited_at: string;
@@ -24,7 +25,8 @@ interface TeamMember {
 
 export default function TeamPage() {
   const [showInviteModal, setShowInviteModal] = useState(false);
-  
+  const { canInviteUsers, canChangeRoles, canDeactivateUsers, canDeleteUsers, canAssignOwnerRole } = usePermissions();
+
   const { data: teamData, isLoading } = useTeamMembers();
   const updateRoleMutation = useUpdateUserRole();
   const deactivateUserMutation = useDeactivateUser();
@@ -75,6 +77,8 @@ export default function TeamPage() {
 
   const getRoleIcon = (role: string) => {
     switch (role) {
+      case 'owner':
+        return <Shield className="h-4 w-4 text-purple-600" />;
       case 'admin':
         return <Shield className="h-4 w-4 text-red-600" />;
       case 'member':
@@ -88,6 +92,8 @@ export default function TeamPage() {
 
   const getRoleBadge = (role: string) => {
     switch (role) {
+      case 'owner':
+        return <Badge className="bg-purple-100 text-purple-800">Owner</Badge>;
       case 'admin':
         return <Badge className="bg-red-100 text-red-800">Admin</Badge>;
       case 'member':
@@ -123,15 +129,17 @@ export default function TeamPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold">Team Management</h1>
-          <p className="text-gray-600">Manage users and permissions for your organization</p>
+          <h1 className="text-2xl sm:text-3xl font-bold">Team Management</h1>
+          <p className="text-gray-600 text-sm sm:text-base">Manage users and permissions for your organization</p>
         </div>
-        <Button onClick={() => setShowInviteModal(true)}>
-          <UserPlus className="h-4 w-4 mr-2" />
-          Invite User
-        </Button>
+        {canInviteUsers && (
+          <Button onClick={() => setShowInviteModal(true)} className="w-full sm:w-auto">
+            <UserPlus className="h-4 w-4 mr-2" />
+            Invite User
+          </Button>
+        )}
       </div>
 
       {/* Role Descriptions */}
@@ -201,70 +209,62 @@ export default function TeamPage() {
                 teamMembers.map((member) => (
                   <div
                     key={member.user_id}
-                    className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition-colors"
+                    className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 border rounded-lg hover:bg-gray-50 transition-colors"
                   >
-                    <div className="flex items-center gap-4">
-                      <Avatar>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Avatar className="shrink-0">
                         <AvatarImage src="" />
                         <AvatarFallback>
                           {member.name.split(' ').map(n => n[0]).join('')}
                         </AvatarFallback>
                       </Avatar>
-                      
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-medium">{member.name}</h4>
+
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="font-medium truncate">{member.name}</h4>
                           {getRoleIcon(member.role)}
+                          {getRoleBadge(member.role)}
+                          {getStatusBadge(member.status)}
                         </div>
-                        <p className="text-sm text-gray-600">{member.email}</p>
-                        {member.last_active && (
-                          <p className="text-xs text-gray-500">Last active: {member.last_active}</p>
-                        )}
+                        <p className="text-sm text-gray-600 truncate">{member.email}</p>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4">
-                      <div className="text-right">
-                        {getRoleBadge(member.role)}
-                        <div className="mt-1">
-                          {getStatusBadge(member.status)}
-                        </div>
-                      </div>
-
-                      <div className="text-right text-sm text-gray-500">
-                        <p>Invited</p>
-                        <p>{formatDate(member.invited_at)}</p>
-                      </div>
-
-                      <div className="flex items-center gap-2">
-                        <Select 
+                    {(canChangeRoles || canDeactivateUsers || canDeleteUsers) && (
+                    <div className="flex items-center gap-2 ml-11 sm:ml-0">
+                      {canChangeRoles && (
+                        <Select
                           defaultValue={member.role}
                           onValueChange={(value) => handleRoleChange(member.user_id, value)}
                           disabled={updateRoleMutation.isPending}
                         >
-                          <SelectTrigger className="w-32">
+                          <SelectTrigger className="w-28">
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
+                            {canAssignOwnerRole && <SelectItem value="owner">Owner</SelectItem>}
                             <SelectItem value="admin">Admin</SelectItem>
                             <SelectItem value="member">Member</SelectItem>
                             <SelectItem value="viewer">Viewer</SelectItem>
                           </SelectContent>
                         </Select>
+                      )}
 
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              disabled={deactivateUserMutation.isPending || deleteUserMutation.isPending || activateUserMutation.isPending}
-                            >
-                              <MoreHorizontal className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {member.status === 'active' ? (
-                              <DropdownMenuItem 
+                      {(canDeactivateUsers || canDeleteUsers) && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={deactivateUserMutation.isPending || deleteUserMutation.isPending || activateUserMutation.isPending}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          {canDeactivateUsers && (
+                            member.status === 'active' ? (
+                              <DropdownMenuItem
                                 onClick={() => handleDeactivateUser(member.user_id)}
                                 className="text-orange-600 focus:text-orange-700"
                               >
@@ -272,26 +272,32 @@ export default function TeamPage() {
                                 Deactivate User
                               </DropdownMenuItem>
                             ) : (
-                              <DropdownMenuItem 
+                              <DropdownMenuItem
                                 onClick={() => handleActivateUser(member.user_id)}
                                 className="text-green-600 focus:text-green-700"
                               >
                                 <UserCheck className="h-4 w-4 mr-2" />
                                 Activate User
                               </DropdownMenuItem>
-                            )}
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem 
-                              onClick={() => handleDeleteUser(member.user_id)}
-                              className="text-red-600 focus:text-red-700"
-                            >
-                              <Trash2 className="h-4 w-4 mr-2" />
-                              Delete Permanently
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
+                            )
+                          )}
+                          {canDeleteUsers && (
+                            <>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => handleDeleteUser(member.user_id)}
+                                className="text-red-600 focus:text-red-700"
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete Permanently
+                              </DropdownMenuItem>
+                            </>
+                          )}
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                      )}
                     </div>
+                    )}
                   </div>
                 ))
               )}

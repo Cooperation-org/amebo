@@ -116,7 +116,7 @@ def get_rate_limit_store() -> RateLimitStore:
 RATE_LIMITS = {
     # Auth endpoints - strict limits to prevent brute force
     'auth': {
-        'max_requests': int(os.getenv('RATE_LIMIT_AUTH_MAX', '5')),
+        'max_requests': int(os.getenv('RATE_LIMIT_AUTH_MAX', '20')),
         'window_seconds': int(os.getenv('RATE_LIMIT_AUTH_WINDOW', '60')),
     },
     # API endpoints - moderate limits
@@ -217,13 +217,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     """
 
     async def dispatch(self, request: Request, call_next):
-        # Skip rate limiting for health checks and static files
+        # Skip rate limiting for health checks, static files, and CORS preflight
         path = request.url.path
         if path in ('/health', '/', '/api/docs', '/api/redoc', '/openapi.json'):
             return await call_next(request)
+        if request.method == 'OPTIONS':
+            return await call_next(request)
 
         # Determine endpoint type based on path
-        if '/auth/' in path or path.endswith('/auth'):
+        # Only rate-limit auth mutation endpoints (login/signup/reset), not /me or /refresh
+        if path in ('/api/auth/login', '/api/auth/signup', '/api/auth/forgot-password', '/api/auth/reset-password'):
             endpoint_type = 'auth'
         elif '/upload' in path:
             endpoint_type = 'upload'

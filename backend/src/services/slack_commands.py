@@ -12,9 +12,58 @@ from slack_sdk.socket_mode.request import SocketModeRequest
 from slack_sdk.socket_mode.response import SocketModeResponse
 
 from src.services.qa_service import QAService
+from src.db.connection import DatabaseConnection
+from psycopg2 import extras
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _log_slack_query_usage(workspace_id: str, question: str):
+    """Log Slack query for usage tracking and analytics"""
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor() as cur:
+            # Look up org_id from workspace
+            cur.execute(
+                "SELECT org_id FROM org_workspaces WHERE workspace_id = %s LIMIT 1",
+                (workspace_id,)
+            )
+            row = cur.fetchone()
+            if not row:
+                logger.warning(f"No org found for workspace {workspace_id}, skipping usage log")
+                return
+            org_id = row[0]
+
+            # Update usage metrics
+            cur.execute(
+                """
+                INSERT INTO usage_metrics (org_id, metric_type, count, period_start, period_end)
+                VALUES (%s, 'queries', 1, CURRENT_DATE, CURRENT_DATE + INTERVAL '1 day')
+                ON CONFLICT (org_id, metric_type, period_start)
+                DO UPDATE SET count = usage_metrics.count + 1
+                """,
+                (org_id,)
+            )
+
+            # Log in audit logs
+            cur.execute(
+                """
+                INSERT INTO audit_logs (org_id, action, resource_type, resource_id, details)
+                VALUES (%s, 'qa_query', 'workspace', %s, %s)
+                """,
+                (org_id, workspace_id, extras.Json({
+                    'question_length': len(question),
+                    'source': 'slack'
+                }))
+            )
+
+            conn.commit()
+    except Exception as e:
+        logger.warning(f"Failed to log Slack query usage: {e}")
+        conn.rollback()
+    finally:
+        DatabaseConnection.return_connection(conn)
 
 BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
 APP_TOKEN = os.getenv("SLACK_APP_TOKEN")
@@ -112,18 +161,32 @@ async def handle_ask(web_client, user_id, channel_id, question, private=True):
             n_context_messages=10
         )
 
-        # Format answer - QA service now returns fully formatted response
+        # Format answer
         if private:
             answer_text = f"*Question:* {question}\n\n"
         else:
             answer_text = f"<@{user_id}> asked: *{question}*\n\n"
 
-        # Answer is already formatted with Style A (includes "What I found:" section)
         answer_text += result['answer']
 
-        # Add short confidence indicator
+        # Add compact source attribution for Slack context
+        sources = result.get('sources', [])
+        if sources:
+            # Show up to 3 sources as a compact footer
+            source_parts = []
+            for s in sources[:3]:
+                ch = s.get('channel', '')
+                usr = s.get('user', '')
+                if ch and usr:
+                    source_parts.append(f"#{ch} ({usr})")
+                elif ch:
+                    source_parts.append(f"#{ch}")
+            if source_parts:
+                answer_text += f"\n\n_Sources: {' · '.join(source_parts)}_"
+
+        # Add confidence
         confidence = result.get('confidence', 50)
-        answer_text += f"\n\n_CF: {confidence}%_"
+        answer_text += f"\n_Confidence: {confidence}%_"
 
         # Send answer
         if private:
@@ -138,6 +201,9 @@ async def handle_ask(web_client, user_id, channel_id, question, private=True):
                 ts=thinking_msg['ts'],
                 text=answer_text
             )
+
+        # Log usage for analytics
+        _log_slack_query_usage(workspace_id, question)
 
         logger.info(f"Answered question from {user_id}")
 
@@ -193,18 +259,26 @@ async def process_events(client: SocketModeClient, req: SocketModeRequest):
                 qa_service = QAService(workspace_id=WORKSPACE_ID)
                 result = qa_service.answer_question(question=question, n_context_messages=10)
 
-                # Answer is already formatted with Style A
                 response_text = f"*Q:* {question}\n\n{result['answer']}"
 
-                # Add confidence
+                # Compact source footer
+                sources = result.get('sources', [])
+                if sources:
+                    source_parts = [f"#{s.get('channel','')}" for s in sources[:3] if s.get('channel')]
+                    if source_parts:
+                        response_text += f"\n\n_Sources: {' · '.join(source_parts)}_"
+
                 confidence = result.get('confidence', 50)
-                response_text += f"\n\n_CF: {confidence}%_"
+                response_text += f"\n_Confidence: {confidence}%_"
 
                 await web_client.chat_postMessage(
                     channel=channel_id,
                     thread_ts=thread_ts,
                     text=response_text
                 )
+
+                # Log usage for analytics
+                _log_slack_query_usage(WORKSPACE_ID, question)
             except Exception as e:
                 logger.error(f"Error: {e}", exc_info=True)
                 await web_client.chat_postMessage(
@@ -240,12 +314,17 @@ async def handle_app_mention(team_id, channel, text, user, ts):
         qa_service = QAService(workspace_id=team_id)
         result = qa_service.answer_question(question=question, n_context_messages=10)
 
-        # Answer is already formatted with Style A
         response_text = f"*Q:* {question}\n\n{result['answer']}"
 
-        # Add confidence
+        # Compact source footer
+        sources = result.get('sources', [])
+        if sources:
+            source_parts = [f"#{s.get('channel','')}" for s in sources[:3] if s.get('channel')]
+            if source_parts:
+                response_text += f"\n\n_Sources: {' · '.join(source_parts)}_"
+
         confidence = result.get('confidence', 50)
-        response_text += f"\n\n_CF: {confidence}%_"
+        response_text += f"\n_Confidence: {confidence}%_"
 
         # Send response in thread
         await web_client.chat_postMessage(
@@ -253,6 +332,9 @@ async def handle_app_mention(team_id, channel, text, user, ts):
             thread_ts=ts,
             text=response_text
         )
+
+        # Log usage for analytics
+        _log_slack_query_usage(team_id, question)
 
         logger.info(f"Answered app mention from {user} in {channel}")
 

@@ -80,41 +80,51 @@ export function WorkspaceCard({ workspace, onEdit, onDelete, onSync }: Workspace
           </p>
         </div>
 
+        {(onEdit || onSync || onDelete) && (
         <div className="flex gap-2 pt-2">
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="flex-1"
-            onClick={() => onEdit?.(workspace)}
-          >
-            <Settings className="h-3 w-3 mr-1" />
-            Edit
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm"
-            disabled={workspace.status === 'syncing'}
-          >
-            <Download className="h-3 w-3 mr-1" />
-            Backfill
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm"
-            onClick={() => onSync?.(workspace)}
-            disabled={workspace.status === 'syncing'}
-          >
-            <RefreshCw className={`h-3 w-3 ${workspace.status === 'syncing' ? 'animate-spin' : ''}`} />
-          </Button>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            className="text-red-600 hover:text-red-700"
-            onClick={() => onDelete?.(workspace)}
-          >
-            <Trash2 className="h-3 w-3" />
-          </Button>
+          {onEdit && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              onClick={() => onEdit(workspace)}
+            >
+              <Settings className="h-3 w-3 mr-1" />
+              Edit
+            </Button>
+          )}
+          {onSync && (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={workspace.status === 'syncing'}
+              >
+                <Download className="h-3 w-3 mr-1" />
+                Backfill
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => onSync(workspace)}
+                disabled={workspace.status === 'syncing'}
+              >
+                <RefreshCw className={`h-3 w-3 ${workspace.status === 'syncing' ? 'animate-spin' : ''}`} />
+              </Button>
+            </>
+          )}
+          {onDelete && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-red-600 hover:text-red-700"
+              onClick={() => onDelete(workspace)}
+            >
+              <Trash2 className="h-3 w-3" />
+            </Button>
+          )}
         </div>
+        )}
       </CardContent>
     </Card>
   );

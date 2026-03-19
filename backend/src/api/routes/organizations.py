@@ -282,8 +282,18 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
             )
             message_count = cur.fetchone()['total_messages']
 
-            # Get queries this month (placeholder - needs usage_metrics implementation)
-            queries_this_month = 0
+            # Get queries this month from usage_metrics
+            cur.execute(
+                """
+                SELECT COALESCE(SUM(count), 0) as total_queries
+                FROM usage_metrics
+                WHERE org_id = %s
+                  AND metric_type = 'queries'
+                  AND period_start >= DATE_TRUNC('month', CURRENT_DATE)
+                """,
+                (current_user['org_id'],)
+            )
+            queries_this_month = cur.fetchone()['total_queries']
 
             # Get most active channel (from org's workspaces)
             cur.execute(

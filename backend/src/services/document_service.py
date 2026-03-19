@@ -80,11 +80,11 @@ class DocumentService:
         # Store in database
         conn = DatabaseConnection.get_connection()
         cursor = conn.cursor()
-        
+
         try:
             # Insert document record
             cursor.execute("""
-                INSERT INTO documents (org_id, workspace_id, title, file_name, file_type, 
+                INSERT INTO documents (org_id, workspace_id, title, file_name, file_type,
                                      file_size_bytes, chunk_count, uploaded_by, is_active)
                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING document_id, created_at
@@ -92,15 +92,22 @@ class DocumentService:
                 org_id, workspace_id, filename, filename, content_type,
                 len(file_content), len(chunks), user_id, True
             ))
-            
+
             document_id, created_at = cursor.fetchone()
+
+            # Store in ChromaDB BEFORE committing to DB
+            try:
+                await self._store_in_chromadb(
+                    document_id, chunks, filename, workspace_id, org_id
+                )
+            except Exception as e:
+                logger.error(f"ChromaDB indexing failed for {filename}: {e}")
+                conn.rollback()
+                raise ValueError(f"Failed to index document in search engine: {e}")
+
+            # Only commit DB after ChromaDB succeeds
             conn.commit()
-            
-            # Store in ChromaDB
-            await self._store_in_chromadb(
-                document_id, chunks, filename, workspace_id, org_id
-            )
-            
+
             return {
                 'document_id': document_id,
                 'filename': filename,
@@ -108,7 +115,12 @@ class DocumentService:
                 'chunk_count': len(chunks),
                 'created_at': created_at
             }
-            
+
+        except ValueError:
+            raise
+        except Exception as e:
+            conn.rollback()
+            raise
         finally:
             cursor.close()
             DatabaseConnection.return_connection(conn)
@@ -213,10 +225,13 @@ class DocumentService:
             metadatas.append(metadata)
         
         # Store in ChromaDB
-        collection.upsert(
-            documents=chunks,
-            metadatas=metadatas,
-            ids=ids
-        )
-        
-        logger.info(f"Stored {len(chunks)} chunks for document {document_id} in ChromaDB")
+        try:
+            collection.upsert(
+                documents=chunks,
+                metadatas=metadatas,
+                ids=ids
+            )
+            logger.info(f"Stored {len(chunks)} chunks for document {document_id} in ChromaDB")
+        except Exception as e:
+            logger.error(f"ChromaDB upsert failed for document {document_id}: {e}")
+            raise

@@ -100,7 +100,7 @@ class CredentialService:
             return False
         finally:
             cur.close()
-            conn.close()
+            DatabaseConnection.return_connection(conn)
 
     def get_credentials(self, workspace_id: str) -> Optional[Dict[str, str]]:
         """
@@ -175,7 +175,7 @@ class CredentialService:
             return None
         finally:
             cur.close()
-            conn.close()
+            DatabaseConnection.return_connection(conn)
 
     def verify_credentials(self, workspace_id: str) -> bool:
         """
@@ -230,7 +230,7 @@ class CredentialService:
             conn.rollback()
         finally:
             cur.close()
-            conn.close()
+            DatabaseConnection.return_connection(conn)
 
     def migrate_plaintext_to_encrypted(self, workspace_id: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -310,7 +310,7 @@ class CredentialService:
 
         finally:
             cur.close()
-            conn.close()
+            DatabaseConnection.return_connection(conn)
 
 
 # Example usage

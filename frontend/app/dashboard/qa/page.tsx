@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { QuestionInput } from '@/src/components/qa/QuestionInput';
 import { AnswerDisplay } from '@/src/components/qa/AnswerDisplay';
 import { FilterSidebar } from '@/src/components/qa/FilterSidebar';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { MessageSquare, Sparkles, Building2, Plus } from 'lucide-react';
 import { useAskQuestion } from '@/src/hooks/useQA';
 import { useWorkspaces } from '@/src/hooks/useWorkspaces';
+import { usePermissions } from '@/src/hooks/usePermissions';
 import { toast } from 'sonner';
 import Link from 'next/link';
 
@@ -34,7 +35,7 @@ interface QAResponse {
 
 interface FilterOptions {
   workspaceId?: string;
-  channelFilter?: string;
+  channelFilter?: string[];
   daysBack?: number;
   includeDocuments?: boolean;
   includeSlack?: boolean;
@@ -51,10 +52,20 @@ export default function QAPage() {
     maxSources: 10,
   });
 
+  const { canAskQuestions } = usePermissions();
   const askQuestionMutation = useAskQuestion();
   const { data: workspacesData } = useWorkspaces();
   const workspaces = workspacesData?.workspaces || [];
   const hasWorkspaces = workspaces.length > 0;
+  const didAutoSelect = useRef(false);
+
+  // Auto-select first workspace so channels load in filter sidebar
+  useEffect(() => {
+    if (hasWorkspaces && !filters.workspaceId && !didAutoSelect.current) {
+      didAutoSelect.current = true;
+      setFilters(prev => ({ ...prev, workspaceId: workspaces[0].workspace_id }));
+    }
+  }, [hasWorkspaces, workspaces, filters.workspaceId]);
 
   const handleAskQuestion = async (question: string) => {
     if (!hasWorkspaces) {
@@ -103,20 +114,20 @@ export default function QAPage() {
   }, []);
 
   return (
-    <div className="px-4 py-6 sm:px-0">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
-          <MessageSquare className="h-8 w-8 text-blue-600" />
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 flex items-center gap-2">
+          <MessageSquare className="h-6 w-6 sm:h-8 sm:w-8 text-blue-600" />
           Q&A Assistant
         </h1>
-        <p className="mt-2 text-gray-600">
+        <p className="mt-1 text-sm sm:text-base text-gray-600">
           Ask questions about your Slack conversations and documents
         </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        {/* Sidebar */}
-        <div className="lg:col-span-1 space-y-6">
+        {/* Sidebar - shows after main content on mobile */}
+        <div className="lg:col-span-1 space-y-6 order-2 lg:order-1">
           <FilterSidebar
             filters={filters}
             onFiltersChange={setFilters}
@@ -125,8 +136,8 @@ export default function QAPage() {
           <QueryHistory onSelectQuery={handleSelectFromHistory} />
         </div>
 
-        {/* Main Content */}
-        <div className="lg:col-span-3 space-y-6">
+        {/* Main Content - shows first on mobile */}
+        <div className="lg:col-span-3 space-y-6 order-1 lg:order-2">
           {!hasWorkspaces && (
             <Card className="border-orange-200 bg-orange-50">
               <CardContent className="p-4">
@@ -152,8 +163,8 @@ export default function QAPage() {
           <QuestionInput
             onSubmit={handleAskQuestion}
             isLoading={askQuestionMutation.isPending}
-            placeholder={hasWorkspaces ? "Ask a question about your Slack conversations..." : "Connect a workspace to start asking questions"}
-            disabled={!hasWorkspaces}
+            placeholder={!canAskQuestions ? "You don't have permission to ask questions" : hasWorkspaces ? "Ask a question about your Slack conversations..." : "Connect a workspace to start asking questions"}
+            disabled={!hasWorkspaces || !canAskQuestions}
           />
 
           {/* Answer Display */}

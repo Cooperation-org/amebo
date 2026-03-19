@@ -6,7 +6,7 @@ Answers questions based on Slack message history.
 import os
 import re
 import logging
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Union
 from anthropic import Anthropic
 
 from src.services.query_service import QueryService
@@ -53,7 +53,7 @@ class QAService:
         self,
         question: str,
         n_context_messages: int = 10,
-        channel_filter: Optional[str] = None,
+        channel_filter: Optional[Union[str, List[str]]] = None,
         days_back: Optional[int] = None
     ) -> Dict:
         """
@@ -97,7 +97,11 @@ class QAService:
             if days_back:
                 filters_applied.append(f"last {days_back} days")
             if channel_filter:
-                filters_applied.append(f"#{channel_filter} channel")
+                if isinstance(channel_filter, list):
+                    channels_str = ", ".join(f"#{c}" for c in channel_filter)
+                    filters_applied.append(f"{channels_str} channels")
+                else:
+                    filters_applied.append(f"#{channel_filter} channel")
 
             if filters_applied:
                 filters_str = " in the " + " and ".join(filters_applied)
@@ -188,16 +192,17 @@ class QAService:
             try:
                 from src.db.connection import DatabaseConnection
                 conn = DatabaseConnection.get_connection()
-                cur = conn.cursor()
+                try:
+                    cur = conn.cursor()
 
-                cur.execute(
-                    "SELECT channel_name FROM channels WHERE channel_id = %s",
-                    (channel_id,)
-                )
-                row = cur.fetchone()
-
-                cur.close()
-                conn.close()
+                    cur.execute(
+                        "SELECT channel_name FROM channels WHERE channel_id = %s",
+                        (channel_id,)
+                    )
+                    row = cur.fetchone()
+                    cur.close()
+                finally:
+                    DatabaseConnection.return_connection(conn)
 
                 if row:
                     channel_name = row[0]
@@ -332,25 +337,27 @@ class QAService:
 
         try:
             conn = DatabaseConnection.get_connection()
-            cur = conn.cursor()
+            try:
+                cur = conn.cursor()
 
-            # Look up usernames from users table
-            cur.execute(
-                """
-                SELECT user_id, real_name, display_name
-                FROM users
-                WHERE workspace_id = %s AND user_id = ANY(%s)
-                """,
-                (self.workspace_id, user_ids)
-            )
+                # Look up usernames from users table
+                cur.execute(
+                    """
+                    SELECT user_id, real_name, display_name
+                    FROM users
+                    WHERE workspace_id = %s AND user_id = ANY(%s)
+                    """,
+                    (self.workspace_id, user_ids)
+                )
 
-            for row in cur.fetchall():
-                user_id, real_name, display_name = row
-                # Prefer display_name, fall back to real_name
-                user_map[user_id] = display_name or real_name or user_id
+                for row in cur.fetchall():
+                    user_id, real_name, display_name = row
+                    # Prefer display_name, fall back to real_name
+                    user_map[user_id] = display_name or real_name or user_id
 
-            cur.close()
-            conn.close()
+                cur.close()
+            finally:
+                DatabaseConnection.return_connection(conn)
 
         except Exception as e:
             logger.warning(f"Error looking up user mentions: {e}")
@@ -470,15 +477,8 @@ Answer the question based on these messages. Be comprehensive and include all re
             # Extract project links from messages
             project_links = self._extract_project_links(messages)
 
-            # Format with Style A sources (conversational with "What I found:")
-            formatted_answer = self._format_style_a_response(
-                answer_text,
-                messages,
-                max_sources=3
-            )
-
             return {
-                'answer': formatted_answer,
+                'answer': answer_text,
                 'sources': self._format_sources(messages),
                 'confidence': confidence,
                 'confidence_explanation': confidence_explanation,
@@ -513,7 +513,6 @@ Answer the question based on these messages. Be comprehensive and include all re
         Returns:
             Mock answer dict
         """
-        # Simple mock: return the most relevant message in Style A format
         if messages:
             top_message = messages[0]
             user = top_message['metadata'].get('user_name', 'someone')
@@ -523,18 +522,11 @@ Answer the question based on these messages. Be comprehensive and include all re
                 f"Hey! Based on what I saw, {user} mentioned this in #{channel}. "
                 f"{top_message['text'][:200]}"
             )
-
-            # Add Style A sources
-            formatted_answer = self._format_style_a_response(
-                answer,
-                messages,
-                max_sources=3
-            )
         else:
-            formatted_answer = "I couldn't find relevant information to answer this question."
+            answer = "I couldn't find relevant information to answer this question."
 
         return {
-            'answer': formatted_answer,
+            'answer': answer,
             'sources': self._format_sources(messages),
             'confidence': 50,
             'confidence_explanation': 'Mock mode - medium confidence estimate',

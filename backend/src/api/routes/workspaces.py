@@ -44,44 +44,69 @@ class WorkspaceResponse(BaseModel):
 
 @router.get("/", response_model=dict)
 async def get_workspaces(current_user: dict = Depends(get_current_user)):
-    """Get all workspaces"""
+    """Get all workspaces with real message/channel counts"""
     try:
         conn = DatabaseConnection.get_connection()
         cursor = conn.cursor()
-        
-        # Query workspaces for user's organization
+
+        org_id = current_user.get("org_id")
+
         cursor.execute("""
-            SELECT 
+            SELECT
                 w.workspace_id,
                 w.team_name,
+                w.team_domain,
+                w.icon_url,
                 w.is_active,
-                w.org_id
+                w.created_at,
+                w.updated_at,
+                COALESCE(ch.cnt, 0) AS channel_count,
+                ch.last_sync_at
             FROM workspaces w
+            LEFT JOIN (
+                SELECT workspace_id,
+                       COUNT(*) AS cnt,
+                       MAX(last_sync) AS last_sync_at
+                FROM channels
+                WHERE is_archived = FALSE
+                GROUP BY workspace_id
+            ) ch ON ch.workspace_id = w.workspace_id
             WHERE w.org_id = %s
-            ORDER BY w.workspace_id
-        """, (current_user.get("org_id", 8),))
-        
+            ORDER BY w.team_name
+        """, (org_id,))
+
         workspaces = []
         for row in cursor.fetchall():
-            workspace = {
-                "workspace_id": row[0],
+            workspace_id = row[0]
+
+            # Get message count from ChromaDB
+            message_count = 0
+            try:
+                from src.db.chromadb_client import ChromaDBClient
+                chromadb = ChromaDBClient()
+                stats = chromadb.get_collection_stats(workspace_id)
+                message_count = stats.get('message_count', 0)
+            except Exception as chroma_err:
+                logger.warning(f"Could not get ChromaDB stats for {workspace_id}: {chroma_err}")
+
+            workspaces.append({
+                "workspace_id": workspace_id,
                 "team_name": row[1],
-                "team_domain": None,
-                "icon_url": None,
-                "is_active": row[2],
-                "installed_at": None,
-                "last_active": None,
-                "status": "active" if row[2] else "inactive",
-                "message_count": 0,
-                "channel_count": 0,
-                "last_sync_at": None
-            }
-            workspaces.append(workspace)
-        
+                "team_domain": row[2],
+                "icon_url": row[3],
+                "is_active": row[4],
+                "installed_at": row[5].isoformat() if row[5] else None,
+                "last_active": row[6].isoformat() if row[6] else None,
+                "status": "active" if row[4] else "inactive",
+                "message_count": message_count,
+                "channel_count": row[7],
+                "last_sync_at": row[8].isoformat() if row[8] else None,
+            })
+
         return {"workspaces": workspaces, "total": len(workspaces)}
-        
+
     except Exception as e:
-        logger.error(f"Error fetching workspaces: {e}")
+        logger.error(f"Error fetching workspaces: {e}", exc_info=True)
         return {"workspaces": [], "total": 0}
     finally:
         if 'cursor' in locals():
@@ -431,6 +456,52 @@ async def activate_workspace(
         if 'conn' in locals():
             DatabaseConnection.return_connection(conn)
 
+@router.get("/{workspace_id}/test", response_model=dict)
+async def test_existing_workspace(
+    workspace_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Test connection for an existing workspace using stored credentials"""
+    try:
+        from slack_sdk.web.async_client import AsyncWebClient
+
+        conn = DatabaseConnection.get_connection()
+        cursor = conn.cursor()
+
+        # Get stored credentials
+        cursor.execute("""
+            SELECT i.bot_token FROM installations i
+            JOIN workspaces w ON i.workspace_id = w.workspace_id
+            WHERE w.workspace_id = %s AND w.org_id = %s AND i.is_active = true
+        """, (workspace_id, current_user.get("org_id")))
+
+        result = cursor.fetchone()
+        if not result:
+            return {"success": False, "error": "No credentials found for this workspace"}
+
+        bot_token = result[0]
+
+        # Test the connection
+        client = AsyncWebClient(token=bot_token)
+        auth_response = await client.auth_test()
+
+        return {
+            "success": True,
+            "team_name": auth_response.get("team"),
+            "bot_user_id": auth_response.get("user_id"),
+            "url": auth_response.get("url"),
+        }
+
+    except Exception as e:
+        logger.error(f"Connection test failed for {workspace_id}: {e}")
+        return {"success": False, "error": str(e)}
+    finally:
+        if 'cursor' in locals():
+            cursor.close()
+        if 'conn' in locals():
+            DatabaseConnection.return_connection(conn)
+
+
 @router.post("/test-connection", response_model=dict)
 async def test_connection(
     credentials: dict,
@@ -559,23 +630,31 @@ async def get_workspace_channels(
         
         # Verify workspace belongs to user's org
         cursor.execute("""
-            SELECT workspace_id FROM workspaces 
+            SELECT workspace_id FROM workspaces
             WHERE workspace_id = %s AND org_id = %s
-        """, (workspace_id, current_user.get("org_id", 1)))
-        
+        """, (workspace_id, current_user.get("org_id")))
+
         if not cursor.fetchone():
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Workspace not found"
             )
-        
-        # Return mock channels for now (until messages table exists)
-        channels = [
-            {"id": "C1234567890", "name": "general"},
-            {"id": "C1234567891", "name": "random"},
-            {"id": "C1234567892", "name": "dev-team"}
-        ]
-        
+
+        # Get channels from channels table (populated by backfill)
+        cursor.execute("""
+            SELECT channel_id, channel_name
+            FROM channels
+            WHERE workspace_id = %s AND is_archived = FALSE
+            ORDER BY channel_name
+        """, (workspace_id,))
+
+        channels = []
+        for row in cursor.fetchall():
+            channels.append({
+                "id": row[0] or row[1],
+                "name": row[1]
+            })
+
         return {"channels": channels}
         
     except HTTPException:

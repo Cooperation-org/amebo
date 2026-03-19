@@ -4,17 +4,55 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 class ApiClient {
   private baseURL: string;
+  private refreshing: Promise<boolean> | null = null;
 
   constructor(baseURL: string) {
     this.baseURL = baseURL;
   }
 
+  private async tryRefreshToken(): Promise<boolean> {
+    if (this.refreshing) return this.refreshing;
+
+    this.refreshing = (async () => {
+      const refreshToken = TokenManager.getRefreshToken();
+      if (!refreshToken) return false;
+
+      try {
+        const response = await fetch(`${this.baseURL}/api/auth/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+
+        if (!response.ok) return false;
+
+        const data = await response.json();
+        TokenManager.setTokens({
+          access_token: data.access_token,
+          token_type: data.token_type,
+          expires_in: data.expires_in,
+        });
+        if (data.refresh_token) {
+          TokenManager.setRefreshToken(data.refresh_token);
+        }
+        return true;
+      } catch {
+        return false;
+      } finally {
+        this.refreshing = null;
+      }
+    })();
+
+    return this.refreshing;
+  }
+
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    isRetry = false
   ): Promise<T> {
     const url = `${this.baseURL}${endpoint}`;
-    
+
     const config: RequestInit = {
       headers: {
         'Content-Type': 'application/json',
@@ -23,28 +61,41 @@ class ApiClient {
         ...options.headers,
       },
       mode: 'cors',
+      redirect: 'follow',
       ...options,
     };
 
-    const response = await fetch(url, config);
+    let response = await fetch(url, config);
+
+    // Handle redirect that may lose auth header (307/308)
+    if (response.redirected) {
+      response = await fetch(response.url, config);
+    }
 
     if (response.status === 401) {
-      const errorData = await response.json().catch(() => ({ message: 'Authentication required' }));
-      // Only redirect to login for actual auth failures, not other 401s
-      if (errorData.message?.toLowerCase().includes('token') || 
-          errorData.message?.toLowerCase().includes('authentication') ||
-          errorData.message?.toLowerCase().includes('unauthorized')) {
-        TokenManager.clearTokens();
-        if (typeof window !== 'undefined') {
-          window.location.href = '/login';
+      // Skip refresh for auth endpoints themselves
+      const isAuthEndpoint = endpoint.includes('/auth/login') ||
+        endpoint.includes('/auth/signup') ||
+        endpoint.includes('/auth/refresh');
+
+      if (!isRetry && !isAuthEndpoint) {
+        const refreshed = await this.tryRefreshToken();
+        if (refreshed) {
+          return this.request<T>(endpoint, options, true);
         }
+      }
+
+      const errorData = await response.json().catch(() => ({ message: 'Authentication required' }));
+      TokenManager.clearTokens();
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login';
       }
       throw new Error(errorData.message || 'Request failed');
     }
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: 'Network error' }));
-      throw new Error(error.message || `HTTP ${response.status}`);
+      throw new Error(error.detail || error.message || `HTTP ${response.status}`);
     }
 
     return response.json();
@@ -80,11 +131,39 @@ class ApiClient {
     return this.request('/api/auth/me');
   }
 
+  async forgotPassword(email: string) {
+    return this.request('/api/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    return this.request('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, new_password: newPassword }),
+    });
+  }
+
+  async changePassword(currentPassword: string, newPassword: string) {
+    return this.request('/api/auth/change-password', {
+      method: 'PUT',
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    });
+  }
+
+  async refreshToken(refreshToken: string) {
+    return this.request('/api/auth/refresh', {
+      method: 'POST',
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+  }
+
   // Q&A endpoints
   async askQuestion(params: {
     question: string;
     workspace_id?: string;
-    channel_filter?: string;
+    channel_filter?: string[];
     days_back?: number;
     include_documents?: boolean;
     include_slack?: boolean;
@@ -98,7 +177,7 @@ class ApiClient {
 
   // Workspace endpoints
   async getWorkspaces() {
-    return this.request('/api/workspaces');
+    return this.request('/api/workspaces/');
   }
 
   async addWorkspace(data: {
@@ -233,8 +312,8 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ message: 'Upload failed' }));
-      throw new Error(error.message || `HTTP ${response.status}`);
+      const error = await response.json().catch(() => ({ detail: 'Upload failed' }));
+      throw new Error(error.detail || error.message || `HTTP ${response.status}`);
     }
 
     return response.json();
@@ -248,7 +327,7 @@ class ApiClient {
     if (workspaceId) {
       params.append('workspace_id', workspaceId);
     }
-    return this.request(`/api/documents?${params}`);
+    return this.request(`/api/documents/?${params}`);
   }
 
   async deleteDocument(documentId: string) {

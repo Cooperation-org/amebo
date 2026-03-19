@@ -4,7 +4,7 @@ Provides high-level query methods for features like newsletter, PR review, Q&A.
 """
 
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Union
 from datetime import datetime, timedelta
 
 from src.db.connection import DatabaseConnection
@@ -127,7 +127,7 @@ class QueryService:
         self,
         query: str,
         n_results: int = 10,
-        channel_filter: Optional[str] = None,
+        channel_filter: Optional[Union[str, List[str]]] = None,
         days_back: Optional[int] = None
     ) -> List[Dict]:
         """
@@ -136,7 +136,7 @@ class QueryService:
         Args:
             query: Search query text
             n_results: Number of results
-            channel_filter: Optional channel name filter
+            channel_filter: Optional channel name(s) filter - single string or list
             days_back: Optional time filter (last N days)
 
         Returns:
@@ -146,13 +146,22 @@ class QueryService:
         where_filter = {}
 
         if channel_filter:
-            # Try channel_name first, but if filter looks like channel ID (uppercase), also try channel_id
-            if channel_filter.isupper() and len(channel_filter) > 8:
-                # Looks like a channel ID (e.g., C030ESHBN0H)
-                where_filter['channel_id'] = channel_filter
-            else:
-                # Regular channel name (e.g., "standup")
-                where_filter['channel_name'] = channel_filter
+            # Normalize to list
+            channels = channel_filter if isinstance(channel_filter, list) else [channel_filter]
+            # Remove empty strings
+            channels = [c for c in channels if c]
+
+            if len(channels) == 1:
+                ch = channels[0]
+                if ch.isupper() and len(ch) > 8:
+                    where_filter['channel_id'] = ch
+                else:
+                    where_filter['channel_name'] = ch
+            elif len(channels) > 1:
+                # Multi-channel: use $or filter
+                where_filter = {
+                    "$or": [{"channel_name": ch} for ch in channels]
+                }
 
         # Search in ChromaDB
         results = self.chromadb.search_messages(

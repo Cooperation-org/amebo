@@ -4,7 +4,7 @@ import { apiClient } from '@/src/lib/api';
 interface QARequest {
   question: string;
   workspace_id?: string;
-  channel_filter?: string;
+  channel_filter?: string[];
   days_back?: number;
   include_documents?: boolean;
   include_slack?: boolean;

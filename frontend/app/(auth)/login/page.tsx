@@ -26,10 +26,13 @@ export default function LoginPage() {
 
   const onSubmit = async (data: LoginFormData) => {
     try {
-      await login(data.email, data.password);
+      const result = await login(data.email, data.password);
       toast.success('Login successful!');
-      // Immediate redirect
-      window.location.replace('/dashboard');
+      if (result.mustChangePassword) {
+        router.push('/set-password');
+      } else {
+        router.push('/dashboard');
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : 'Login failed');
     }
@@ -72,7 +75,12 @@ export default function LoginPage() {
                 <p className="text-sm text-red-600">{errors.password.message}</p>
               )}
             </div>
-            <Button 
+            <div className="flex justify-end">
+              <Link href="/forgot-password" className="text-sm text-blue-600 hover:underline">
+                Forgot your password?
+              </Link>
+            </div>
+            <Button
               type="submit" 
               className="w-full" 
               disabled={isLoading}

@@ -1,18 +1,23 @@
 """
-Authentication routes - signup, login, token refresh
+Authentication routes - signup, login, token refresh, password management
 """
 
 from fastapi import APIRouter, HTTPException, status, Depends
 from psycopg2 import extras
 import logging
 import re
+import secrets
+import hashlib
 
 from src.api.models import (
     UserSignupRequest,
     UserLoginRequest,
     TokenResponse,
     RefreshTokenRequest,
-    UserResponse
+    UserResponse,
+    ForgotPasswordRequest,
+    ResetPasswordRequest,
+    ChangePasswordRequest,
 )
 from src.api.auth_utils import (
     hash_password,
@@ -23,6 +28,7 @@ from src.api.auth_utils import (
     get_current_user
 )
 from src.db.connection import DatabaseConnection
+from src.services.email_service import email_service
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -87,8 +93,8 @@ async def signup(request: UserSignupRequest):
             # Create user (owner role)
             cur.execute(
                 """
-                INSERT INTO platform_users (org_id, email, password_hash, full_name, role, is_active)
-                VALUES (%s, %s, %s, %s, 'owner', true)
+                INSERT INTO platform_users (org_id, email, password_hash, full_name, role, is_active, email_verified)
+                VALUES (%s, %s, %s, %s, 'owner', true, true)
                 RETURNING user_id, email, full_name, role
                 """,
                 (org_id, request.email, password_hash, request.full_name)
@@ -151,7 +157,7 @@ async def login(request: UserLoginRequest):
             # Get user by email
             cur.execute(
                 """
-                SELECT user_id, org_id, email, password_hash, full_name, role, is_active
+                SELECT user_id, org_id, email, password_hash, full_name, role, is_active, email_verified
                 FROM platform_users
                 WHERE email = %s
                 """,
@@ -206,13 +212,17 @@ async def login(request: UserLoginRequest):
             access_token = create_access_token(token_data)
             refresh_token = create_refresh_token({"user_id": user['user_id']})
 
+            # Check if invited user needs to change temp password
+            must_change_password = not user.get('email_verified', True)
+
             logger.info(f"User logged in: {request.email}")
 
             return TokenResponse(
                 access_token=access_token,
                 refresh_token=refresh_token,
                 token_type="bearer",
-                expires_in=3600
+                expires_in=3600,
+                must_change_password=must_change_password
             )
 
     except HTTPException:
@@ -326,5 +336,215 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
 
             return UserResponse(**user)
 
+    finally:
+        DatabaseConnection.return_connection(conn)
+
+
+@router.post("/forgot-password")
+async def forgot_password(request: ForgotPasswordRequest):
+    """
+    Request a password reset email.
+    Always returns 200 to prevent email enumeration.
+    """
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+            # Look up user
+            cur.execute(
+                "SELECT user_id, email FROM platform_users WHERE email = %s AND is_active = true",
+                (request.email,)
+            )
+            user = cur.fetchone()
+
+            if user:
+                # Generate reset token
+                raw_token = secrets.token_urlsafe(32)
+                token_hash = hashlib.sha256(raw_token.encode()).hexdigest()
+
+                # Invalidate any existing unused tokens for this user
+                cur.execute(
+                    """
+                    UPDATE password_reset_tokens
+                    SET used_at = NOW()
+                    WHERE user_id = %s AND used_at IS NULL
+                    """,
+                    (user['user_id'],)
+                )
+
+                # Store hashed token with 1-hour expiry
+                cur.execute(
+                    """
+                    INSERT INTO password_reset_tokens (user_id, token_hash, expires_at)
+                    VALUES (%s, %s, NOW() + INTERVAL '1 hour')
+                    """,
+                    (user['user_id'], token_hash)
+                )
+
+                conn.commit()
+
+                # Send email with raw token
+                email_sent = email_service.send_password_reset_email(
+                    to_email=user['email'],
+                    reset_token=raw_token
+                )
+
+                if not email_sent:
+                    logger.warning(f"Password reset email could not be sent to {request.email}")
+
+            # Always return success to prevent email enumeration
+            return {"message": "If an account with that email exists, a password reset link has been sent."}
+
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Forgot password error: {e}", exc_info=True)
+        # Still return 200 to prevent enumeration
+        return {"message": "If an account with that email exists, a password reset link has been sent."}
+    finally:
+        DatabaseConnection.return_connection(conn)
+
+
+@router.post("/reset-password")
+async def reset_password(request: ResetPasswordRequest):
+    """
+    Reset password using a token from the reset email.
+    """
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+            # Hash the incoming token to compare with stored hash
+            token_hash = hashlib.sha256(request.token.encode()).hexdigest()
+
+            # Find valid, unused token
+            cur.execute(
+                """
+                SELECT t.token_id, t.user_id
+                FROM password_reset_tokens t
+                WHERE t.token_hash = %s
+                  AND t.used_at IS NULL
+                  AND t.expires_at > NOW()
+                """,
+                (token_hash,)
+            )
+            token_record = cur.fetchone()
+
+            if not token_record:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid or expired reset token. Please request a new password reset."
+                )
+
+            # Update user's password
+            new_hash = hash_password(request.new_password)
+            cur.execute(
+                """
+                UPDATE platform_users
+                SET password_hash = %s, email_verified = true, updated_at = NOW()
+                WHERE user_id = %s
+                """,
+                (new_hash, token_record['user_id'])
+            )
+
+            # Mark token as used
+            cur.execute(
+                "UPDATE password_reset_tokens SET used_at = NOW() WHERE token_id = %s",
+                (token_record['token_id'],)
+            )
+
+            # Log audit event
+            cur.execute(
+                """
+                INSERT INTO audit_logs (user_id, action, resource_type, resource_id, details)
+                VALUES (%s, 'password_reset', 'user', %s, %s)
+                """,
+                (token_record['user_id'], str(token_record['user_id']),
+                 extras.Json({'method': 'email_token'}))
+            )
+
+            conn.commit()
+
+            logger.info(f"Password reset completed for user_id: {token_record['user_id']}")
+
+            return {"message": "Password reset successfully. You can now log in with your new password."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Reset password error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to reset password"
+        )
+    finally:
+        DatabaseConnection.return_connection(conn)
+
+
+@router.put("/change-password")
+async def change_password(
+    request: ChangePasswordRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """
+    Change password for authenticated user.
+    Also sets email_verified=true (handles invited user temp password flow).
+    """
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+            # Get current password hash
+            cur.execute(
+                "SELECT password_hash FROM platform_users WHERE user_id = %s",
+                (current_user['user_id'],)
+            )
+            user = cur.fetchone()
+
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found"
+                )
+
+            # Verify current password
+            if not verify_password(request.current_password, user['password_hash']):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Current password is incorrect"
+                )
+
+            # Update password and mark email as verified
+            new_hash = hash_password(request.new_password)
+            cur.execute(
+                """
+                UPDATE platform_users
+                SET password_hash = %s, email_verified = true, updated_at = NOW()
+                WHERE user_id = %s
+                """,
+                (new_hash, current_user['user_id'])
+            )
+
+            # Log audit event
+            cur.execute(
+                """
+                INSERT INTO audit_logs (org_id, user_id, action, resource_type, resource_id)
+                VALUES (%s, %s, 'password_changed', 'user', %s)
+                """,
+                (current_user['org_id'], current_user['user_id'], str(current_user['user_id']))
+            )
+
+            conn.commit()
+
+            logger.info(f"Password changed for user: {current_user['email']}")
+
+            return {"message": "Password changed successfully."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Change password error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to change password"
+        )
     finally:
         DatabaseConnection.return_connection(conn)

@@ -96,7 +96,7 @@ class TaskScheduler:
             logger.error(f"Error loading scheduled jobs: {e}", exc_info=True)
         finally:
             cur.close()
-            conn.close()
+            DatabaseConnection.return_connection(conn)
 
     async def add_backfill_job(
         self,
@@ -288,7 +288,7 @@ class TaskScheduler:
 
         finally:
             cur.close()
-            conn.close()
+            DatabaseConnection.return_connection(conn)
 
     async def _record_job_start(
         self,
@@ -387,7 +387,7 @@ class TaskScheduler:
             return -1
         finally:
             cur.close()
-            conn.close()
+            DatabaseConnection.return_connection(conn)
 
     async def _record_job_completion(
         self,
@@ -423,7 +423,7 @@ class TaskScheduler:
             conn.rollback()
         finally:
             cur.close()
-            conn.close()
+            DatabaseConnection.return_connection(conn)
 
     def get_scheduled_jobs(self) -> list:
         """Get all currently scheduled jobs"""

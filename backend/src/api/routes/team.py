@@ -10,6 +10,7 @@ import secrets
 import string
 from datetime import datetime, timedelta
 
+from pydantic import BaseModel
 from src.api.models import TeamMember, InviteUserRequest, InviteUserResponse
 from src.db.connection import DatabaseConnection
 from src.services.email_service import email_service
@@ -147,12 +148,18 @@ async def invite_user(
             ))
             
             conn.commit()
-            
+
+            # Get org name for the email
+            with conn.cursor() as org_cur:
+                org_cur.execute("SELECT org_name FROM organizations WHERE org_id = %s", (current_user.get('org_id', 1),))
+                org_row = org_cur.fetchone()
+                org_name = org_row[0] if org_row else "your team"
+
             # Send invitation email
             email_sent = email_service.send_invitation_email(
                 to_email=request.email,
                 temp_password=temp_password,
-                org_name="Your Organization"  # TODO: Get from database
+                org_name=org_name
             )
             
             if email_sent:
@@ -237,17 +244,30 @@ async def activate_user(
         DatabaseConnection.return_connection(conn)
 
 
+class RoleUpdateRequest(BaseModel):
+    role: str
+
+
 @router.put("/members/{user_id}/role")
 async def update_user_role(
     user_id: int,
-    role: str,
+    request: RoleUpdateRequest,
     current_user: dict = Depends(get_current_user)
 ):
     """Update a user's role"""
-    if role not in ['admin', 'member', 'viewer']:
+    role = request.role
+    valid_roles = ['owner', 'admin', 'member', 'viewer']
+    if role not in valid_roles:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid role. Must be 'admin', 'member', or 'viewer'"
+            detail=f"Invalid role. Must be one of: {', '.join(valid_roles)}"
+        )
+
+    # Only owners can assign the owner role
+    if role == 'owner' and current_user.get('role') != 'owner':
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only owners can assign the owner role"
         )
     
     conn = DatabaseConnection.get_connection()

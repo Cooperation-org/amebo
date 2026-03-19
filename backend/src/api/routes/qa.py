@@ -52,7 +52,9 @@ async def ask_question(
         try:
             result = qa_service.answer_question(
                 question=request.question,
-                n_context_messages=request.max_sources
+                n_context_messages=request.max_sources,
+                channel_filter=request.channel_filter,
+                days_back=request.days_back if request.days_back and request.days_back > 0 else None
             )
         except Exception as qa_error:
             # Fallback response when no data is available
@@ -128,7 +130,7 @@ def _log_query_usage(org_id: int, workspace_id: str, question: str):
                 INSERT INTO audit_logs (org_id, action, resource_type, resource_id, details)
                 VALUES (%s, 'qa_query', 'workspace', %s, %s)
                 """,
-                (org_id, workspace_id, extras.Json({'question_length': len(question)}))
+                (org_id, workspace_id, extras.Json({'question_length': len(question), 'source': 'frontend'}))
             )
 
             conn.commit()
