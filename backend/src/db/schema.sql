@@ -637,6 +637,63 @@ COMMENT ON TABLE abra_catcode_registry IS 'Hierarchical spatial coordinate syste
 COMMENT ON TABLE abra_hot_tags IS 'Priority flags for names that should surface first';
 
 -- ============================================================================
+-- INSTANCES: Per-deployment configuration (identity, skills, knowledge)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS instances (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    slug VARCHAR(100) UNIQUE NOT NULL,
+    identity_prompt TEXT,              -- custom system prompt (NULL = use default from file)
+    skills_config JSONB DEFAULT '{}',  -- which skills are enabled, custom skill overrides
+    knowledge_config JSONB DEFAULT '{}', -- knowledge source configuration
+    config JSONB DEFAULT '{}',         -- additional config (model, temperature, etc.)
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+COMMENT ON TABLE instances IS 'Per-deployment configuration. A fresh install for a new user = a new instance.';
+
+-- ============================================================================
+-- THREADS + TURNS: Source-agnostic conversation state
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS threads (
+    id SERIAL PRIMARY KEY,
+    instance_id INT REFERENCES instances(id) ON DELETE SET NULL,
+    source_type VARCHAR(50) NOT NULL,  -- 'slack', 'email', 'web', 'api'
+    source_ref VARCHAR(255) NOT NULL,  -- slack thread_ts, email thread_id, session_id
+    workspace_id VARCHAR(20),          -- for Slack; NULL for other sources
+    title VARCHAR(500),
+    summary TEXT,                       -- compacted summary of older turns
+    summary_through_turn_id INT,       -- last turn included in summary
+    created_at TIMESTAMP DEFAULT NOW(),
+    last_active_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(source_type, source_ref, workspace_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_threads_instance ON threads(instance_id);
+CREATE INDEX IF NOT EXISTS idx_threads_source ON threads(source_type, source_ref);
+CREATE INDEX IF NOT EXISTS idx_threads_active ON threads(last_active_at DESC);
+
+CREATE TABLE IF NOT EXISTS thread_turns (
+    id SERIAL PRIMARY KEY,
+    thread_id INT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+    role VARCHAR(20) NOT NULL,         -- 'user', 'assistant'
+    content TEXT NOT NULL,
+    metadata JSONB DEFAULT '{}',       -- sources, confidence, author, channel, etc.
+    token_estimate INT,                -- for context budget tracking
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_thread_turns_thread ON thread_turns(thread_id, created_at);
+
+COMMENT ON TABLE threads IS 'Source-agnostic conversation threads (Slack, email, web, API)';
+COMMENT ON TABLE thread_turns IS 'Individual turns within a thread';
+COMMENT ON COLUMN threads.summary IS 'Compacted summary of old turns (like Claude Code compaction)';
+COMMENT ON COLUMN threads.summary_through_turn_id IS 'Turns up to this ID are summarized, not sent individually';
+
+-- ============================================================================
 -- COMMENTS FOR DOCUMENTATION
 -- ============================================================================
 

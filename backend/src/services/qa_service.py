@@ -142,7 +142,10 @@ class QAService:
         question: str,
         n_context_messages: int = 10,
         channel_filter: Optional[Union[str, List[str]]] = None,
-        days_back: Optional[int] = None
+        days_back: Optional[int] = None,
+        thread_ref: Optional[str] = None,
+        source_type: str = "slack",
+        author_info: Optional[str] = None
     ) -> Dict:
         """
         Answer a question based on Slack history.
@@ -217,7 +220,13 @@ class QAService:
 
         # 4. Generate answer with LLM
         if self.client:
-            answer = self._generate_answer_with_claude(question, context, relevant_messages)
+            if thread_ref:
+                answer = self._generate_with_thread_context(
+                    question, context, relevant_messages,
+                    thread_ref, source_type, author_info
+                )
+            else:
+                answer = self._generate_answer_with_claude(question, context, relevant_messages)
         else:
             answer = self._generate_mock_answer(question, relevant_messages)
 
@@ -652,6 +661,81 @@ Answer the question based on this context. Be comprehensive and include all rele
                 'project_links': [],
                 'context_used': len(messages)
             }
+
+    def _generate_with_thread_context(
+        self,
+        question: str,
+        knowledge_context: str,
+        search_messages: List[Dict],
+        thread_ref: str,
+        source_type: str = "slack",
+        author_info: Optional[str] = None
+    ) -> Dict:
+        """
+        Generate answer using conversation manager for thread-level context.
+        Uses prompt caching so knowledge context + prior turns aren't reprocessed.
+        """
+        from src.services.conversation_manager import ConversationManager, apply_cache_control
+
+        try:
+            mgr = ConversationManager(
+                source_type=source_type,
+                source_ref=thread_ref,
+                workspace_id=self.workspace_id
+            )
+
+            # Build messages with full thread history
+            system_prompt, conv_messages = mgr.build_messages(
+                new_question=question,
+                knowledge_context=knowledge_context,
+                author_info=author_info
+            )
+
+            # Add skill instructions to system prompt
+            skill_instructions = _match_skill(question)
+            if skill_instructions:
+                system_prompt += f"\n\n**Skill-specific instructions:**\n{skill_instructions}"
+
+            # Apply prompt caching
+            system_blocks, cached_messages = apply_cache_control(system_prompt, conv_messages)
+
+            response = self.client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=1000,
+                system=system_blocks,
+                messages=cached_messages
+            )
+
+            answer_text = response.content[0].text
+
+            # Clean up answer (same as _generate_answer_with_claude)
+            answer_text = re.sub(r':?\w*:?\s*\*?\*?Confidence:\s*\d+%\s*\*?\*?\s*[-–]\s*.+?(?:\n|$)',
+                                 '', answer_text, flags=re.IGNORECASE | re.MULTILINE).strip()
+            answer_text = re.sub(r':[\w_]+:', '', answer_text)
+            answer_text = re.sub(r'\*\*([^\*]+?)\*\*', r'*\1*', answer_text)
+            answer_text = re.sub(r'\n{3,}', '\n\n', answer_text).strip()
+
+            # Store the exchange for next turn
+            mgr.add_exchange(question, answer_text, author_info=author_info)
+
+            confidence, confidence_explanation = self._extract_confidence(answer_text)
+            thread_info = mgr.get_thread_info()
+
+            return {
+                'answer': answer_text,
+                'sources': self._format_sources(search_messages),
+                'confidence': confidence,
+                'confidence_explanation': confidence_explanation,
+                'project_links': self._extract_project_links(search_messages),
+                'context_used': len(search_messages),
+                'thread': thread_info,
+                'model': 'claude-3-5-sonnet'
+            }
+
+        except Exception as e:
+            logger.error(f"Thread context generation failed: {e}", exc_info=True)
+            # Fall back to stateless generation
+            return self._generate_answer_with_claude(question, knowledge_context, search_messages)
 
     def _generate_mock_answer(
         self,

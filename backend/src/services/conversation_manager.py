@@ -1,255 +1,355 @@
 """
-Conversation Manager - Multi-turn conversation context tracking
-Stores and retrieves conversation history for thread-aware responses
+Conversation context manager — the kernel.
+
+Maintains thread-level conversation state and builds efficient Claude API calls:
+- Accumulates turns per thread (source-agnostic: Slack, email, web, API)
+- Builds messages array with prompt caching (stable prefix = cached, new turn = fresh)
+- Compacts old turns into summaries when context budget is exceeded
+- Per-instance identity prompts and configuration
+
+Modeled after Claude Code's context management:
+- Full conversation history sent each call, but with cache_control on stable prefix
+- Compaction summarizes old turns when token count crosses threshold
+- Server-side context_management clears old tool results (we don't have tools,
+  but we do have verbose RAG context that can be trimmed)
 """
 
+import os
 import logging
-from typing import List, Dict, Optional
-from datetime import datetime
+from typing import List, Dict, Optional, Tuple
+from anthropic import Anthropic
 
-from src.db.connection import DatabaseConnection
+from src.db.repositories.thread_repo import ThreadRepo
+from src.db.repositories.instance_repo import InstanceRepo
 
 logger = logging.getLogger(__name__)
+
+# Token budget constants (conservative estimates, 1 token ~ 4 chars)
+CHARS_PER_TOKEN = 4
+MAX_CONTEXT_TOKENS = 150_000     # Stay under 200K model limit
+COMPACTION_THRESHOLD = 80_000    # Compact when thread history exceeds this
+COMPACTION_KEEP_TOKENS = 20_000  # Keep last ~20K tokens of turns after compaction
+SUMMARY_MAX_TOKENS = 2_000       # Cap summary size
+
+
+def estimate_tokens(text: str) -> int:
+    """Rough token estimate. Good enough for budget tracking."""
+    return len(text) // CHARS_PER_TOKEN
 
 
 class ConversationManager:
     """
-    Manages conversation history for multi-turn interactions
+    Manages conversation context for a thread.
 
-    Features:
-    - Store user questions and bot responses
-    - Retrieve thread history for context
-    - Build prompts with conversation context
-    - Limit context window to prevent token overflow
+    Usage:
+        mgr = ConversationManager(source_type='slack', source_ref='1234.5678',
+                                  workspace_id='W123')
+        system_prompt, messages = mgr.build_messages(
+            new_question="What's the status of alonovo?",
+            knowledge_context="[project docs and RAG results here]"
+        )
+        # Apply caching and call Claude
+        system_blocks, cached_msgs = apply_cache_control(system_prompt, messages)
+        response = client.messages.create(
+            system=system_blocks, messages=cached_msgs, ...
+        )
+        # Store the exchange
+        mgr.add_exchange(question, answer_text, metadata)
     """
 
-    def __init__(self, workspace_id: str):
-        """
-        Initialize conversation manager
-
-        Args:
-            workspace_id: Workspace ID for data isolation
-        """
+    def __init__(
+        self,
+        source_type: str,
+        source_ref: str,
+        workspace_id: Optional[str] = None,
+        instance_slug: Optional[str] = None,
+        instance_id: Optional[int] = None
+    ):
+        self.source_type = source_type
+        self.source_ref = source_ref
         self.workspace_id = workspace_id
-        self.max_history_turns = 10  # Keep last 10 turns (20 messages)
 
-    def add_to_history(
-        self,
-        thread_ts: str,
-        channel_id: str,
-        role: str,
-        content: str
-    ) -> bool:
-        """
-        Add a message to conversation history
+        self._thread_repo = ThreadRepo()
+        self._instance_repo = InstanceRepo()
 
-        Args:
-            thread_ts: Thread timestamp (conversation ID)
-            channel_id: Channel where conversation happened
-            role: 'user' or 'assistant'
-            content: Message content
+        # Resolve instance
+        self._instance = None
+        if instance_slug:
+            self._instance = self._instance_repo.get_by_slug(instance_slug)
+        elif instance_id:
+            self._instance = self._instance_repo.get_by_id(instance_id)
 
-        Returns:
-            True if successful, False otherwise
-        """
-        if role not in ['user', 'assistant']:
-            logger.error(f"Invalid role: {role}. Must be 'user' or 'assistant'")
-            return False
+        # Get or create thread
+        self._thread = self._thread_repo.get_or_create_thread(
+            source_type=source_type,
+            source_ref=source_ref,
+            workspace_id=workspace_id,
+            instance_id=self._instance['id'] if self._instance else None
+        )
 
-        conn = DatabaseConnection.get_connection()
+        # Opportunistic GC: clean up stale threads (cheap single-query DELETE)
         try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    INSERT INTO conversation_history (
-                        workspace_id, thread_ts, channel_id, role, content, created_at
-                    ) VALUES (%s, %s, %s, %s, %s, NOW())
-                    """,
-                    (self.workspace_id, thread_ts, channel_id, role, content)
-                )
-                conn.commit()
-                logger.debug(f"Stored {role} message in thread {thread_ts}")
-                return True
+            self._thread_repo.garbage_collect(stale_hours=24)
+        except Exception:
+            pass  # GC failure is non-critical
 
-        except Exception as e:
-            logger.error(f"Failed to store conversation history: {e}", exc_info=True)
-            conn.rollback()
-            return False
-        finally:
-            DatabaseConnection.return_connection(conn)
+    @property
+    def thread_id(self) -> int:
+        return self._thread['id']
 
-    def get_thread_history(
+    def get_system_prompt(self) -> str:
+        """
+        Build system prompt for this thread's instance.
+        Priority: instance DB prompt > default file prompt > hardcoded fallback.
+        """
+        if self._instance and self._instance.get('identity_prompt'):
+            return self._instance['identity_prompt']
+
+        from pathlib import Path
+        identity_path = Path(__file__).parent.parent.parent / "prompts" / "identity.md"
+        if identity_path.exists():
+            return identity_path.read_text().strip()
+
+        return (
+            "You are a knowledge assistant that helps teams understand their "
+            "collective knowledge — conversations, documents, relationships, "
+            "and decisions."
+        )
+
+    def build_messages(
         self,
-        thread_ts: str,
-        limit: Optional[int] = None
-    ) -> List[Dict[str, str]]:
+        new_question: str,
+        knowledge_context: str = "",
+        author_info: Optional[str] = None
+    ) -> Tuple[str, List[Dict]]:
         """
-        Retrieve conversation history for a thread
+        Build the system prompt and messages array for a Claude API call.
 
-        Args:
-            thread_ts: Thread timestamp to retrieve
-            limit: Maximum number of messages to retrieve (default: max_history_turns * 2)
+        Returns (system_prompt, messages) where:
+        - system_prompt includes identity + knowledge context (cacheable)
+        - messages has conversation history + new question
 
-        Returns:
-            List of messages in chronological order, each with 'role' and 'content'
+        The knowledge context goes in the system prompt (not in messages)
+        because it's stable across turns in the same thread — this means
+        it gets cached and isn't re-processed on follow-up questions.
         """
-        if limit is None:
-            limit = self.max_history_turns * 2  # 2 messages per turn (user + assistant)
+        # --- System prompt (stable per thread, cacheable) ---
+        identity = self.get_system_prompt()
+        system_parts = [identity]
 
-        conn = DatabaseConnection.get_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    SELECT role, content, created_at
-                    FROM conversation_history
-                    WHERE workspace_id = %s AND thread_ts = %s
-                    ORDER BY created_at ASC
-                    LIMIT %s
-                    """,
-                    (self.workspace_id, thread_ts, limit)
-                )
+        if knowledge_context:
+            system_parts.append(
+                f"## Available Knowledge\n\n{knowledge_context}"
+            )
 
-                rows = cur.fetchall()
-                history = [
-                    {
-                        'role': row[0],
-                        'content': row[1],
-                        'timestamp': row[2].isoformat() if row[2] else None
-                    }
-                    for row in rows
-                ]
+        system_parts.append(self._get_rules())
+        system_prompt = "\n\n".join(system_parts)
 
-                logger.debug(f"Retrieved {len(history)} messages from thread {thread_ts}")
-                return history
+        # --- Conversation history ---
+        messages = []
 
-        except Exception as e:
-            logger.error(f"Failed to retrieve conversation history: {e}", exc_info=True)
-            return []
-        finally:
-            DatabaseConnection.return_connection(conn)
+        # Compacted summary of old turns (if any)
+        thread = self._thread_repo.get_thread(self.thread_id)
+        summary = thread.get('summary') if thread else None
+        summary_through = thread.get('summary_through_turn_id') if thread else None
 
-    def build_context_prompt(
+        if summary:
+            messages.append({
+                "role": "user",
+                "content": f"[Earlier in this conversation: {summary}]"
+            })
+            messages.append({
+                "role": "assistant",
+                "content": "I have that context. Go ahead."
+            })
+
+        # Recent turns (after the summary cutoff)
+        turns = self._thread_repo.get_turns(
+            self.thread_id, after_turn_id=summary_through
+        )
+        for turn in turns:
+            messages.append({
+                "role": turn['role'],
+                "content": turn['content']
+            })
+
+        # New question
+        user_content = new_question
+        if author_info:
+            user_content = f"[{author_info}] {new_question}"
+        messages.append({"role": "user", "content": user_content})
+
+        return system_prompt, messages
+
+    def add_exchange(
         self,
-        thread_ts: str,
-        new_question: str
-    ) -> str:
+        question: str,
+        answer: str,
+        metadata: Optional[Dict] = None,
+        author_info: Optional[str] = None
+    ):
+        """Store a question-answer exchange as two turns, then check compaction."""
+        user_content = question
+        if author_info:
+            user_content = f"[{author_info}] {question}"
+
+        self._thread_repo.add_turn(
+            self.thread_id, 'user', user_content,
+            metadata=metadata, token_estimate=estimate_tokens(user_content)
+        )
+        self._thread_repo.add_turn(
+            self.thread_id, 'assistant', answer,
+            metadata=metadata, token_estimate=estimate_tokens(answer)
+        )
+
+        self._maybe_compact()
+
+    def _maybe_compact(self):
+        """Compact old turns if total tokens exceed threshold."""
+        turns = self._thread_repo.get_turns(self.thread_id)
+        if not turns:
+            return
+
+        total_tokens = sum(
+            t.get('token_estimate') or estimate_tokens(t['content'])
+            for t in turns
+        )
+
+        if total_tokens < COMPACTION_THRESHOLD:
+            return
+
+        logger.info(f"Thread {self.thread_id}: {total_tokens} est. tokens, compacting")
+        self._compact(turns)
+
+    def _compact(self, turns: List[Dict]):
         """
-        Build a context-aware prompt including conversation history
-
-        Args:
-            thread_ts: Thread timestamp
-            new_question: New question from user
-
-        Returns:
-            Formatted prompt with conversation context
+        Summarize old turns, keep recent ones.
+        Mirrors Claude Code's conversation compaction strategy.
         """
-        history = self.get_thread_history(thread_ts)
+        if len(turns) < 4:
+            return
 
-        if not history:
-            # No previous context, return just the question
-            return new_question
+        # Find split: keep last COMPACTION_KEEP_TOKENS of turns
+        cumulative = 0
+        keep_from_idx = len(turns)
+        for i in range(len(turns) - 1, -1, -1):
+            tokens = turns[i].get('token_estimate') or estimate_tokens(turns[i]['content'])
+            cumulative += tokens
+            if cumulative > COMPACTION_KEEP_TOKENS:
+                keep_from_idx = i + 1
+                break
 
-        # Build context string
-        context_parts = ["Previous conversation:"]
+        keep_from_idx = min(keep_from_idx, len(turns) - 2)
+        if keep_from_idx <= 0:
+            return
 
-        for msg in history:
-            role_label = "User" if msg['role'] == 'user' else "Assistant"
-            context_parts.append(f"{role_label}: {msg['content']}")
+        old_turns = turns[:keep_from_idx]
+        old_text = "\n".join(
+            f"{t['role'].upper()}: {t['content'][:500]}"
+            for t in old_turns
+        )
 
-        context_parts.append(f"\nNew question: {new_question}")
+        summary = self._generate_summary(old_text)
+        if summary:
+            self._thread_repo.update_summary(
+                self.thread_id, summary, old_turns[-1]['id']
+            )
+            logger.info(
+                f"Thread {self.thread_id}: compacted {len(old_turns)} turns "
+                f"through turn {old_turns[-1]['id']}"
+            )
 
-        return "\n".join(context_parts)
+    def _generate_summary(self, conversation_text: str) -> Optional[str]:
+        """Use Claude to summarize old conversation turns."""
+        api_key = os.getenv('ANTHROPIC_API_KEY')
+        if not api_key:
+            return conversation_text[:SUMMARY_MAX_TOKENS * CHARS_PER_TOKEN]
 
-    def clear_thread_history(self, thread_ts: str) -> bool:
-        """
-        Clear conversation history for a thread
-
-        Args:
-            thread_ts: Thread timestamp to clear
-
-        Returns:
-            True if successful, False otherwise
-        """
-        conn = DatabaseConnection.get_connection()
         try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    """
-                    DELETE FROM conversation_history
-                    WHERE workspace_id = %s AND thread_ts = %s
-                    """,
-                    (self.workspace_id, thread_ts)
-                )
-                deleted_count = cur.rowcount
-                conn.commit()
-                logger.info(f"Cleared {deleted_count} messages from thread {thread_ts}")
-                return True
-
-        except Exception as e:
-            logger.error(f"Failed to clear conversation history: {e}", exc_info=True)
-            conn.rollback()
-            return False
-        finally:
-            DatabaseConnection.return_connection(conn)
-
-    def get_recent_conversations(
-        self,
-        channel_id: Optional[str] = None,
-        limit: int = 10
-    ) -> List[Dict]:
-        """
-        Get recent conversations (thread summaries)
-
-        Args:
-            channel_id: Optional channel filter
-            limit: Number of recent threads to return
-
-        Returns:
-            List of thread summaries with metadata
-        """
-        conn = DatabaseConnection.get_connection()
-        try:
-            with conn.cursor() as cur:
-                if channel_id:
-                    cur.execute(
-                        """
-                        SELECT DISTINCT thread_ts, channel_id, MAX(created_at) as last_updated
-                        FROM conversation_history
-                        WHERE workspace_id = %s AND channel_id = %s
-                        GROUP BY thread_ts, channel_id
-                        ORDER BY last_updated DESC
-                        LIMIT %s
-                        """,
-                        (self.workspace_id, channel_id, limit)
+            client = Anthropic(api_key=api_key)
+            response = client.messages.create(
+                model="claude-sonnet-4-20250514",
+                max_tokens=SUMMARY_MAX_TOKENS,
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        "Summarize this conversation concisely. Preserve: key facts, "
+                        "decisions made, questions answered, unresolved topics. "
+                        "No pleasantries or meta-commentary.\n\n"
+                        f"{conversation_text}"
                     )
-                else:
-                    cur.execute(
-                        """
-                        SELECT DISTINCT thread_ts, channel_id, MAX(created_at) as last_updated
-                        FROM conversation_history
-                        WHERE workspace_id = %s
-                        GROUP BY thread_ts, channel_id
-                        ORDER BY last_updated DESC
-                        LIMIT %s
-                        """,
-                        (self.workspace_id, limit)
-                    )
-
-                rows = cur.fetchall()
-                conversations = [
-                    {
-                        'thread_ts': row[0],
-                        'channel_id': row[1],
-                        'last_updated': row[2].isoformat() if row[2] else None
-                    }
-                    for row in rows
-                ]
-
-                return conversations
-
+                }]
+            )
+            return response.content[0].text
         except Exception as e:
-            logger.error(f"Failed to get recent conversations: {e}", exc_info=True)
-            return []
-        finally:
-            DatabaseConnection.return_connection(conn)
+            logger.warning(f"Summary generation failed: {e}")
+            return conversation_text[:SUMMARY_MAX_TOKENS * CHARS_PER_TOKEN]
+
+    def _get_rules(self) -> str:
+        return """## Rules
+1. Answer based on the available knowledge and conversation context
+2. If you don't have information, say so — don't invent
+3. Attribute: say where information came from (who, what channel/document, when)
+4. If sources disagree, name the tension
+5. Be concise but thorough
+6. Use *single asterisks* for bold (Slack-compatible)
+7. No emojis"""
+
+    def get_thread_info(self) -> Dict:
+        """Thread metadata for debugging/display."""
+        thread = self._thread_repo.get_thread(self.thread_id)
+        turns = self._thread_repo.get_turns(self.thread_id)
+        total_tokens = sum(
+            t.get('token_estimate') or estimate_tokens(t['content'])
+            for t in turns
+        )
+        return {
+            'thread_id': self.thread_id,
+            'source_type': self.source_type,
+            'source_ref': self.source_ref,
+            'turn_count': len(turns),
+            'estimated_tokens': total_tokens,
+            'has_summary': bool(thread.get('summary') if thread else False),
+            'last_active': str(thread.get('last_active_at', ''))
+        }
+
+
+def apply_cache_control(
+    system_prompt: str,
+    messages: List[Dict]
+) -> Tuple[List[Dict], List[Dict]]:
+    """
+    Apply prompt caching markers for the Claude API.
+
+    Returns (system_blocks, cached_messages) ready for the API call.
+
+    Strategy (matching Claude Code):
+    - System prompt gets cache_control (stable across turns in a thread)
+    - Second-to-last message gets cache_control (prefix through previous
+      turn is cached, only the new question is fresh tokens)
+    """
+    system_blocks = [{
+        "type": "text",
+        "text": system_prompt,
+        "cache_control": {"type": "ephemeral"}
+    }]
+
+    cached_messages = []
+    for i, msg in enumerate(messages):
+        if i == len(messages) - 2 and len(messages) >= 2:
+            # Cache breakpoint on second-to-last message
+            cached_messages.append({
+                "role": msg["role"],
+                "content": [{
+                    "type": "text",
+                    "text": msg["content"],
+                    "cache_control": {"type": "ephemeral"}
+                }]
+            })
+        else:
+            cached_messages.append({
+                "role": msg["role"],
+                "content": msg["content"]
+            })
+
+    return system_blocks, cached_messages

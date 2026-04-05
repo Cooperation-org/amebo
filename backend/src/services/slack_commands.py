@@ -257,7 +257,13 @@ async def process_events(client: SocketModeClient, req: SocketModeRequest):
 
             try:
                 qa_service = QAService(workspace_id=WORKSPACE_ID)
-                result = qa_service.answer_question(question=question, n_context_messages=10)
+                result = qa_service.answer_question(
+                    question=question,
+                    n_context_messages=10,
+                    thread_ref=thread_ts,
+                    source_type="slack",
+                    author_info=f"slack:{user_id}"
+                )
 
                 response_text = f"*Q:* {question}\n\n{result['answer']}"
 
