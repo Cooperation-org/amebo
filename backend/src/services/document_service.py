@@ -10,16 +10,16 @@ from typing import List, Dict, Any, Optional
 from pathlib import Path
 import hashlib
 
-from src.db.chromadb_client import ChromaDBClient
+from src.db.pgvector_client import PgvectorClient
 from src.db.connection import DatabaseConnection
 
 logger = logging.getLogger(__name__)
 
 class DocumentService:
     """Service for processing and indexing documents"""
-    
+
     def __init__(self):
-        self.chromadb = ChromaDBClient()
+        self.pgvector = PgvectorClient()
         self.supported_types = {
             'text/plain': self._extract_text,
             'text/markdown': self._extract_text,
@@ -95,17 +95,21 @@ class DocumentService:
 
             document_id, created_at = cursor.fetchone()
 
-            # Store in ChromaDB BEFORE committing to DB
+            # Store vectors BEFORE committing to DB
             try:
-                await self._store_in_chromadb(
-                    document_id, chunks, filename, workspace_id, org_id
+                self.pgvector.add_document_chunks(
+                    workspace_id=workspace_id or f"org_{org_id}",
+                    document_id=document_id,
+                    chunks=chunks,
+                    filename=filename,
+                    org_id=org_id
                 )
             except Exception as e:
-                logger.error(f"ChromaDB indexing failed for {filename}: {e}")
+                logger.error(f"pgvector indexing failed for {filename}: {e}")
                 conn.rollback()
                 raise ValueError(f"Failed to index document in search engine: {e}")
 
-            # Only commit DB after ChromaDB succeeds
+            # Only commit DB after pgvector succeeds
             conn.commit()
 
             return {
@@ -193,45 +197,4 @@ class DocumentService:
         
         return chunks
     
-    async def _store_in_chromadb(
-        self, 
-        document_id: int, 
-        chunks: List[str], 
-        filename: str,
-        workspace_id: Optional[str],
-        org_id: int
-    ):
-        """Store document chunks in ChromaDB"""
-        collection_name = workspace_id if workspace_id else f"org_{org_id}"
-        collection = self.chromadb.get_or_create_collection(collection_name)
-        
-        # Prepare data for ChromaDB
-        ids = []
-        metadatas = []
-        
-        for i, chunk in enumerate(chunks):
-            chunk_id = f"doc_{document_id}_chunk_{i}"
-            metadata = {
-                'document_id': str(document_id),
-                'filename': filename,
-                'chunk_index': i,
-                'chunk_count': len(chunks),
-                'source_type': 'document',
-                'workspace_id': workspace_id or '',
-                'org_id': str(org_id)
-            }
-            
-            ids.append(chunk_id)
-            metadatas.append(metadata)
-        
-        # Store in ChromaDB
-        try:
-            collection.upsert(
-                documents=chunks,
-                metadatas=metadatas,
-                ids=ids
-            )
-            logger.info(f"Stored {len(chunks)} chunks for document {document_id} in ChromaDB")
-        except Exception as e:
-            logger.error(f"ChromaDB upsert failed for document {document_id}: {e}")
-            raise
+    # Document vector storage is now handled by PgvectorClient.add_document_chunks()

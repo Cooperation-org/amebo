@@ -1,5 +1,5 @@
 """
-Hybrid query service for PostgreSQL + ChromaDB.
+Hybrid query service for PostgreSQL + pgvector.
 Provides high-level query methods for features like newsletter, PR review, Q&A.
 """
 
@@ -8,7 +8,7 @@ from typing import List, Dict, Optional, Union
 from datetime import datetime, timedelta
 
 from src.db.connection import DatabaseConnection
-from src.db.chromadb_client import ChromaDBClient
+from src.db.pgvector_client import PgvectorClient
 from psycopg2 import extras
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class QueryService:
     """
-    High-level query service that abstracts PostgreSQL + ChromaDB.
+    High-level query service that abstracts PostgreSQL + pgvector.
     """
 
     def __init__(self, workspace_id: str):
@@ -36,7 +36,7 @@ class QueryService:
             )
 
         self.workspace_id = workspace_id
-        self.chromadb = ChromaDBClient()
+        self.pgvector = PgvectorClient()
         DatabaseConnection.initialize_pool()
 
     def get_most_reacted_messages(
@@ -67,7 +67,6 @@ class QueryService:
                     m.user_name,
                     m.permalink,
                     m.created_at,
-                    m.chromadb_id,
                     COUNT(r.reaction_id) as reaction_count,
                     ARRAY_AGG(DISTINCT r.reaction_name) as reaction_types
                 FROM message_metadata m
@@ -84,7 +83,7 @@ class QueryService:
 
             query += """
                 GROUP BY m.message_id, m.slack_ts, m.channel_id, m.channel_name,
-                         m.user_name, m.permalink, m.created_at, m.chromadb_id
+                         m.user_name, m.permalink, m.created_at
                 ORDER BY reaction_count DESC
                 LIMIT %s
             """
@@ -94,11 +93,11 @@ class QueryService:
                 cur.execute(query, params)
                 results = cur.fetchall()
 
-            # Enrich with message content from ChromaDB
+            # Enrich with message content from pgvector
             enriched = []
             for msg in results:
                 # Get full message text from ChromaDB
-                chroma_msg = self.chromadb.get_message(
+                chroma_msg = self.pgvector.get_message(
                     self.workspace_id,
                     msg['slack_ts']
                 )
@@ -142,13 +141,12 @@ class QueryService:
         Returns:
             List of messages with similarity scores
         """
-        # Build ChromaDB filter
+        # Build filter dict (compatible with pgvector_client's filter format)
         where_filter = {}
 
         if channel_filter:
             # Normalize to list
             channels = channel_filter if isinstance(channel_filter, list) else [channel_filter]
-            # Remove empty strings
             channels = [c for c in channels if c]
 
             if len(channels) == 1:
@@ -158,20 +156,18 @@ class QueryService:
                 else:
                     where_filter['channel_name'] = ch
             elif len(channels) > 1:
-                # Multi-channel: use $or filter
                 where_filter = {
                     "$or": [{"channel_name": ch} for ch in channels]
                 }
 
-        # Search in ChromaDB
-        results = self.chromadb.search_messages(
+        results = self.pgvector.search_messages(
             workspace_id=self.workspace_id,
             query_text=query,
             n_results=n_results,
             where_filter=where_filter if where_filter else None
         )
 
-        # Filter by date if needed (post-process since ChromaDB doesn't have date filtering)
+        # Date filtering (post-process — pgvector stores slack_ts, not datetime)
         if days_back:
             cutoff = datetime.now() - timedelta(days=days_back)
             results = [
@@ -222,7 +218,7 @@ class QueryService:
             # Enrich with message content
             enriched_mentions = []
             for msg in direct_mentions:
-                chroma_msg = self.chromadb.get_message(
+                chroma_msg = self.pgvector.get_message(
                     self.workspace_id,
                     msg['slack_ts']
                 )
@@ -241,7 +237,7 @@ class QueryService:
             if include_similar and enriched_mentions:
                 # Use first mention as seed for similarity search
                 seed_text = enriched_mentions[0]['text']
-                similar = self.chromadb.search_messages(
+                similar = self.pgvector.search_messages(
                     workspace_id=self.workspace_id,
                     query_text=seed_text,
                     n_results=10
@@ -444,8 +440,7 @@ class QueryService:
                     m.channel_name,
                     m.user_id,
                     m.user_name,
-                    m.created_at,
-                    m.chromadb_id
+                    m.created_at
                 FROM message_metadata m
                 WHERE m.workspace_id = %s
                   AND m.created_at > NOW() - INTERVAL '%s days'
@@ -464,10 +459,10 @@ class QueryService:
                 cur.execute(query, params)
                 results = cur.fetchall()
 
-            # Enrich with message content from ChromaDB
+            # Enrich with message content from pgvector
             enriched = []
             for msg in results:
-                chroma_msg = self.chromadb.get_message(
+                chroma_msg = self.pgvector.get_message(
                     self.workspace_id,
                     msg['slack_ts']
                 )

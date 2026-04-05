@@ -248,41 +248,34 @@ async def clear_all_documents(
         conn = DatabaseConnection.get_connection()
         cursor = conn.cursor()
         
-        # Get ChromaDB collections to clean up
+        # Get document IDs to clean up vectors
         cursor.execute("""
-            SELECT chromadb_collection FROM documents 
-            WHERE org_id = %s AND chromadb_collection IS NOT NULL
+            SELECT document_id FROM documents
+            WHERE org_id = %s
         """, (current_user.get("org_id", 8),))
-        
-        collections_to_delete = [row[0] for row in cursor.fetchall()]
-        
+
+        doc_ids = [row[0] for row in cursor.fetchall()]
+
         # Delete all documents for the organization
         cursor.execute("""
             DELETE FROM documents WHERE org_id = %s
         """, (current_user.get("org_id", 8),))
-        
+
         deleted_count = cursor.rowcount
         conn.commit()
-        
-        # Clean up ChromaDB collections
-        deleted_collections = []
+
+        # Clean up pgvector document chunks
         try:
-            import chromadb
-            chroma_client = chromadb.PersistentClient(path='./chroma_db')
-            existing_collections = [col.name for col in chroma_client.list_collections()]
-            
-            for collection_name in collections_to_delete:
-                if collection_name in existing_collections:
-                    chroma_client.delete_collection(collection_name)
-                    deleted_collections.append(collection_name)
-                    logger.info(f"Deleted ChromaDB collection: {collection_name}")
-        except Exception as chroma_error:
-            logger.warning(f"ChromaDB cleanup failed: {chroma_error}")
-        
+            from src.db.pgvector_client import PgvectorClient
+            pgvector = PgvectorClient()
+            for doc_id in doc_ids:
+                pgvector.delete_document_chunks(doc_id)
+        except Exception as pv_err:
+            logger.warning(f"pgvector cleanup failed: {pv_err}")
+
         return {
             "success": True,
-            "documents_deleted": deleted_count,
-            "collections_deleted": deleted_collections
+            "documents_deleted": deleted_count
         }
         
     except Exception as e:
@@ -314,44 +307,36 @@ async def delete_document(
         
         # Get document info and verify ownership
         cursor.execute("""
-            SELECT chromadb_collection FROM documents 
+            SELECT document_id FROM documents
             WHERE document_id = %s AND org_id = %s
         """, (document_id, current_user.get("org_id", 8)))
-        
+
         result = cursor.fetchone()
         if not result:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Document not found"
             )
-        
-        collection_name = result[0]
-        
+
         # Delete from database
         cursor.execute("""
-            DELETE FROM documents 
+            DELETE FROM documents
             WHERE document_id = %s AND org_id = %s
         """, (document_id, current_user.get("org_id", 8)))
-        
+
         conn.commit()
-        
-        # Clean up ChromaDB collection if exists
+
+        # Clean up pgvector chunks
         try:
-            if collection_name:
-                import chromadb
-                chroma_client = chromadb.PersistentClient(path='./chroma_db')
-                existing_collections = [col.name for col in chroma_client.list_collections()]
-                
-                if collection_name in existing_collections:
-                    chroma_client.delete_collection(collection_name)
-                    logger.info(f"Deleted ChromaDB collection: {collection_name}")
-        except Exception as chroma_error:
-            logger.warning(f"ChromaDB cleanup failed: {chroma_error}")
-        
+            from src.db.pgvector_client import PgvectorClient
+            pgvector = PgvectorClient()
+            pgvector.delete_document_chunks(document_id)
+        except Exception as pv_err:
+            logger.warning(f"pgvector cleanup failed: {pv_err}")
+
         return {
             "success": True,
-            "document_id": document_id,
-            "collection_deleted": collection_name
+            "document_id": document_id
         }
         
     except HTTPException:

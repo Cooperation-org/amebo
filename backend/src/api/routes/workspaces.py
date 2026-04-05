@@ -79,15 +79,15 @@ async def get_workspaces(current_user: dict = Depends(get_current_user)):
         for row in cursor.fetchall():
             workspace_id = row[0]
 
-            # Get message count from ChromaDB
+            # Get message count from pgvector
             message_count = 0
             try:
-                from src.db.chromadb_client import ChromaDBClient
-                chromadb = ChromaDBClient()
-                stats = chromadb.get_collection_stats(workspace_id)
+                from src.db.pgvector_client import PgvectorClient
+                pgvector = PgvectorClient()
+                stats = pgvector.get_collection_stats(workspace_id)
                 message_count = stats.get('message_count', 0)
-            except Exception as chroma_err:
-                logger.warning(f"Could not get ChromaDB stats for {workspace_id}: {chroma_err}")
+            except Exception as pv_err:
+                logger.warning(f"Could not get pgvector stats for {workspace_id}: {pv_err}")
 
             workspaces.append({
                 "workspace_id": workspace_id,
@@ -258,47 +258,30 @@ async def delete_workspace(
                 detail="Workspace not found"
             )
         
-        # Get ChromaDB collections to clean up
-        cursor.execute("""
-            SELECT chromadb_collection FROM documents 
-            WHERE workspace_id = %s AND chromadb_collection IS NOT NULL
-        """, (workspace_id,))
-        
-        collections_to_delete = [row[0] for row in cursor.fetchall()]
-        
         # Delete associated documents first
         cursor.execute("""
             DELETE FROM documents WHERE workspace_id = %s
         """, (workspace_id,))
-        
+
+        # Delete workspace vectors
+        try:
+            from src.db.pgvector_client import PgvectorClient
+            pgvector = PgvectorClient()
+            pgvector.delete_workspace(workspace_id)
+        except Exception as pv_err:
+            logger.warning(f"pgvector cleanup failed: {pv_err}")
+
         # Delete workspace
         cursor.execute("""
-            DELETE FROM workspaces 
+            DELETE FROM workspaces
             WHERE workspace_id = %s AND org_id = %s
         """, (workspace_id, current_user.get("org_id", 8)))
-        
+
         conn.commit()
-        
-        # Clean up ChromaDB collections
-        deleted_collections = []
-        try:
-            import chromadb
-            chroma_client = chromadb.PersistentClient(path='./chroma_db')
-            existing_collections = [col.name for col in chroma_client.list_collections()]
-            
-            for collection_name in collections_to_delete:
-                if collection_name in existing_collections:
-                    chroma_client.delete_collection(collection_name)
-                    deleted_collections.append(collection_name)
-                    logger.info(f"Deleted ChromaDB collection: {collection_name}")
-        except Exception as chroma_error:
-            logger.warning(f"ChromaDB cleanup failed: {chroma_error}")
-        
+
         return {
-            "status": "deleted", 
-            "workspace_id": workspace_id,
-            "documents_deleted": len(collections_to_delete),
-            "collections_deleted": deleted_collections
+            "status": "deleted",
+            "workspace_id": workspace_id
         }
         
     except HTTPException:

@@ -11,7 +11,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 import logging
 import time
 
-from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces, dev_auth, team
+from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces, dev_auth, team, bindings
 from src.api.middleware.rate_limit import RateLimitMiddleware
 from src.db.connection import DatabaseConnection
 
@@ -145,6 +145,7 @@ app.include_router(slack_oauth.router, prefix="/api/slack", tags=["Slack Integra
 from src.api.routes import admin
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(team.router, prefix="/api/team", tags=["Team Management"])
+app.include_router(bindings.router, prefix="/api/bindings", tags=["Bindings"])
 
 
 if __name__ == "__main__":

@@ -1,17 +1,95 @@
 """
 Q&A Service using RAG (Retrieval-Augmented Generation).
-Answers questions based on Slack message history.
+Answers questions using workspace knowledge: messages, documents, and bindings.
 """
 
 import os
 import re
 import logging
+from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Union
 from anthropic import Anthropic
 
 from src.services.query_service import QueryService
 
 logger = logging.getLogger(__name__)
+
+# Load identity prompt and skills from files
+_PROMPTS_DIR = Path(__file__).parent.parent.parent / "prompts"
+_IDENTITY_PROMPT = None
+_SKILLS = None
+
+
+def _load_identity_prompt() -> str:
+    """Load identity prompt from prompts/identity.md. Cached after first load."""
+    global _IDENTITY_PROMPT
+    if _IDENTITY_PROMPT is None:
+        identity_path = _PROMPTS_DIR / "identity.md"
+        if identity_path.exists():
+            _IDENTITY_PROMPT = identity_path.read_text().strip()
+            logger.info(f"Loaded identity prompt from {identity_path}")
+        else:
+            logger.warning(f"Identity prompt not found at {identity_path}, using default")
+            _IDENTITY_PROMPT = (
+                "You are Amebo, a knowledge assistant that helps teams "
+                "understand their collective knowledge."
+            )
+    return _IDENTITY_PROMPT
+
+
+def _load_skills() -> List[Dict]:
+    """Load skill files from prompts/skills/*.md. Cached after first load."""
+    global _SKILLS
+    if _SKILLS is not None:
+        return _SKILLS
+
+    _SKILLS = []
+    skills_dir = _PROMPTS_DIR / "skills"
+    if not skills_dir.exists():
+        return _SKILLS
+
+    import yaml
+
+    for skill_path in sorted(skills_dir.glob("*.md")):
+        try:
+            content = skill_path.read_text()
+            # Parse YAML frontmatter between --- markers
+            if content.startswith("---"):
+                parts = content.split("---", 2)
+                if len(parts) >= 3:
+                    frontmatter = yaml.safe_load(parts[1])
+                    body = parts[2].strip()
+                    _SKILLS.append({
+                        'name': frontmatter.get('name', skill_path.stem),
+                        'triggers': frontmatter.get('triggers', []),
+                        'body': body,
+                        'path': str(skill_path)
+                    })
+                    logger.debug(f"Loaded skill: {frontmatter.get('name')}")
+        except Exception as e:
+            logger.warning(f"Failed to load skill {skill_path}: {e}")
+
+    logger.info(f"Loaded {len(_SKILLS)} skills from {skills_dir}")
+    return _SKILLS
+
+
+def _match_skill(question: str) -> Optional[str]:
+    """Match question against skill triggers. Returns skill body or None."""
+    skills = _load_skills()
+    question_lower = question.lower()
+
+    for skill in skills:
+        for trigger in skill.get('triggers', []):
+            if trigger.lower() in question_lower:
+                return skill['body']
+            # Support regex triggers (e.g., "how is .* related")
+            try:
+                if re.search(trigger, question_lower):
+                    return skill['body']
+            except re.error:
+                pass
+
+    return None
 
 
 class QAService:
@@ -22,12 +100,13 @@ class QAService:
     3. Generate answer with LLM (Claude)
     """
 
-    def __init__(self, workspace_id: str):
+    def __init__(self, workspace_id: str, org_id: Optional[int] = None):
         """
         Initialize Q&A service.
 
         Args:
             workspace_id: Workspace ID (REQUIRED for security/isolation)
+            org_id: Organization ID (for binding lookups)
 
         Raises:
             ValueError: If workspace_id is None or empty
@@ -39,7 +118,16 @@ class QAService:
             )
 
         self.workspace_id = workspace_id
+        self.org_id = org_id
         self.query_service = QueryService(workspace_id)
+
+        # Binding service for structured knowledge enrichment (reads from abra DB)
+        self._binding_service = None
+        try:
+            from src.services.binding_service import BindingService
+            self._binding_service = BindingService(org_id)
+        except Exception as e:
+            logger.warning(f"Could not initialize binding service: {e}")
 
         # Initialize Anthropic client
         api_key = os.getenv('ANTHROPIC_API_KEY')
@@ -118,10 +206,16 @@ class QAService:
                 'context_used': 0
             }
 
-        # 2. Build context from messages
-        context = self._build_context(relevant_messages)
+        # 2. Search knowledge base (project docs, meeting notes from abra)
+        kb_results = self._search_knowledge_base(question, limit=5)
 
-        # 3. Generate answer with LLM
+        # 3. Build context from messages + knowledge base
+        context = self._build_context(relevant_messages)
+        if kb_results:
+            kb_context = self._format_knowledge_base(kb_results)
+            context = f"{context}\n\n---\nProject & Reference Knowledge:\n{kb_context}"
+
+        # 4. Generate answer with LLM
         if self.client:
             answer = self._generate_answer_with_claude(question, context, relevant_messages)
         else:
@@ -287,7 +381,8 @@ class QAService:
 
     def _build_context(self, messages: List[Dict]) -> str:
         """
-        Build context string from relevant messages with channel-based citations.
+        Build context string from relevant messages with channel-based citations,
+        enriched with binding context when available.
 
         Args:
             messages: List of relevant messages
@@ -309,7 +404,79 @@ class QAService:
                 f"[#{channel_name}] (from {user_name}):\n{message_text}"
             )
 
-        return "\n\n".join(context_parts)
+        context = "\n\n".join(context_parts)
+
+        # Enrich with binding context if available
+        binding_context = self._enrich_with_bindings(messages)
+        if binding_context:
+            context = f"{context}\n\n---\n{binding_context}"
+
+        return context
+
+    def _format_knowledge_base(self, results: List[Dict]) -> str:
+        """Format abra content search results for inclusion in prompt."""
+        parts = []
+        for r in results:
+            source = r.get('source_file', 'unknown')
+            content = r.get('content', '')
+            # Truncate long content
+            if len(content) > 800:
+                content = content[:800] + "..."
+            sim = r.get('similarity', 0)
+            if sim and sim > 0.2:  # Only include reasonably relevant content
+                parts.append(f"[Source: {source}]\n{content}")
+        return "\n\n".join(parts)
+
+    def _search_knowledge_base(self, question: str, limit: int = 5) -> List[Dict]:
+        """
+        Search abra's content store (project docs, meeting notes, reference docs)
+        for content relevant to the question. Returns list of content dicts.
+        """
+        if not self._binding_service:
+            return []
+        try:
+            return self._binding_service.repo.search_content(question, limit=limit)
+        except Exception as e:
+            logger.warning(f"Knowledge base search failed: {e}")
+            return []
+
+    def _enrich_with_bindings(self, messages: List[Dict]) -> str:
+        """
+        Extract names/terms from search results and look up bindings.
+        Returns formatted binding context string, or empty string.
+        """
+        if not self._binding_service:
+            return ""
+
+        try:
+            # Extract unique names from messages (user names, mentioned names)
+            names = set()
+            for msg in messages:
+                metadata = msg.get('metadata', {})
+                user_name = metadata.get('user_name', '')
+                if user_name and user_name != 'unknown':
+                    names.add(user_name)
+
+                # Extract @mentions from message text
+                text = msg.get('text', '')
+                import re
+                mention_pattern = r'@(\w+)'
+                for match in re.finditer(mention_pattern, text):
+                    names.add(match.group(1))
+
+            if not names:
+                return ""
+
+            # Batch lookup bindings
+            enrichment = self._binding_service.enrich_names(list(names))
+            if not enrichment:
+                return ""
+
+            return self._binding_service.format_for_prompt(enrichment)
+
+        except Exception as e:
+            logger.warning(f"Binding enrichment failed: {e}")
+            return ""
 
     def _parse_user_mentions(self, text: str) -> str:
         """
@@ -395,47 +562,35 @@ class QAService:
         Returns:
             Answer dict
         """
-        system_prompt = """You are a helpful teammate answering questions about your Slack workspace.
+        identity = _load_identity_prompt()
 
-**Critical Rules (NEVER BREAK THESE):**
-1. ONLY answer based on the provided messages - NO external knowledge or assumptions
-2. If messages don't contain the answer, say "I don't have recent info on this in the Slack history"
-3. NEVER make assumptions or add information not explicitly in the messages
-4. Be thorough and include ALL relevant details from the messages
+        # Check if a skill matches this question
+        skill_instructions = _match_skill(question)
 
-**Your Personality:**
-- Conversational and friendly, like chatting with a coworker
-- Professional but approachable
-- Call out blockers, issues, or important context naturally
+        system_prompt = f"""{identity}
 
-**Response Structure:**
+**Rules for this answer:**
+1. ONLY answer based on the provided context — NO external knowledge or assumptions
+2. If context doesn't contain the answer, say "I don't have information on that in the workspace history"
+3. Be thorough and include ALL relevant details from the context
+4. Include key details: who said it, in what channel/document, when
+5. Be concise but informative — no filler
 
-1. START with a casual greeting (vary it):
-   - "Hey!" / "So..." / "Alright," / "Yeah," / or just start with the answer
-
-2. ANSWER the question naturally in 2-4 sentences:
-   - Include key details (who, what, when, blockers)
-   - Mention blockers explicitly if present (use words like "blocker", "blocked by", "waiting on", "issue")
-   - Be specific with names, dates, and context
-   - Include URLs inline when relevant (e.g., "The repo is at https://github.com/...")
-
-3. DO NOT add a "What I found:" section - just provide the answer
-
-**Formatting (IMPORTANT - This is for Slack, not Markdown):**
-- Use *single asterisks* for bold (NOT double asterisks like **this**)
-- Example: *important term* NOT **important term**
-- Use _underscores_ for italic
+**Formatting:**
+- Use *single asterisks* for bold (Slack-compatible)
 - Write in clear paragraphs
 - NO emojis or emoji codes
-- NO separate "Sources:" or "Confidence:" sections
-- Keep it concise but informative"""
+- NO separate "Sources:" or "Confidence:" sections"""
+
+        if skill_instructions:
+            system_prompt += f"\n\n**Skill-specific instructions:**\n{skill_instructions}"
 
         user_prompt = f"""Question: {question}
 
-Slack Message History:
+Workspace Knowledge:
 {context}
 
-Answer the question based on these messages. Be comprehensive and include all relevant details."""
+Answer the question based on this context. Be comprehensive and include all relevant details."""
 
         try:
             response = self.client.messages.create(

@@ -14,7 +14,7 @@ from slack_sdk.web.async_client import AsyncWebClient
 from slack_sdk.errors import SlackApiError
 
 from src.db.connection import DatabaseConnection
-from src.db.chromadb_client import ChromaDBClient
+from src.db.pgvector_client import PgvectorClient
 from src.services.backfill_service import BackfillService
 from psycopg2 import extras
 
@@ -29,7 +29,7 @@ class SlackListener:
 
     def __init__(self):
         """Initialize the listener"""
-        self.chromadb_client = ChromaDBClient()
+        self.pgvector_client = PgvectorClient()
         self.workspace_apps: Dict[str, AsyncApp] = {}
         self.handlers: Dict[str, AsyncSocketModeHandler] = {}
         self.running = False
@@ -323,8 +323,8 @@ class SlackListener:
                 result = cur.fetchone()
                 message_id = result['message_id']
 
-                # Store message text in ChromaDB
-                chromadb_id = self.chromadb_client.add_message(
+                # Store message text + embedding in pgvector
+                self.pgvector_client.add_message(
                     workspace_id=message_data['workspace_id'],
                     message_id=message_id,
                     slack_ts=message_data['slack_ts'],
@@ -336,12 +336,6 @@ class SlackListener:
                         'user_name': message_data['user_name'],
                         'timestamp': message_data['slack_ts']
                     }
-                )
-
-                # Update message with ChromaDB ID
-                cur.execute(
-                    "UPDATE message_metadata SET chromadb_id = %s WHERE message_id = %s",
-                    (chromadb_id, message_id)
                 )
 
                 conn.commit()

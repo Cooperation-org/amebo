@@ -542,6 +542,101 @@ ALTER TABLE message_metadata ADD CONSTRAINT check_edited_after_created
     CHECK (edited_at IS NULL OR edited_at >= created_at);
 
 -- ============================================================================
+-- PGVECTOR: Message vectors (replaces ChromaDB)
+-- ============================================================================
+
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS message_vectors (
+    id SERIAL PRIMARY KEY,
+    workspace_id VARCHAR(20) NOT NULL REFERENCES workspaces(workspace_id) ON DELETE CASCADE,
+    message_id INT REFERENCES message_metadata(message_id) ON DELETE CASCADE,
+    content TEXT NOT NULL,
+    embedding vector(384) NOT NULL,
+    channel_id VARCHAR(20),
+    channel_name VARCHAR(255),
+    user_id VARCHAR(20),
+    user_name VARCHAR(255),
+    slack_ts VARCHAR(20),
+    created_at TIMESTAMP DEFAULT NOW(),
+    UNIQUE(workspace_id, slack_ts)
+);
+
+CREATE INDEX IF NOT EXISTS idx_mv_workspace ON message_vectors(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_mv_embedding ON message_vectors USING hnsw (embedding vector_cosine_ops);
+CREATE INDEX IF NOT EXISTS idx_mv_message ON message_vectors(message_id);
+CREATE INDEX IF NOT EXISTS idx_mv_created ON message_vectors(workspace_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_mv_channel ON message_vectors(workspace_id, channel_name);
+
+COMMENT ON TABLE message_vectors IS 'Message content + embeddings for semantic search (replaces ChromaDB)';
+
+-- ============================================================================
+-- ABRA: Structured knowledge (bindings, content, catcodes, hot tags)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS abra_catcode_registry (
+    catcode VARCHAR(64) NOT NULL,
+    org_id INT NOT NULL,
+    parent_catcode VARCHAR(64),
+    label TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT NOW(),
+    PRIMARY KEY (org_id, catcode)
+);
+
+CREATE INDEX IF NOT EXISTS idx_abra_catcode_prefix ON abra_catcode_registry (catcode varchar_pattern_ops);
+
+CREATE TABLE IF NOT EXISTS abra_content (
+    id SERIAL PRIMARY KEY,
+    org_id INT NOT NULL,
+    workspace_id VARCHAR(20),
+    source_file VARCHAR(512),
+    content TEXT NOT NULL,
+    embedding vector(384),
+    note_date DATE,
+    catcode VARCHAR(64),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_abra_content_org ON abra_content(org_id);
+CREATE INDEX IF NOT EXISTS idx_abra_content_date ON abra_content(note_date);
+
+CREATE TABLE IF NOT EXISTS abra_bindings (
+    id SERIAL PRIMARY KEY,
+    org_id INT NOT NULL,
+    workspace_id VARCHAR(20),
+    scope VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    relationship VARCHAR(100) NOT NULL,
+    target_type VARCHAR(50) NOT NULL,
+    target_ref TEXT NOT NULL,
+    qualifier VARCHAR(255),
+    permanence VARCHAR(20) DEFAULT 'CURRENT',
+    source_date DATE,
+    catcode VARCHAR(64),
+    created_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_abra_bindings_org ON abra_bindings(org_id);
+CREATE INDEX IF NOT EXISTS idx_abra_bindings_scope_name ON abra_bindings(org_id, scope, name);
+CREATE INDEX IF NOT EXISTS idx_abra_bindings_relationship ON abra_bindings(relationship);
+CREATE INDEX IF NOT EXISTS idx_abra_bindings_target ON abra_bindings(target_type, target_ref);
+
+CREATE TABLE IF NOT EXISTS abra_hot_tags (
+    scope VARCHAR(255) NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    org_id INT NOT NULL,
+    priority INTEGER DEFAULT 0,
+    added_at TIMESTAMP DEFAULT NOW(),
+    expires_at TIMESTAMP,
+    PRIMARY KEY (org_id, scope, name)
+);
+
+COMMENT ON TABLE abra_bindings IS 'Structured knowledge: named relationships between entities';
+COMMENT ON TABLE abra_content IS 'Content blobs with embeddings for semantic search';
+COMMENT ON TABLE abra_catcode_registry IS 'Hierarchical spatial coordinate system for organizing knowledge';
+COMMENT ON TABLE abra_hot_tags IS 'Priority flags for names that should surface first';
+
+-- ============================================================================
 -- COMMENTS FOR DOCUMENTATION
 -- ============================================================================
 

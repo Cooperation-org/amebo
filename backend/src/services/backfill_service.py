@@ -1,6 +1,6 @@
 """
 Backfill Service - Async message collection from Slack
-Integrates with ChromaDB and PostgreSQL for storage
+Integrates with pgvector and PostgreSQL for storage
 """
 
 import logging
@@ -9,7 +9,7 @@ from typing import Optional, Dict, List, Any
 from slack_sdk.web.async_client import AsyncWebClient
 from slack_sdk.errors import SlackApiError
 
-from src.db.chromadb_client import ChromaDBClient
+from src.db.pgvector_client import PgvectorClient
 from src.db.connection import DatabaseConnection
 
 logging.basicConfig(level=logging.INFO)
@@ -43,7 +43,7 @@ class BackfillService:
 
         self.workspace_id = workspace_id
         self.slack_client = AsyncWebClient(token=bot_token)
-        self.chromadb = ChromaDBClient()
+        self.pgvector = PgvectorClient()
 
     async def backfill_messages(
         self,
@@ -273,7 +273,7 @@ class BackfillService:
         channel_name: str
     ):
         """
-        Store messages in ChromaDB and PostgreSQL
+        Store messages in pgvector and PostgreSQL
 
         Args:
             messages: List of Slack messages
@@ -286,50 +286,31 @@ class BackfillService:
         # Get user info for usernames
         user_map = await self._get_user_info([msg.get("user") for msg in messages if msg.get("user")])
 
-        # Prepare data for ChromaDB
-        texts = []
-        metadatas = []
-        ids = []
-
+        # Prepare data for pgvector batch insert
+        batch = []
         for msg in messages:
-            # Create unique ID
-            msg_id = f"{self.workspace_id}_{channel_id}_{msg['ts']}"
-
-            # Get username
             user_id = msg.get("user", "unknown")
             user_name = user_map.get(user_id, "unknown")
 
-            # Prepare metadata
-            metadata = {
-                "workspace_id": self.workspace_id,
-                "channel_id": channel_id,
-                "channel_name": channel_name,
-                "user_id": user_id,
-                "user_name": user_name,
-                "timestamp": msg["ts"],
-                "message_type": msg.get("type", "message"),
-                "thread_ts": msg.get("thread_ts", ""),
-                "has_reactions": "reactions" in msg,
-                "reaction_count": len(msg.get("reactions", [])),
-            }
+            batch.append({
+                'text': msg["text"],
+                'slack_ts': msg["ts"],
+                'message_id': None,
+                'metadata': {
+                    'channel_id': channel_id,
+                    'channel_name': channel_name,
+                    'user_id': user_id,
+                    'user_name': user_name,
+                    'timestamp': msg["ts"],
+                }
+            })
 
-            texts.append(msg["text"])
-            metadatas.append(metadata)
-            ids.append(msg_id)
-
-        # Store in ChromaDB
+        # Store in pgvector
         try:
-            collection = self.chromadb.get_or_create_collection(self.workspace_id)
-            collection.upsert(
-                documents=texts,
-                metadatas=metadatas,
-                ids=ids
-            )
-
-            logger.debug(f"Stored {len(messages)} messages in ChromaDB")
-
+            self.pgvector.add_messages_batch(self.workspace_id, batch)
+            logger.debug(f"Stored {len(messages)} messages in pgvector")
         except Exception as e:
-            logger.error(f"Error storing in ChromaDB: {e}", exc_info=True)
+            logger.error(f"Error storing in pgvector: {e}", exc_info=True)
 
     async def _get_user_info(self, user_ids: List[str]) -> Dict[str, str]:
         """

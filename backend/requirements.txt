@@ -24,9 +24,11 @@ python-json-logger==2.0.7
 click==8.1.7  # For building CLI scripts
 
 # AI
-chromadb==0.4.22
 anthropic>=0.18.0
-numpy<2.0.0  # ChromaDB compatibility
+pyyaml>=6.0
+sentence-transformers>=2.2.0
+pgvector>=0.2.0
+numpy>=1.24.0
 
 # Task Scheduling
 apscheduler==3.11.1
