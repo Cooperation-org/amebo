@@ -11,7 +11,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 import logging
 import time
 
-from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces, dev_auth, team, bindings
+from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces, dev_auth, team, bindings, chat
 from src.api.middleware.rate_limit import RateLimitMiddleware
 from src.db.connection import DatabaseConnection
 
@@ -35,7 +35,7 @@ app = FastAPI(
 # CORS Configuration
 # Configure allowed origins via CORS_ORIGINS environment variable (comma-separated)
 # Example: CORS_ORIGINS=http://localhost:3000,https://myapp.vercel.app
-cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001")
+cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001,https://demos.linkedtrust.us")
 cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
 
 app.add_middleware(
@@ -146,6 +146,7 @@ from src.api.routes import admin
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
 app.include_router(team.router, prefix="/api/team", tags=["Team Management"])
 app.include_router(bindings.router, prefix="/api/bindings", tags=["Bindings"])
+app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
 
 
 if __name__ == "__main__":

@@ -23,7 +23,9 @@ class BindingRepo:
 
     def __init__(self, org_id: int = None):
         self.org_id = org_id
-        self._use_abra = AbraConnection.is_available()
+        # Use abra's shared DB only when no org_id is specified (shared knowledge).
+        # When org_id is set, use local amebo tables for instance-isolated content.
+        self._use_abra = AbraConnection.is_available() and org_id is None
         if not self._use_abra:
             DatabaseConnection.initialize_pool()
 
@@ -222,7 +224,13 @@ class BindingRepo:
             self._return_conn(conn)
 
     def search_content(self, query: str, scope: Optional[str] = None, limit: int = 10) -> List[Dict]:
-        """Search content by text (uses embedding similarity if available)."""
+        """
+        Search content by embedding similarity, boosting project docs.
+
+        Returns two tiers merged: project/team/plans docs (boosted) + general results.
+        This prevents thousands of gmail/linkedin contact stubs from drowning out
+        actual project knowledge.
+        """
         conn = self._get_conn()
         if not conn:
             return []
@@ -231,18 +239,57 @@ class BindingRepo:
             query_embedding = embed_text(query)
 
             org_clause, org_params = self._org_filter()
-            params = org_params + [query_embedding, query_embedding, limit]
 
+            # Params: embedding in SELECT comes before org_id in WHERE
+            # SELECT ... 1-(embedding <=> %s::vector) ... WHERE org_id=%s ... ORDER BY embedding <=> %s::vector LIMIT %s
+
+            # Tier 1: project docs (projects/, Ideas/, plans/, cli-*)
+            project_params = [query_embedding] + org_params + [query_embedding, limit]
             with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
                 cur.execute(f"""
                     SELECT id, source_file, content, note_date, catcode,
                            1 - (embedding <=> %s::vector) AS similarity
                     FROM {self._t_content}
                     WHERE {org_clause}embedding IS NOT NULL
+                      AND (source_file LIKE 'projects/%%'
+                           OR source_file LIKE 'Ideas/%%'
+                           OR source_file LIKE 'plans/%%'
+                           OR source_file LIKE 'cli-%%')
                     ORDER BY embedding <=> %s::vector
                     LIMIT %s
-                """, params)
-                return cur.fetchall()
+                """, project_params)
+                project_results = cur.fetchall()
+
+            # Tier 2: everything else (contacts, meeting notes, etc.)
+            general_params = [query_embedding] + org_params + [query_embedding, limit]
+            with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                cur.execute(f"""
+                    SELECT id, source_file, content, note_date, catcode,
+                           1 - (embedding <=> %s::vector) AS similarity
+                    FROM {self._t_content}
+                    WHERE {org_clause}embedding IS NOT NULL
+                      AND source_file NOT LIKE 'projects/%%'
+                      AND source_file NOT LIKE 'Ideas/%%'
+                      AND source_file NOT LIKE 'plans/%%'
+                      AND source_file NOT LIKE 'cli-%%'
+                    ORDER BY embedding <=> %s::vector
+                    LIMIT %s
+                """, general_params)
+                general_results = cur.fetchall()
+
+            # Merge: project docs first, then fill remaining slots with general
+            seen_ids = set()
+            merged = []
+            for r in project_results:
+                if r['id'] not in seen_ids:
+                    seen_ids.add(r['id'])
+                    merged.append(r)
+            for r in general_results:
+                if r['id'] not in seen_ids and len(merged) < limit:
+                    seen_ids.add(r['id'])
+                    merged.append(r)
+
+            return merged[:limit]
         except Exception as e:
             logger.warning(f"Content search failed: {e}")
             return []

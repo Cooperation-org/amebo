@@ -161,76 +161,48 @@ class QAService:
         """
         logger.info(f"Answering question: {question}")
 
-        # Auto-detect time-based questions if days_back not explicitly provided
+        # --- Agentic path: thread-based conversations (Slack app mentions, web, CLI) ---
+        # Claude Code pattern: give the model tools, let it decide what to search.
+        # Full thread history is maintained by ConversationManager.
+        if thread_ref and self.client:
+            return self._generate_with_thread_context(
+                question, thread_ref, source_type, author_info
+            )
+
+        # --- Legacy RAG path: slash commands (/ask, /askall) without thread context ---
+        # Pre-retrieves context, then generates. Kept for backward compat.
         if days_back is None:
             days_back = self._detect_time_filter(question)
-
-        # Auto-detect channel filter from question
         if channel_filter is None:
             channel_filter = self._detect_channel_filter(question)
 
-        # 1. Retrieve relevant messages (semantic search)
-        # Get more results than needed to allow filtering
         search_results = n_context_messages * 3
         relevant_messages = self.query_service.semantic_search(
-            query=question,
-            n_results=search_results,
-            channel_filter=channel_filter,
-            days_back=days_back
+            query=question, n_results=search_results,
+            channel_filter=channel_filter, days_back=days_back
         )
-
-        # 2. Filter out low-quality messages (bot notifications, joins, etc.)
         relevant_messages = self._filter_quality_messages(relevant_messages, n_context_messages)
 
         if not relevant_messages:
-            # Provide helpful message based on filters
-            filters_applied = []
-            if days_back:
-                filters_applied.append(f"last {days_back} days")
-            if channel_filter:
-                if isinstance(channel_filter, list):
-                    channels_str = ", ".join(f"#{c}" for c in channel_filter)
-                    filters_applied.append(f"{channels_str} channels")
-                else:
-                    filters_applied.append(f"#{channel_filter} channel")
-
-            if filters_applied:
-                filters_str = " in the " + " and ".join(filters_applied)
-                answer = f"I couldn't find any substantive messages{filters_str}. There may be very little activity during this period, or the messages might be too short/simple to be useful (like emoji reactions or join notifications).\n\nTry:\n• Asking about a different time period\n• Asking without specifying a channel\n• Asking about a more general topic"
-            else:
-                answer = "I couldn't find any relevant information in the Slack history to answer this question."
-
             return {
-                'answer': answer,
-                'sources': [],
-                'confidence': 0,
-                'confidence_explanation': 'No relevant messages found after filtering',
-                'project_links': [],
-                'context_used': 0
+                'answer': "I couldn't find any relevant information to answer this question.",
+                'sources': [], 'confidence': 0,
+                'confidence_explanation': 'No relevant messages found',
+                'project_links': [], 'context_used': 0
             }
 
-        # 2. Search knowledge base (project docs, meeting notes from abra)
-        kb_results = self._search_knowledge_base(question, limit=5)
-
-        # 3. Build context from messages + knowledge base
         context = self._build_context(relevant_messages)
+        kb_results = self._search_knowledge_base(question, limit=8)
         if kb_results:
             kb_context = self._format_knowledge_base(kb_results)
-            context = f"{context}\n\n---\nProject & Reference Knowledge:\n{kb_context}"
+            context = (
+                f"## Project & Reference Knowledge\n\n{kb_context}"
+                f"\n\n---\n## Slack History\n\n{context}"
+            )
 
-        # 4. Generate answer with LLM
         if self.client:
-            if thread_ref:
-                answer = self._generate_with_thread_context(
-                    question, context, relevant_messages,
-                    thread_ref, source_type, author_info
-                )
-            else:
-                answer = self._generate_answer_with_claude(question, context, relevant_messages)
-        else:
-            answer = self._generate_mock_answer(question, relevant_messages)
-
-        return answer
+            return self._generate_answer_with_claude(question, context, relevant_messages)
+        return self._generate_mock_answer(question, relevant_messages)
 
     def _detect_time_filter(self, question: str) -> Optional[int]:
         """
@@ -425,8 +397,13 @@ class QAService:
     def _format_knowledge_base(self, results: List[Dict]) -> str:
         """Format abra content search results for inclusion in prompt."""
         parts = []
+        seen_sources = set()
         for r in results:
             source = r.get('source_file', 'unknown')
+            # Deduplicate by source_file (abra has some duplicate imports)
+            if source in seen_sources:
+                continue
+            seen_sources.add(source)
             content = r.get('content', '')
             # Truncate long content
             if len(content) > 800:
@@ -435,6 +412,53 @@ class QAService:
             if sim and sim > 0.2:  # Only include reasonably relevant content
                 parts.append(f"[Source: {source}]\n{content}")
         return "\n\n".join(parts)
+
+    def _get_search_query_from_thread(
+        self,
+        question: str,
+        thread_ref: str,
+        source_type: str = "slack"
+    ) -> str:
+        """
+        For short follow-ups ("look again", "what about X", "try harder"),
+        retrieve the most recent substantive user question from the thread
+        and use it as the search query.
+
+        This mirrors how Claude Code handles context: the model sees the full
+        conversation, but retrieval/search needs a meaningful query. Claude Code
+        doesn't re-search on "try again" — it already has the full context.
+        For amebo, we need to re-search because our retrieval is per-turn.
+        """
+        try:
+            from src.db.repositories.thread_repo import ThreadRepo
+            repo = ThreadRepo()
+
+            # Find the thread
+            thread = repo.get_or_create_thread(
+                source_type=source_type,
+                source_ref=thread_ref,
+                workspace_id=self.workspace_id
+            )
+            turns = repo.get_turns(thread['id'])
+
+            # Walk backwards through user turns to find a substantive question
+            for turn in reversed(turns):
+                if turn['role'] != 'user':
+                    continue
+                content = turn['content']
+                # Strip author prefix like "[slack:U123] "
+                if content.startswith('[') and '] ' in content:
+                    content = content.split('] ', 1)[1]
+                # Skip short follow-ups
+                if len(content.split()) <= 5:
+                    continue
+                # Found a real question — use it
+                return content
+
+        except Exception as e:
+            logger.warning(f"Could not get thread context for search: {e}")
+
+        return question
 
     def _search_knowledge_base(self, question: str, limit: int = 5) -> List[Dict]:
         """
@@ -665,17 +689,22 @@ Answer the question based on this context. Be comprehensive and include all rele
     def _generate_with_thread_context(
         self,
         question: str,
-        knowledge_context: str,
-        search_messages: List[Dict],
         thread_ref: str,
         source_type: str = "slack",
         author_info: Optional[str] = None
     ) -> Dict:
         """
-        Generate answer using conversation manager for thread-level context.
-        Uses prompt caching so knowledge context + prior turns aren't reprocessed.
+        Agentic answer generation — mirrors the Claude Code pattern.
+
+        Instead of pre-retrieving context and stuffing it into the prompt,
+        we give Claude tools and let it decide what to search. The model
+        sees the full thread history and chooses when to search KB, Slack,
+        contacts, or just answer from context it already has.
+
+        Loop: call Claude with tools → if tool_use, execute and loop → stop on text.
         """
         from src.services.conversation_manager import ConversationManager, apply_cache_control
+        from src.tools.registry import get_tools_for_instance, execute_tool
 
         try:
             mgr = ConversationManager(
@@ -684,38 +713,108 @@ Answer the question based on this context. Be comprehensive and include all rele
                 workspace_id=self.workspace_id
             )
 
-            # Build messages with full thread history
+            # Build system prompt + thread history (no knowledge_context — tools replace it)
             system_prompt, conv_messages = mgr.build_messages(
                 new_question=question,
-                knowledge_context=knowledge_context,
+                knowledge_context="",  # No pre-stuffed context; model uses tools
                 author_info=author_info
             )
 
-            # Add skill instructions to system prompt
+            # Add skill instructions
             skill_instructions = _match_skill(question)
             if skill_instructions:
                 system_prompt += f"\n\n**Skill-specific instructions:**\n{skill_instructions}"
 
+            # Get tools for this instance
+            tools = get_tools_for_instance(mgr._instance)
+            logger.info(f"Available tools: {[t['name'] for t in tools]}")
+
             # Apply prompt caching
             system_blocks, cached_messages = apply_cache_control(system_prompt, conv_messages)
 
+            # --- Agentic loop (Claude Code pattern) ---
+            MAX_TOOL_ROUNDS = 5
+            tool_round = 0
+
             response = self.client.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=1000,
+                max_tokens=2000,
                 system=system_blocks,
-                messages=cached_messages
+                messages=cached_messages,
+                tools=tools
             )
 
-            answer_text = response.content[0].text
+            while response.stop_reason == "tool_use" and tool_round < MAX_TOOL_ROUNDS:
+                tool_round += 1
 
-            # Clean up answer (same as _generate_answer_with_claude)
+                # Collect all tool_use blocks from this response
+                tool_results = []
+                for block in response.content:
+                    if block.type == "tool_use":
+                        logger.info(f"Tool call [{tool_round}]: {block.name}({block.input})")
+                        result = execute_tool(
+                            block.name, block.input,
+                            workspace_id=self.workspace_id,
+                            org_id=self.org_id
+                        )
+                        logger.info(f"Tool result [{tool_round}]: {len(result)} chars")
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": block.id,
+                            "content": result
+                        })
+
+                # Append assistant response + tool results to messages
+                # Serialize SDK content blocks to dicts for the next API call
+                assistant_content = []
+                for block in response.content:
+                    if block.type == "tool_use":
+                        assistant_content.append({
+                            "type": "tool_use",
+                            "id": block.id,
+                            "name": block.name,
+                            "input": block.input
+                        })
+                    elif block.type == "text":
+                        assistant_content.append({
+                            "type": "text",
+                            "text": block.text
+                        })
+                cached_messages.append({
+                    "role": "assistant",
+                    "content": assistant_content
+                })
+                cached_messages.append({
+                    "role": "user",
+                    "content": tool_results
+                })
+
+                # Call Claude again with full history including tool results
+                response = self.client.messages.create(
+                    model="claude-sonnet-4-20250514",
+                    max_tokens=2000,
+                    system=system_blocks,
+                    messages=cached_messages,
+                    tools=tools
+                )
+
+            # Extract final text response
+            answer_text = ""
+            for block in response.content:
+                if hasattr(block, 'text'):
+                    answer_text += block.text
+
+            if not answer_text:
+                answer_text = "I wasn't able to generate an answer. Try rephrasing your question."
+
+            # Clean up for Slack formatting
             answer_text = re.sub(r':?\w*:?\s*\*?\*?Confidence:\s*\d+%\s*\*?\*?\s*[-–]\s*.+?(?:\n|$)',
                                  '', answer_text, flags=re.IGNORECASE | re.MULTILINE).strip()
             answer_text = re.sub(r':[\w_]+:', '', answer_text)
             answer_text = re.sub(r'\*\*([^\*]+?)\*\*', r'*\1*', answer_text)
             answer_text = re.sub(r'\n{3,}', '\n\n', answer_text).strip()
 
-            # Store the exchange for next turn
+            # Store the exchange
             mgr.add_exchange(question, answer_text, author_info=author_info)
 
             confidence, confidence_explanation = self._extract_confidence(answer_text)
@@ -723,19 +822,23 @@ Answer the question based on this context. Be comprehensive and include all rele
 
             return {
                 'answer': answer_text,
-                'sources': self._format_sources(search_messages),
+                'sources': [],
                 'confidence': confidence,
                 'confidence_explanation': confidence_explanation,
-                'project_links': self._extract_project_links(search_messages),
-                'context_used': len(search_messages),
+                'project_links': [],
+                'context_used': tool_round,
                 'thread': thread_info,
-                'model': 'claude-3-5-sonnet'
+                'model': 'claude-sonnet-4-agentic'
             }
 
         except Exception as e:
-            logger.error(f"Thread context generation failed: {e}", exc_info=True)
-            # Fall back to stateless generation
-            return self._generate_answer_with_claude(question, knowledge_context, search_messages)
+            logger.error(f"Agentic generation failed: {e}", exc_info=True)
+            return {
+                'answer': f"Sorry, I encountered an error: {str(e)}",
+                'sources': [], 'confidence': 0,
+                'confidence_explanation': f'Error: {str(e)}',
+                'project_links': [], 'context_used': 0
+            }
 
     def _generate_mock_answer(
         self,

@@ -287,13 +287,14 @@ class ConversationManager:
 
     def _get_rules(self) -> str:
         return """## Rules
-1. Answer based on the available knowledge and conversation context
-2. If you don't have information, say so — don't invent
-3. Attribute: say where information came from (who, what channel/document, when)
-4. If sources disagree, name the tension
-5. Be concise but thorough
-6. Use *single asterisks* for bold (Slack-compatible)
-7. No emojis"""
+1. Answer using ALL available knowledge — both project docs AND conversation history
+2. Project & Reference Knowledge contains team docs, plans, and project descriptions — prioritize these for questions about projects, plans, strategy, or team work
+3. If you don't have information, say so — don't invent
+4. Attribute: say where information came from (source file, channel, who, when)
+5. If sources disagree, name the tension
+6. Be concise but thorough
+7. Use *single asterisks* for bold (Slack-compatible)
+8. No emojis"""
 
     def get_thread_info(self) -> Dict:
         """Thread metadata for debugging/display."""

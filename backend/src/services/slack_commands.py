@@ -316,9 +316,15 @@ async def handle_app_mention(team_id, channel, text, user, ts):
             )
             return
 
-        # Get answer from Q&A service
+        # Get answer from Q&A service (with thread context for conversation memory)
         qa_service = QAService(workspace_id=team_id)
-        result = qa_service.answer_question(question=question, n_context_messages=10)
+        result = qa_service.answer_question(
+            question=question,
+            n_context_messages=10,
+            thread_ref=ts,
+            source_type="slack",
+            author_info=f"slack:{user}"
+        )
 
         response_text = f"*Q:* {question}\n\n{result['answer']}"
 
@@ -330,7 +336,7 @@ async def handle_app_mention(team_id, channel, text, user, ts):
                 response_text += f"\n\n_Sources: {' · '.join(source_parts)}_"
 
         confidence = result.get('confidence', 50)
-        response_text += f"\n_Confidence: {confidence}%_"
+        response_text += f"\n_Confidence: {confidence}% | rearchitect v2_"
 
         # Send response in thread
         await web_client.chat_postMessage(
