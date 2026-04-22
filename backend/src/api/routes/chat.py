@@ -8,12 +8,15 @@ Thread context is maintained by ConversationManager.
 
 import logging
 import uuid
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
-from typing import Optional
+from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
+from typing import Any, Dict, Optional
 
 from src.services.qa_service import QAService
 from src.db.repositories.instance_repo import InstanceRepo
+from src.api.middleware.auth import get_service_client
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -135,3 +138,111 @@ async def upload_document(req: DocUploadRequest):
     except Exception as e:
         logger.error(f"Document upload failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Instance management (service-to-service, API key required)
+# ---------------------------------------------------------------------------
+
+class CreateInstanceRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    slug: str = Field(..., pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$", max_length=100)
+    identity_prompt: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
+
+
+class UpdateInstanceRequest(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    identity_prompt: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
+
+
+class InstanceResponse(BaseModel):
+    id: int
+    name: str
+    slug: str
+    org_id: Optional[int] = None
+    identity_prompt: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+def _instance_to_response(instance: dict) -> InstanceResponse:
+    """Convert a raw instance dict to an InstanceResponse."""
+    return InstanceResponse(
+        id=instance["id"],
+        name=instance["name"],
+        slug=instance["slug"],
+        org_id=instance.get("org_id"),
+        identity_prompt=instance.get("identity_prompt"),
+        config=instance.get("config"),
+        created_at=instance["created_at"],
+        updated_at=instance["updated_at"],
+    )
+
+
+@router.post("/instances", response_model=InstanceResponse, status_code=201)
+async def create_instance(
+    req: CreateInstanceRequest,
+    client: dict = Depends(get_service_client),
+):
+    """
+    Create a new amebo instance (service-to-service, API key required).
+    The org_id is taken from the authenticated API key, not the request body.
+    """
+    instance_repo = InstanceRepo()
+
+    # Check slug uniqueness
+    existing = instance_repo.get_by_slug(req.slug)
+    if existing:
+        raise HTTPException(status_code=409, detail=f"Instance slug '{req.slug}' already exists")
+
+    instance = instance_repo.create(
+        name=req.name,
+        slug=req.slug,
+        identity_prompt=req.identity_prompt,
+        config=req.config,
+        org_id=client["org_id"],
+    )
+
+    logger.info(f"Instance created: slug={req.slug} org_id={client['org_id']} by key={client['key_name']}")
+    return _instance_to_response(instance)
+
+
+@router.patch("/instances/{slug}", response_model=InstanceResponse)
+async def update_instance(
+    slug: str,
+    req: UpdateInstanceRequest,
+    client: dict = Depends(get_service_client),
+):
+    """
+    Update an existing amebo instance (service-to-service, API key required).
+    Only updates fields that are explicitly provided.
+    The instance must belong to the authenticated org.
+    """
+    instance_repo = InstanceRepo()
+
+    # Verify the instance exists and belongs to this org
+    instance = instance_repo.get_by_slug_and_org(slug, client["org_id"])
+    if not instance:
+        raise HTTPException(status_code=404, detail=f"Instance '{slug}' not found")
+
+    # Build update kwargs from provided fields
+    update_fields = {}
+    if req.name is not None:
+        update_fields["name"] = req.name
+    if req.identity_prompt is not None:
+        update_fields["identity_prompt"] = req.identity_prompt
+    if req.config is not None:
+        update_fields["config"] = req.config
+
+    if not update_fields:
+        return _instance_to_response(instance)
+
+    updated = instance_repo.update(instance["id"], **update_fields)
+    if not updated:
+        raise HTTPException(status_code=500, detail="Failed to update instance")
+
+    logger.info(f"Instance updated: slug={slug} fields={list(update_fields.keys())} by key={client['key_name']}")
+    return _instance_to_response(updated)
