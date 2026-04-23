@@ -71,7 +71,8 @@ async def chat_message(req: ChatRequest):
         question=req.message,
         thread_ref=session_id,
         source_type="web",
-        author_info=None
+        author_info=None,
+        instance_slug=req.instance_slug
     )
 
     return ChatResponse(

@@ -145,7 +145,8 @@ class QAService:
         days_back: Optional[int] = None,
         thread_ref: Optional[str] = None,
         source_type: str = "slack",
-        author_info: Optional[str] = None
+        author_info: Optional[str] = None,
+        instance_slug: Optional[str] = None
     ) -> Dict:
         """
         Answer a question based on Slack history.
@@ -166,7 +167,8 @@ class QAService:
         # Full thread history is maintained by ConversationManager.
         if thread_ref and self.client:
             return self._generate_with_thread_context(
-                question, thread_ref, source_type, author_info
+                question, thread_ref, source_type, author_info,
+                instance_slug=instance_slug
             )
 
         # --- Legacy RAG path: slash commands (/ask, /askall) without thread context ---
@@ -691,7 +693,8 @@ Answer the question based on this context. Be comprehensive and include all rele
         question: str,
         thread_ref: str,
         source_type: str = "slack",
-        author_info: Optional[str] = None
+        author_info: Optional[str] = None,
+        instance_slug: Optional[str] = None
     ) -> Dict:
         """
         Agentic answer generation — mirrors the Claude Code pattern.
@@ -710,7 +713,8 @@ Answer the question based on this context. Be comprehensive and include all rele
             mgr = ConversationManager(
                 source_type=source_type,
                 source_ref=thread_ref,
-                workspace_id=self.workspace_id
+                workspace_id=self.workspace_id,
+                instance_slug=instance_slug
             )
 
             # Build system prompt + thread history (no knowledge_context — tools replace it)

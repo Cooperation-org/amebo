@@ -78,6 +78,7 @@ async def handle_envelope(
                 thread_ref=envelope.source_ref,
                 source_type=envelope.source_type,
                 author_info=envelope.author_info,
+                instance_slug=envelope.instance_slug,
             )
         else:
             # Legacy/stateless path — single question
