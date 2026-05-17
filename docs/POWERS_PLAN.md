@@ -165,11 +165,71 @@ Multiple credentials of the same kind per org (e.g. two different Gmail mailboxe
 - **Shared credentials across orgs.** Each org's GitHub token must be isolated. The lookup is always keyed by `org_id`.
 - **Trusting the model to handle credentials.** The model never sees raw tokens. The tool implementation fetches the credential, makes the API call, returns only the result.
 
+#### Encapsulation contract
+
+Tool code MUST NOT know about token storage, refresh, encryption, or provider differences. Every tool that needs a credential interacts only with this surface:
+
+```python
+# In a tool implementation:
+with credentials.client(org_id=ctx["org_id"], kind="gmail") as client:
+    result = client.get("/users/me/messages")
+```
+
+That's it. The `client` is a thin wrapper around `requests.Session` that:
+- Looks up the credential by `(org_id, kind)`.
+- Refreshes pre-flight if needed.
+- Adds the right auth header for the provider.
+- Catches 401 once, refreshes, retries once.
+- Records audit metadata (kind used, refreshes triggered).
+
+What's hidden behind that one-liner:
+- The `org_credentials` table — tool code never sees raw SQL or rows.
+- Encryption/decryption — only the resolver touches `encrypted_value`.
+- Provider-specific refresh logic — adapters in `tools/credentials/adapters/`.
+- Token expiry math, locking, retry logic.
+- Where the master key lives, how it's rotated.
+
+If a future change moves credentials to KMS, or switches encryption library, or migrates to per-region storage — none of that touches tool code. Encapsulation is the only way this stays maintainable across many tools.
+
+The CredentialResolver and the credentials module are the ONLY places allowed to:
+- SELECT from / INSERT into `org_credentials`
+- Read the encryption key
+- Call provider refresh endpoints
+- Decide how long a token is "valid for"
+
+#### Token refresh — must be invisible to users
+
+Token expiry is the #2 UX cliff after initial connection. A user who clicks "Connect Gmail" and then sees "your Gmail connection expired, please reconnect" three weeks later is an angry user. Goal: **users never see token refresh, ever, until a refresh token itself dies (rare).**
+
+Design:
+
+1. **Centralized `CredentialResolver`.** Tools never read tokens from the DB directly. They call `creds = CredentialResolver(org_id, kind).get()` which always returns a *valid* access token. The resolver handles refresh transparently.
+
+2. **Pre-flight refresh.** When `get()` is called, the resolver checks `expires_at < now + buffer` (buffer = 5 minutes). If so, it refreshes BEFORE returning the token. The tool call never hits a 401 due to expiry.
+
+3. **Lazy fallback on 401.** Tool calls wrap API requests in a helper that catches 401 once, calls `CredentialResolver.force_refresh()`, retries once. Catches the case where the server-side token was revoked between pre-flight and call, or where `expires_at` was wrong.
+
+4. **DB-level lock during refresh.** When two goals fire concurrently and both see an expired token, only one refreshes. Use `SELECT ... FOR UPDATE` on `org_credentials.id` during the refresh transaction. The other waits and gets the freshly-refreshed token.
+
+5. **Per-provider refresh adapter.** Each OAuth provider's refresh flow lives in `tools/credentials/adapters/{google,slack,github,microsoft}.py`. The resolver dispatches by `kind`. Adapter contract is tiny: `def refresh(stored: dict) -> RefreshedTokens`.
+
+6. **Background pre-emptive refresh** (optional but recommended): a scheduler tick scans for credentials with `expires_at < now + 1 hour` and refreshes them ahead of time. Spreads load and means most `get()` calls don't hit the refresh path at all.
+
+7. **Refresh-token-expired surface.** When the refresh token itself is dead (Google: 6mo inactivity; user revoked at provider; admin de-installed the app), the resolver:
+   - Marks the credential `revoked_at = NOW()`.
+   - Emits a notification to the org admin (`channel = admin_default`).
+   - Returns a typed error from the tool call so the dispatcher records `failed: credential_expired` rather than `failed: 401`.
+   - The Connections UI shows the credential as "Reconnect needed" with one click.
+
+8. **Refresh never blocks a goal.** Goals shouldn't fail just because a token is about to expire mid-dispatch. The resolver's pre-flight ensures the token is fresh for the whole dispatch window. If refresh fails entirely, the goal fails with a clear reason and the admin gets pinged.
+
+9. **Audit refreshes.** Each refresh writes to a `credential_events` table (or extends `goal_events` with credential context): `kind=google, action=refresh, status=ok`. Helps debug "why does my Gmail keep disconnecting?" complaints.
+
 #### Open questions
 
 - **Which encryption library.** Python's `cryptography.fernet` is the lightweight default; AWS KMS / GCP KMS for production rotation. For VM 200's scale, Fernet with a key in env is fine for now.
-- **Token refresh strategy.** Per-kind logic (Google refresh tokens, GitHub App tokens, Slack refresh tokens) — each provider differs. Wrap in a `CredentialResolver` so the tool code stays clean.
 - **Per-tool scope verification.** Should amebo check that the stored token actually has the scope the tool needs before calling? Probably yes — surface a "reconnect this credential with broader scope" message in the UI rather than failing mid-goal.
+- **Refresh during long-running goals.** A goal that runs for 30 minutes could outlive the access token. Either always re-resolve before each tool call (slight overhead) or hold the resolver instance and let it refresh inline. The lazy-401 fallback covers both cases.
 
 ## Order of work (recommended)
 
