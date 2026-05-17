@@ -128,7 +128,7 @@ About half need credentials. Worth being precise: a tool that doesn't need crede
 8. **Paste-token is a fallback, not a default.** Behind an "Advanced" expander. For obscure SaaS without OAuth, or self-hosted services. Most users should never see it.
 9. **No credentials in goal config, ever.** Goals reference *credential kinds* (`{"send_via": "email"}`), never values. The credential is looked up at dispatch time from the org's vault.
 
-#### Concrete flow (best case)
+#### Concrete flow (best case — admin already in the web UI)
 
 1. Org admin lands on `/settings/connections` in the amebo web UI.
 2. Sees a list: "Slack — connected ✓", "Gmail — not connected", "GitHub — not connected".
@@ -136,6 +136,77 @@ About half need credentials. Worth being precise: a tool that doesn't need crede
 4. amebo stores the refreshed token, encrypted, in `org_credentials`.
 5. From that moment, any tool that needs `kind = "gmail"` for that org can use it; goals reference it indirectly.
 6. Admin can see "last used 3 hours ago by goal: outreach to Rackdog" and revoke if anything looks off.
+
+#### The real common case — user is in chat, not in a browser
+
+Most amebo users live in Slack / email / Signal / web chat, not the settings UI. Asking them to "go log into the web app" mid-conversation is the failure mode that kills chat-agent products. The flow has to start where the user is.
+
+**Pattern: amebo sends back an OAuth link through the channel the user is on.**
+
+Example, user in Slack:
+
+> **User:** post our values statement to LinkedIn
+> **amebo:** I can do that, but I don't have LinkedIn access for this org yet. To connect it, click here (admin only, expires in 15 min): `https://amebo.linkedtrust.us/connect/<one-time-token>`. After you connect, send the message again and I'll post it.
+
+Same intent over email — same flow, plain hyperlink instead of a button. Same over Signal — short link (we own a URL shortener). The channel adapter formats the message; the underlying flow is identical.
+
+**Mechanics:**
+
+1. **Tool call detects missing credential.** Tool function calls `credentials.client(org_id, kind="linkedin")`, which raises `CredentialMissing(kind="linkedin")` because no row exists or the row is revoked.
+2. **Dispatcher catches it and produces a connect URL.** A `ConnectLinkBuilder` mints a signed, single-use, time-limited URL embedding:
+   - `org_id`
+   - `kind` (linkedin)
+   - `reply_to` (channel + thread reference to notify on completion)
+   - `requested_by` (user id of the asker; if they aren't admin, the link is still good for forwarding to admin)
+   - `expires_at` (15 min default)
+3. **Reply goes back through the same channel adapter** that received the original message. No assumption about web UI.
+4. **User clicks the link.** Browser hits `/connect/<token>` on amebo's web frontend. The endpoint:
+   - Validates token (signature + not-expired + not-already-used).
+   - Verifies the user has admin role on `org_id` (login-required at this point).
+   - Redirects to the provider's OAuth consent screen with the right scopes.
+5. **Provider redirects back to `/connect/callback`.** amebo stores the credential, marks the connect link "consumed".
+6. **amebo notifies the original channel/thread**: "LinkedIn is connected. You can re-send your message."
+7. **(Optional) auto-resume:** if the original request was wrapped in a goal, the goal's status moves from `pending` → ready-for-tick, and the next scheduler tick re-runs it. For ad-hoc chat requests, we don't auto-resume — re-asking is fine.
+
+#### Goal-side: "blocked on credential"
+
+When the claw is pursuing a goal autonomously (not in response to a live chat turn) and hits a missing credential, the flow is different — there's no user in the chat to click the link at that moment.
+
+1. Goal moves to a new pseudo-status (`blocked_on_credential`) — or stays `active` with an event `blocked_on_credential:<kind>`.
+2. amebo notifies `goal.notify_channel` (or the org admin default) with the same kind of connect link.
+3. After connection, the goal auto-resumes on the next tick.
+
+For v1 we encode this as a `goal_events` row with action `blocked_on_credential:<kind>` and metadata containing the link's short_code. The status stays `active` (since we don't have a `blocked` state in the enum); the scheduler checks for an unblocked credential before dispatching. Cleaner than adding a new status; revisit if it gets gnarly.
+
+#### Connect-link schema
+
+```sql
+CREATE TABLE connect_links (
+    short_code TEXT PRIMARY KEY,           -- random url-safe 16 chars
+    org_id INT NOT NULL REFERENCES organizations(org_id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,                    -- 'gmail', 'linkedin', etc.
+    reply_channel TEXT,                    -- 'slack:Cxxx:thread_ts' / 'email:user@example.com'
+    requested_by_user_id INT,              -- platform_users(user_id) if known
+    expires_at TIMESTAMPTZ NOT NULL,
+    consumed_at TIMESTAMPTZ,
+    consumed_by_user_id INT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX idx_connect_links_org ON connect_links(org_id);
+```
+
+Single-use, time-limited. After consumption the row stays for audit but cannot be reused.
+
+#### Channel adapters know how to render the link
+
+Each channel adapter has a `render_connect_prompt(kind, url, why)` method:
+
+- **Slack**: posts a block with a "Connect <provider>" button.
+- **Email**: a plain paragraph with the link inline.
+- **Signal/SMS**: short link (preferred), short message.
+- **Web chat**: inline link with a tiny call-to-action.
+
+This keeps the credential flow channel-agnostic at the core, channel-specific at the edge — same shape as the rest of amebo's channels/I/O model.
 
 #### Schema sketch
 
