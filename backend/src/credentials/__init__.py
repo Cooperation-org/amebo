@@ -22,6 +22,13 @@ from src.credentials.resolver import (
     StoredCredential,
 )
 from src.credentials.client import client
+from src.credentials.connect import (
+    ConnectLink,
+    ConnectLinkError,
+    mint_connect_link,
+    get_connect_link,
+    consume_connect_link,
+)
 
 
 __all__ = [
@@ -31,4 +38,9 @@ __all__ = [
     "CredentialRevoked",
     "StoredCredential",
     "client",
+    "ConnectLink",
+    "ConnectLinkError",
+    "mint_connect_link",
+    "get_connect_link",
+    "consume_connect_link",
 ]
