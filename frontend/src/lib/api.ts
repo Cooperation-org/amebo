@@ -341,6 +341,47 @@ class ApiClient {
       method: 'DELETE',
     });
   }
+
+  // Connections (per-org OAuth credentials)
+  async listConnections(): Promise<ConnectionSummary[]> {
+    return this.request('/api/connections/');
+  }
+
+  async startConnection(kind: string, opts: { scopes?: string[]; label?: string } = {}): Promise<StartConnectionResult> {
+    return this.request('/api/connections/start', {
+      method: 'POST',
+      body: JSON.stringify({
+        kind,
+        scopes: opts.scopes || [],
+        label: opts.label || 'default',
+      }),
+    });
+  }
+
+  async revokeConnection(kind: string, label = 'default'): Promise<{ revoked: boolean }> {
+    return this.request(`/api/connections/${encodeURIComponent(kind)}?label=${encodeURIComponent(label)}`, {
+      method: 'DELETE',
+    });
+  }
+}
+
+export interface ConnectionSummary {
+  id: number;
+  kind: string;
+  label: string;
+  granted_scopes: string[];
+  expires_at: string | null;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface StartConnectionResult {
+  short_code: string;
+  connect_url: string;
+  expires_at: string;
+  kind: string;
+  label: string;
 }
 
 export const apiClient = new ApiClient(API_BASE_URL);

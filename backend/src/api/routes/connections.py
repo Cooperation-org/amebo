@@ -29,6 +29,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import RedirectResponse, HTMLResponse
 from pydantic import BaseModel, Field
 
+from fastapi import Header
+
 from src.api.middleware.auth import (
     get_current_user_optional,
     get_service_client,
@@ -88,6 +90,45 @@ class ConnectionResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Combined auth — accept either an X-API-Key (service caller) or a JWT
+# (admin user via the web UI). Both produce the same shape: a dict with
+# org_id + a display label.
+# ---------------------------------------------------------------------------
+
+
+async def org_context(
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    user: Optional[Dict[str, Any]] = Depends(get_current_user_optional),
+) -> Dict[str, Any]:
+    """
+    Resolve the calling org from either auth method:
+    - X-API-Key header (service to service)
+    - JWT bearer / cookie (admin in the web UI; must be owner/admin)
+
+    Raises 401 if neither is valid. Service callers get full access; UI
+    callers must be admins of their own org.
+    """
+    if x_api_key:
+        # Delegate to the existing service-client auth — let it raise its
+        # own 401 if the key is bad.
+        client = await get_service_client(x_api_key)
+        return {"org_id": client["org_id"], "via": "api_key", "label": client["key_name"]}
+
+    if user is not None:
+        if user.get("role") not in ("owner", "admin"):
+            raise HTTPException(
+                status_code=403,
+                detail="Admin role required to manage connections.",
+            )
+        return {"org_id": user["org_id"], "via": "user", "label": user.get("email", "user")}
+
+    raise HTTPException(
+        status_code=401,
+        detail="Authentication required (X-API-Key header or JWT).",
+    )
+
+
+# ---------------------------------------------------------------------------
 # API: start, list, revoke
 # ---------------------------------------------------------------------------
 
@@ -95,13 +136,13 @@ class ConnectionResponse(BaseModel):
 @router.post("/start", response_model=StartConnectionResponse)
 async def start_connection(
     req: StartConnectionRequest,
-    client: dict = Depends(get_service_client),
+    ctx: dict = Depends(org_context),
 ):
     """
     Mint a connect link for the calling org. The response contains the
     URL to deliver to the user (via channel adapter or web UI).
     """
-    org_id = client["org_id"]
+    org_id = ctx["org_id"]
 
     # Verify we know how to drive this provider before minting a link
     # for a kind we can't actually complete.
@@ -128,9 +169,9 @@ async def start_connection(
 
 @router.get("/", response_model=List[ConnectionResponse])
 async def list_connections(
-    client: dict = Depends(get_service_client),
+    ctx: dict = Depends(org_context),
 ):
-    rows = CredentialResolver.list_for_org(client["org_id"])
+    rows = CredentialResolver.list_for_org(ctx["org_id"])
     return [
         ConnectionResponse(
             id=r["id"],
@@ -154,9 +195,9 @@ class RevokeResponse(BaseModel):
 async def revoke_connection(
     kind: str,
     label: str = Query("default"),
-    client: dict = Depends(get_service_client),
+    ctx: dict = Depends(org_context),
 ):
-    ok = CredentialResolver.revoke(client["org_id"], kind, label)
+    ok = CredentialResolver.revoke(ctx["org_id"], kind, label)
     if not ok:
         raise HTTPException(status_code=404, detail="No active connection to revoke")
     return RevokeResponse(revoked=True)

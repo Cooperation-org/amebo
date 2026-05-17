@@ -123,16 +123,21 @@ def client(app):
 
 @pytest.fixture
 def service_auth(app, test_org_id):
-    from src.api.middleware.auth import get_service_client
+    """Override the org_context dependency so the API tests don't need a real API key."""
+    from src.api.routes.connections import org_context
 
-    cur = {"org_id": test_org_id, "key_name": "test", "permissions": ["read", "write"]}
-    app.dependency_overrides[get_service_client] = lambda: cur
+    cur = {"org_id": test_org_id, "via": "api_key", "label": "test"}
+
+    async def _override():
+        return cur
+
+    app.dependency_overrides[org_context] = _override
 
     def _set_org(org_id):
         cur["org_id"] = org_id
 
     yield _set_org
-    app.dependency_overrides.pop(get_service_client, None)
+    app.dependency_overrides.pop(org_context, None)
 
 
 @pytest.fixture
