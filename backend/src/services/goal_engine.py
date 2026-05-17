@@ -190,6 +190,18 @@ class GoalEngine:
         goal_id: str,
         actor_user_id: Optional[int] = None,
     ) -> Dict[str, Any]:
+        """
+        Only valid from the 'paused' state. Use dispatch / activate for
+        pending goals — resume specifically un-pauses a paused goal so the
+        audit trail reads correctly.
+        """
+        goal = self._repo.get(goal_id)
+        if goal is None:
+            raise GoalNotFoundError(goal_id)
+        if goal["status"] != "paused":
+            raise InvalidTransitionError(
+                f"resume requires paused state; goal {goal_id} is {goal['status']!r}"
+            )
         result = self._transition(
             goal_id,
             to_status="active",

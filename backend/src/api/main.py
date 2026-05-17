@@ -11,7 +11,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 import logging
 import time
 
-from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces, dev_auth, team, bindings, chat, embeddings
+from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces, dev_auth, team, bindings, chat, embeddings, goals
 from src.api.middleware.rate_limit import RateLimitMiddleware
 from src.db.connection import DatabaseConnection
 
@@ -148,6 +148,7 @@ app.include_router(team.router, prefix="/api/team", tags=["Team Management"])
 app.include_router(bindings.router, prefix="/api/bindings", tags=["Bindings"])
 app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
 app.include_router(embeddings.router, prefix="/api/embeddings", tags=["Embeddings"])
+app.include_router(goals.router, prefix="/api/goals", tags=["Goals"])
 
 
 if __name__ == "__main__":
