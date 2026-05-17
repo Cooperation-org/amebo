@@ -112,3 +112,42 @@ These do not block v1 but should be revisited:
 2. Goal hierarchies / dependencies — out of scope for v1.
 3. Long-running goals that span multiple dispatches — supported by status, but the "resume context" mechanic needs design.
 4. Human-in-the-loop drafts (claw drafts a message, human approves before send) — default for nontechnical orgs per the amebo-summary; needs a draft-approval flow.
+
+## Claude Code patterns — what we used and what we didn't
+
+Amebo's kernel already borrows heavily from Claude Code. The claw layer extends that. Listing the gaps so they're easy to find later.
+
+### Borrowed in v1
+
+- **ConversationManager** — cache-pinned-prefix + thread compaction + 24h GC, directly modeled on Claude Code's context management.
+- **Agentic loop** — "give the model tools, let it decide what to search" (in `qa_service._generate_with_thread_context`).
+- **Bounded tool rounds** — defensive cap, same shape as Claude Code's limits.
+- **Skills as markdown + frontmatter** — same convention.
+- **Per-instance allowed_tools** — analogous to Claude Code's settings permissions.
+
+### Patterns we did NOT bring in (future work)
+
+- **Subagents** — Claude Code spawns sub-Claude instances for parallel or context-isolated work. Multi-step goals would benefit; v1 uses a single bounded loop.
+- **Plan mode / ExitPlanMode** — explicit "design first, get approval, then act" split. The amebo-summary says drafts for nontechnical orgs should be reviewed before sending; that pattern lives here. Needs DB state (e.g. `draft_pending_approval`) and an approval API.
+- **Internal TaskCreate/Update** — Claude Code's per-session todo list that persists across turns. The `goal_events` table is similar but per-goal, not per-step. If a goal has internal sub-steps, we have no place to track them yet.
+- **Hooks / event-driven triggers** — `trigger_config: {type: "event"}` exists in the schema and `goal_scheduler._should_fire` returns False for it (handled "elsewhere"), but the elsewhere — an event bus that listens for "new content", "incoming email", "Slack mention", etc. — does not yet exist.
+- **Streaming responses** — Claude Code streams tokens; the dispatcher returns the full message at end. Fine for v1; matters when goals get long.
+
+### Amebo as a code-touching agent — gaps
+
+Architecture supports it (tool registry, instance config, claw pattern are the right shape), but the tools and the sandbox are missing.
+
+Needed if we ever want amebo to write code on behalf of an org:
+
+1. **Repo-scoped tools** in `backend/src/tools/registry.py`:
+   - `repo.read_file(path)`, `repo.list_files(glob)`
+   - `repo.edit_file(path, old, new)`, `repo.write_file(path, content)`
+   - `repo.run_tests()` (bounded, sandboxed)
+   - `repo.commit(message)`, `repo.push(branch)` — gated on approval
+2. **Per-org git repo manager** — wired up to the GitHub-org-per-amebo-org model from the amebo-summary. Credential management via GitHub App or fine-grained tokens.
+3. **Per-dispatch sandbox** — `git worktree add` per goal so concurrent dispatches don't fight; clean up on completion.
+4. **Bash/exec tool with strict sandboxing** — biggest security surface. Probably warrants its own VM or container per org.
+5. **Mandatory human-in-the-loop on push/merge** — same gate as the nontechnical-org draft-approval flow above. Auto-push is not allowed in v1 even if we add the rest.
+6. **Cost ceiling per goal / per org** — Claude Code limits its own runaway; a code-touching claw must too.
+
+Realistic framing: turning amebo into a coding agent is essentially building a Claude-Code-clone scoped to an org. That's a project, not a feature. Track as a separate initiative — don't try to retrofit onto v1.
