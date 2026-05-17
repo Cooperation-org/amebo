@@ -85,14 +85,30 @@ class GoalScheduler:
         Run one scheduling pass. Returns the number of goals dispatched.
 
         Synchronous; safe to call from tests or via an admin API endpoint.
+
+        Goals whose most-recent event is `blocked_on_credential:<kind>`
+        are skipped until something writes a subsequent event (e.g. the
+        OAuth callback or a manual unblock).
         """
         now = now or datetime.now(timezone.utc)
         dispatched = 0
 
         for org_id in self._enabled_org_ids():
-            goals = self._goal_repo.list_pending(org_id=org_id)
-            for goal in goals:
-                if not _should_fire(goal, now=now):
+            # Pending goals fire on their trigger. Active goals are normally
+            # being worked on right now — but if they were blocked on a
+            # credential and have since been unblocked (e.g. OAuth callback
+            # appended an "unblocked" event), we want to resume them.
+            pending = self._goal_repo.list_pending(org_id=org_id)
+            active = self._goal_repo.list_for_org(org_id, status="active")
+
+            for goal in pending + active:
+                if goal["status"] == "pending" and not _should_fire(goal, now=now):
+                    continue
+                if self._is_blocked_on_credential(goal["id"]):
+                    continue
+                # For active goals we skip unless an unblock just landed:
+                # otherwise we'd re-dispatch an in-progress goal every tick.
+                if goal["status"] == "active" and not self._just_unblocked(goal["id"]):
                     continue
                 try:
                     result = self._dispatcher.dispatch(goal["id"])
@@ -103,6 +119,41 @@ class GoalScheduler:
                     dispatched += 1
 
         return dispatched
+
+    def _just_unblocked(self, goal_id: str) -> bool:
+        """
+        Most recent event is `unblocked` (i.e. credential just landed) and
+        no `blocked_on_credential:*` after it. Used to decide whether to
+        re-dispatch an active goal.
+        """
+        events = self._goal_repo.list_events(goal_id, limit=20)
+        if not events:
+            return False
+        for ev in reversed(events):
+            action = ev.get("action") or ""
+            if action == "unblocked":
+                return True
+            if action.startswith("blocked_on_credential:"):
+                return False
+        return False
+
+    def _is_blocked_on_credential(self, goal_id: str) -> bool:
+        """
+        True iff the most recent event on this goal is a
+        `blocked_on_credential:<kind>` and no later "unblocked" event
+        has been written.
+        """
+        events = self._goal_repo.list_events(goal_id, limit=20)
+        if not events:
+            return False
+        # Walk backwards through the most recent events
+        for ev in reversed(events):
+            action = ev.get("action") or ""
+            if action == "unblocked":
+                return False
+            if action.startswith("blocked_on_credential:"):
+                return True
+        return False
 
     # ---------------------------------------------------------- Org lookup
 

@@ -361,6 +361,12 @@ async def connect_callback(
         # credential is still stored; user sees success.
         logger.warning("Connect link %s was consumed concurrently", short_code)
 
+    # Unblock any goals waiting for this credential. We don't know which
+    # goals are blocked on this exact kind without a join, so we write a
+    # generic "unblocked" event on every active goal in the org whose
+    # most-recent event is blocked_on_credential:<this kind>.
+    _unblock_goals_waiting_for_kind(link.org_id, link.kind)
+
     # TODO: notify link.reply_channel via the matching channel adapter.
 
     return _render_message(
@@ -368,5 +374,44 @@ async def connect_callback(
         f"<p>You can close this tab and return to your previous conversation.</p>"
         f"<p>Connection: {link.kind}/{link.label}</p>",
     )
+
+
+def _unblock_goals_waiting_for_kind(org_id: int, kind: str) -> None:
+    """
+    Walk the org's active/pending goals, find any whose most-recent event
+    is `blocked_on_credential:<kind>`, and append an `unblocked` event
+    so the scheduler can re-dispatch on the next tick.
+
+    Best-effort: failures are logged but never surfaced to the user (the
+    credential was successfully stored regardless).
+    """
+    try:
+        from src.db.repositories.goal_repo import GoalRepo
+        from src.services.goal_engine import GoalEngine
+
+        repo = GoalRepo()
+        engine = GoalEngine(repo)
+        marker = f"blocked_on_credential:{kind}"
+
+        for status in ("pending", "active"):
+            goals = repo.list_for_org(org_id, status=status, limit=200)
+            for g in goals:
+                events = repo.list_events(g["id"], limit=20)
+                latest_block = None
+                for ev in reversed(events):
+                    action = ev.get("action") or ""
+                    if action == "unblocked":
+                        latest_block = None
+                        break
+                    if action == marker:
+                        latest_block = ev
+                        break
+                if latest_block is not None:
+                    repo.append_event(
+                        g["id"], actor_type="system", action="unblocked",
+                        result_summary=f"credential {kind} connected",
+                    )
+    except Exception:
+        logger.exception("Failed to unblock goals waiting for %s", kind)
 
 

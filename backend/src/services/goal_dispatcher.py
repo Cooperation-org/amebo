@@ -28,6 +28,12 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
+from src.credentials import (
+    CredentialExpired,
+    CredentialMissing,
+    CredentialRevoked,
+    mint_connect_link,
+)
 from src.db.repositories.binding_repo import BindingRepo
 from src.db.repositories.goal_repo import GoalRepo
 from src.db.repositories.instance_repo import InstanceRepo
@@ -36,6 +42,16 @@ from src.services.goal_engine import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+# Public base URL used when minting a connect link surfaced through a
+# channel. Read inside _make_connect_url so tests can override the env.
+
+
+def _make_connect_url(short_code: str) -> str:
+    import os
+    base = os.getenv("AMEBO_PUBLIC_URL", "http://localhost:8000").rstrip("/")
+    return f"{base}/connect/{short_code}"
 
 
 # Bound the agentic loop so a misbehaving model cannot run forever.
@@ -120,6 +136,8 @@ class GoalDispatcher:
             org_context = self._load_org_context(goal["org_id"])
             instance = self._load_instance(goal["org_id"])
             summary, tool_calls = self._pursue(goal, instance, org_context)
+        except (CredentialMissing, CredentialExpired, CredentialRevoked) as exc:
+            return self._block_on_credential(goal, exc)
         except Exception as exc:
             logger.exception("Goal %s dispatch raised", goal_id)
             try:
@@ -298,6 +316,70 @@ class GoalDispatcher:
             text = "(model returned no text)"
 
         return text.strip(), []
+
+    # --------------------------------------------------- Credential blocking
+
+    def _block_on_credential(
+        self,
+        goal: Dict[str, Any],
+        exc: Exception,
+    ) -> DispatchResult:
+        """
+        A tool raised a credential exception. Mint a connect link, record
+        a typed event, and surface it through the notify channel so the
+        admin can act.
+
+        The goal stays in its current state (no transition). The scheduler
+        will see the most-recent event = blocked_on_credential and skip
+        this goal on subsequent ticks until something writes an
+        "unblocked" event (e.g. the OAuth callback).
+        """
+        kind = getattr(exc, "kind", "unknown")
+        org_id = goal["org_id"]
+
+        try:
+            link = mint_connect_link(
+                org_id=org_id,
+                kind=kind,
+                requested_scopes=[],  # tool implementations declare scopes; v1 leaves empty
+                reply_channel=goal.get("notify_channel"),
+            )
+            connect_url = _make_connect_url(link.short_code)
+        except Exception:
+            logger.exception("Failed to mint connect link for goal %s", goal["id"])
+            connect_url = None
+            link = None
+
+        summary = (
+            f"Credential needed: {kind}. "
+            + (f"Connect here: {connect_url}" if connect_url else "No connect link available.")
+        )
+
+        try:
+            self._goal_repo.append_event(
+                goal_id=goal["id"],
+                actor_type="claw",
+                action=f"blocked_on_credential:{kind}",
+                result_summary=summary,
+                metadata={
+                    "kind": kind,
+                    "connect_url": connect_url,
+                    "short_code": link.short_code if link else None,
+                },
+            )
+        except Exception:
+            logger.exception("Failed to record blocked_on_credential event")
+
+        notification_sent = False
+        if goal.get("notify_channel"):
+            notification_sent = self._maybe_notify(goal, summary)
+
+        return DispatchResult(
+            goal_id=goal["id"],
+            status="blocked_on_credential",
+            summary=summary,
+            notification_sent=notification_sent,
+        )
 
     # ------------------------------------------------------------- Notify
 
