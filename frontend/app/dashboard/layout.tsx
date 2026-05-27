@@ -13,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { User, Settings, LogOut, MessageSquare, Building2, Users, FileText, Menu, X } from 'lucide-react';
+import { User, Settings, LogOut, MessageSquare, Building2, Users, FileText, Menu, X, Link2 } from 'lucide-react';
 import { usePermissions } from '@/src/hooks/usePermissions';
 
 export default function DashboardLayout({
@@ -31,6 +31,7 @@ export default function DashboardLayout({
     { name: 'Q&A', href: '/dashboard/qa', icon: MessageSquare },
     { name: 'Workspaces', href: '/dashboard/workspaces', icon: Building2 },
     { name: 'Documents', href: '/dashboard/documents', icon: FileText },
+    { name: 'Connections', href: '/dashboard/connections', icon: Link2 },
     ...(canInviteUsers ? [{ name: 'Team', href: '/dashboard/team', icon: Users }] : []),
     { name: 'Settings', href: '/dashboard/settings', icon: Settings },
   ];

@@ -424,6 +424,75 @@ register_tool(Tool(
     category="crm",
 ))
 
+# ---------------------------------------------------------------------------
+# Additional general-purpose tools (no per-org credentials required)
+# ---------------------------------------------------------------------------
+
+from src.tools.http_fetch import http_fetch, HTTP_FETCH_SCHEMA
+from src.tools.goal_introspection import (
+    list_goals, LIST_GOALS_SCHEMA,
+    get_goal_events, GET_GOAL_EVENTS_SCHEMA,
+)
+from src.tools.hot_tags import list_hot_tags, LIST_HOT_TAGS_SCHEMA
+
+
+register_tool(Tool(
+    name="http_fetch",
+    description=(
+        "Fetch the text content of a public http/https URL. Use this when the "
+        "user references a webpage or you need to read documentation on the open "
+        "web. Internal/private addresses are refused. Non-text content (images, "
+        "binaries) is refused. Response is truncated to 256 KB by default."
+    ),
+    input_schema=HTTP_FETCH_SCHEMA,
+    execute=http_fetch,
+    is_read_only=True,
+    category="web",
+))
+
+
+register_tool(Tool(
+    name="list_goals",
+    description=(
+        "List goals for the current org. Use when the user asks about active "
+        "goals, what the team is working on, or to enumerate pursuits. "
+        "Optional status filter: pending, active, completed, failed, paused."
+    ),
+    input_schema=LIST_GOALS_SCHEMA,
+    execute=list_goals,
+    is_read_only=True,
+    category="goals",
+))
+
+
+register_tool(Tool(
+    name="get_goal_events",
+    description=(
+        "Get the full audit trail for a specific goal: every state change "
+        "and tool call recorded. Use when the user asks 'what has the claw "
+        "done on X' or 'show me the history of goal Y'."
+    ),
+    input_schema=GET_GOAL_EVENTS_SCHEMA,
+    execute=get_goal_events,
+    is_read_only=True,
+    category="goals",
+))
+
+
+register_tool(Tool(
+    name="list_hot_tags",
+    description=(
+        "List the org's hot tags — priority items, current focus areas, "
+        "and topics flagged as important. Use to anchor your responses on "
+        "what currently matters to this team."
+    ),
+    input_schema=LIST_HOT_TAGS_SCHEMA,
+    execute=list_hot_tags,
+    is_read_only=True,
+    category="knowledge",
+))
+
+
 register_tool(Tool(
     name="mcp_taiga",
     description=(
