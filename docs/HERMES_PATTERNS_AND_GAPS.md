@@ -10,18 +10,126 @@ This is a discussion doc, not a plan. Open questions at the bottom.
 
 ---
 
+## Mental model: self, friends, home
+
+The components stop being confusing once you name them this way.
+
+- **Abra is the self.** It holds identity, names, relationships, hot
+  tags — your knowledge of your world. Persistent. *You*. Not a
+  database, not a tool, *the seat of personhood* for the system.
+- **Friends are other selves you can ask for help.** They have their own
+  expertise, their own memory, their own boundaries. They summarize for
+  you instead of dumping their internals. **Amebo is a friend** — a
+  friendly claw that can act on behalf of an org. The calendar is a
+  friend. LinkedClaims is a friend. A delegate-spawned specialist is,
+  briefly, a friend.
+- **The dashboard is the home.** Not an admin panel — the *face* the
+  self presents to itself and the world. Arranged like a room. Some
+  people want a wall of photos of contacts; some want a calendar grid;
+  some want a journal of recent claw actions; some want a map; some
+  want a list of "what's hot this week". The shape follows the person.
+
+The dashboard is **AI-customizable verbally**. "Show me my MTC stuff
+bigger." "Make the right side photos of people I've talked to recently."
+"Hide everything from before March." The user shapes their home through
+conversation. Some users may never open the dashboard at all — for them
+"home" is the morning email digest, the Telegram pin, the ambient wall
+display. The data layer is the same abra/friends backbone; only the
+*surface* changes.
+
+What falls out of this framing:
+
+- The agentic loop is "the self deciding which friend to ask next".
+  Same shape as tool-use, friendlier language for nontechnical users.
+- The delegate pattern is "asking a specialist friend". They go away,
+  do work, summarize. Your context stays clean.
+- LinkedClaims fits naturally: friends vouch for friends. The audit
+  trail *is* a graph of asks and answers.
+- The dashboard does not live inside amebo. Amebo is multi-tenant org
+  infrastructure; the dashboard is intimate and personal. Different
+  mental categories.
+
+This framing should drive naming when we write user copy. "Tool
+registry" → "friends". "Delegate" → "ask <friend>". "Audit log" →
+"what I asked, what was said back, what I did".
+
+---
+
+## Three components, separate concerns
+
+```
+                  [ Home / Dashboard ]
+            customizable surface, AI-arranged,
+            "looks like you" — photos, grid,
+            journal, map, digest, wall display.
+                    ▲
+                    │  reads + commands
+                    │
+              [ Abra — the Self ]
+       names, relationships, hot tags, identity,
+       memory. Persistent personhood. Holds the
+       data the home surfaces.
+                    ▲
+                    │  asks friends
+                    ▼
+   ┌──────┬──────────┬─────────┬──────────┬──────────┐
+   │amebo │ taiga    │ odoo    │ calendar │ linked-  │  ...
+   │(claw)│ (tasks)  │ (CRM)   │          │ claims   │
+   └──────┴──────────┴─────────┴──────────┴──────────┘
+       friends, each encapsulated. Each summarizes
+       for the self instead of dumping internals.
+```
+
+- **Home/Dashboard** — separate repo, separate process. Its only job is
+  to be the user's customizable face on their world. Talks to abra
+  primarily; talks to friends through abra when it can. Probably
+  someone's evening project — could even start as a single SvelteKit
+  page with hard-coded widgets, then grow voice-rearrangement.
+- **Abra (the Self)** — already exists. Becomes more central in this
+  framing. Needs a clean query surface so the home and the friends can
+  both reason from it. The `abra-lib` PyPI package extraction
+  (`ABRA_INTEGRATION.md`) is the right direction.
+- **Amebo (a friend)** — multi-tenant claw. Stops trying to be the
+  center. Exposes a clean API. Hermes patterns in the rest of this doc
+  apply *to amebo as a friend*, not to the whole system.
+
+This doc focuses on amebo from here on. Home and abra deserve their own
+docs.
+
+---
+
 ## TL;DR
 
 Amebo's kernel (agentic loop, conversation manager, goal scheduler,
 channel contract, org-scoped credentials) already matches Hermes shape.
 What's missing is mostly *plumbing around the edges* — long-running channel
-daemons, subagent isolation, scheduled job ergonomics, and a visible
-intents/dashboard view over the audit trail.
+daemons, subagent isolation, scheduled job ergonomics, multi-model
+routing, and a visible view over the audit trail (which should be **Taiga**,
+not a new in-house board).
 
 The biggest *new* idea worth importing: **delegate-as-primitive** for
-every non-trivial tool. The biggest *new* gap not yet documented:
-**intents as a first-class table** distinct from `goal_events`, plus a
-dashboard view over it.
+every non-trivial tool. The biggest *new* capability not yet documented:
+**multi-model routing** (judgement about which model to use for which job)
+and **LinkedClaims as two-way audit**.
+
+---
+
+## Start here (iterative — what to use this week)
+
+This doc covers a lot. The goal is *to start using amebo*, not to build
+everything first. Suggested first-week sequence:
+
+1. **Pick one goal on one org**, fire it from the existing scheduler.
+   Watch `goal_events`. Find what's awkward.
+2. **Add `web_search` and `http_fetch`** from POWERS_PLAN Phase A — that
+   alone makes most goals usable.
+3. **Publish goal-event summaries to Taiga** as tickets. Reuse `mcp-taiga`.
+   That IS the dashboard — no new code, the team already lives there.
+4. **Add one second channel** (email or Telegram). Just one. Validate the
+   gateway pattern on something real before generalizing.
+5. **Add model routing** — pick model per goal/tool, not globally.
+
+Everything else in this doc is groundwork for what comes after.
 
 ---
 
@@ -167,20 +275,29 @@ Concrete use cases this unlocks:
 
 ---
 
-### 5. Multi-agent board ("kanban") as the intents dashboard substrate
+### 5. Use Taiga, don't build a kanban
 
-**Hermes shape:** `plugins/kanban/` is a dispatcher + worker board.
-Workers pull jobs; dispatcher routes. Persistent state, visible queue.
+Hermes ships its own `plugins/kanban/` dispatcher+worker board. **We
+should not.** The team already lives in Taiga via `mcp-taiga`. Building
+a parallel board would split attention and create another thing nobody
+checks.
 
-**Where it fits:** this is the right primitive for the user-requested
-**intents dashboard**. Today amebo has `goals` and `goal_events`, but
-no first-class noun for "an inbound request that may or may not become a
-goal". Most inbound messages are conversational and don't need to land
-on a board. But the ones that *do* — manual goal triggers, approval
-queue, blocked-on-credential, draft-pending-send — deserve a queryable
-surface beyond chat.
+Instead, the intents view is **Taiga tickets created from goal events**:
 
-See "Intents as a first-class table" below for the schema sketch.
+- claw starts a goal → opens a Taiga ticket with the goal title, links
+  back to amebo's goal id
+- each `goal_events` row of interest (`blocked_on_credential`,
+  `awaiting_approval`, `failed`) posts a comment on the ticket
+- completion closes the ticket with a summary
+
+Implementation: a tiny adapter in `services/intent_publisher.py` that
+listens to goal-event writes and pushes to Taiga via the existing tool.
+Per-org config: `taiga_project_id` (None = no publishing). That's the
+whole intents dashboard.
+
+For the rare case where amebo needs an internal queue (approval
+gating, draft-pending-send), use a simple status field on `goals` —
+not a new noun, not a new view.
 
 ---
 
@@ -224,48 +341,50 @@ model.
 
 ## Genuinely new (not in any amebo doc yet)
 
-### Intents as a first-class table
+### Multi-model routing — judgement, not just config
 
-User explicitly asked for this. Here's a sketch.
+Hermes lets you pick a model per cron job, per skill, per delegate. We
+need the same — different jobs deserve different models on cost, latency,
+and reasoning quality. Most useful models are Anthropic-SDK-compatible
+or Chat-Completions-shaped, so this is mostly a routing layer, not a
+provider abstraction.
 
-**Today:** every inbound channel message → `threads.thread_turns`. Every
-claw action → `goal_events`. There's no row that says "this inbound
-request became this action, status X, approved by Y, with this trust
-score". The interrogation surface is chat; there's no visual.
+**Routing dimensions amebo cares about:**
 
-**Proposal:**
+| Dimension | Example |
+|---|---|
+| Cost ceiling | "this goal must cost < $0.05 → DeepSeek or Haiku" |
+| Reasoning depth | "this is multi-step outreach planning → Opus" |
+| Latency need | "user is waiting in chat → Sonnet/Haiku, not Opus" |
+| Privacy / locality | "this org requires self-hosted → local model only" |
+| Tool-use quality | "this calls 8 tools in a loop → Claude (best tool-use today)" |
 
-```sql
-CREATE TABLE intents (
-    id BIGSERIAL PRIMARY KEY,
-    org_id INT NOT NULL REFERENCES organizations(org_id) ON DELETE CASCADE,
-    source TEXT NOT NULL,              -- 'slack:DM' | 'email' | 'webhook:github' | 'web'
-    requester_identity JSONB,          -- channel-native id + display name
-    body TEXT NOT NULL,                -- normalized request text
-    classification TEXT,               -- 'qa' | 'goal_trigger' | 'approval_response' | 'connect_followup'
-    status TEXT NOT NULL,              -- 'received' | 'in_progress' | 'awaiting_approval' | 'done' | 'failed' | 'declined'
-    related_goal_id INT REFERENCES goals(id),
-    related_thread_id INT REFERENCES threads(id),
-    related_event_ids BIGINT[],        -- goal_events that came out of this intent
-    trust_evidence JSONB,              -- LinkedClaims evidence about the requester (see below)
-    decision_reason TEXT,              -- why approved / declined
-    decided_by_user_id INT REFERENCES platform_users(user_id),
-    decided_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
-CREATE INDEX idx_intents_org_status ON intents(org_id, status, created_at DESC);
-```
+**Shape:** add `model_routing` to instance config (default policy) and
+allow override per goal (`goal.config.model = "haiku"`) or per delegate
+call (`delegate(task, model="opus")`). A small `routing.py` picks a
+concrete model+provider from the policy, falls back if first choice
+fails or is over-budget.
 
-**Dashboard view:** SvelteKit or Next.js page at
-`/orgs/{org_id}/intents` — table with filters by status, source, recent.
-Click an intent → see the originating message, the goal/events it spawned,
-who approved/declined and why. Same kind of view as a Kanban board but
-flat — not pretending to be a project tool.
+**Provider-side: stay on Anthropic SDK shape.** Most models we care
+about (Claude, OpenRouter-routed everything, Anthropic-compatible
+proxies like LiteLLM) speak it. For the few that need Chat-Completions
+(direct OpenAI, DeepSeek native, local llama.cpp servers), wrap them
+behind a thin `chat_completions_to_anthropic` adapter. One adapter file,
+not a full abstraction layer.
 
-**Why this matters:** today there's no way for an admin to walk into the
-amebo UI and see "what is amebo doing right now / what did it just do".
-The chat surface answers in natural language but the *spreadsheet* view
-is missing.
+**Why amebo (not the LLM provider) holds conversation state:**
+
+| Provider | Server-side conversation memory |
+|---|---|
+| OpenAI | Yes — Responses API `previous_response_id`; legacy Assistants threads |
+| Anthropic | No threads. Memory tool (beta) for model-curated facts; prompt caching for cost |
+| Gemini | `cachedContent` for caching, no threads |
+| DeepSeek / Qwen / Kimi / GLM / MiniMax | Stateless message arrays |
+
+Amebo's `ConversationManager` already gives the cost benefits via
+caching. Using a provider's server-side threads would tie org data to a
+vendor account and break LinkedClaims auditability. Stay
+client-managed.
 
 ---
 
