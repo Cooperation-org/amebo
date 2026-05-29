@@ -10,6 +10,7 @@ from slack_sdk.web.async_client import AsyncWebClient
 from slack_sdk.socket_mode.aiohttp import SocketModeClient
 from slack_sdk.socket_mode.request import SocketModeRequest
 from slack_sdk.socket_mode.response import SocketModeResponse
+from slack_sdk.errors import SlackApiError
 
 from src.services.qa_service import QAService
 from src.db.connection import DatabaseConnection
@@ -360,6 +361,112 @@ async def handle_app_mention(team_id, channel, text, user, ts):
                 text=f"Sorry, I encountered an error: {str(e)}"
             )
         except:
+            pass
+
+
+async def is_thread_parent_our_bot(
+    channel: str,
+    thread_ts: str,
+    bot_user_id: str,
+) -> bool:
+    """
+    True iff the parent message of the given thread was posted by our
+    bot. Used by the message-event handler to decide whether a thread
+    reply is implicitly directed at amebo.
+
+    One Slack API call per thread-reply event. Cheap; if we ever feel
+    pressure, swap for an in-memory LRU populated by slack_post.
+    """
+    if not thread_ts or not channel:
+        return False
+    try:
+        web_client = AsyncWebClient(token=BOT_TOKEN)
+        resp = await web_client.conversations_history(
+            channel=channel,
+            latest=thread_ts,
+            limit=1,
+            inclusive=True,
+        )
+        messages = resp.get("messages", [])
+        if not messages:
+            return False
+        parent = messages[0]
+        # Bots post with `bot_id`; the message may also include `user` set
+        # to the bot's user id. Either match counts.
+        if parent.get("user") == bot_user_id:
+            return True
+        return False
+    except SlackApiError as exc:
+        logger.warning(
+            "Could not fetch thread parent for channel=%s thread_ts=%s: %s",
+            channel, thread_ts, exc,
+        )
+        return False
+    except Exception:
+        logger.exception("Unexpected error checking thread parent")
+        return False
+
+
+async def handle_thread_reply(team_id, channel, text, user, ts, thread_ts):
+    """
+    Handle a user's reply in a thread that amebo started. Reuses the
+    QAService thread-context path so amebo answers WITH conversation
+    memory of the prior turns in that thread.
+
+    Different from handle_app_mention in two small ways:
+      1. There's no @-mention to strip — the text is used as-is.
+      2. We reply in the same thread (thread_ts is the original message,
+         not the reply).
+    """
+    try:
+        question = (text or "").strip()
+        if not question:
+            return
+
+        web_client = AsyncWebClient(token=BOT_TOKEN)
+
+        qa_service = QAService(workspace_id=team_id)
+        result = qa_service.answer_question(
+            question=question,
+            n_context_messages=10,
+            thread_ref=thread_ts,
+            source_type="slack",
+            author_info=f"slack:{user}",
+        )
+
+        response_text = result.get("answer", "(no response)")
+
+        sources = result.get("sources", [])
+        if sources:
+            source_parts = [f"#{s.get('channel','')}" for s in sources[:3] if s.get('channel')]
+            if source_parts:
+                response_text += f"\n\n_Sources: {' · '.join(source_parts)}_"
+
+        confidence = result.get('confidence', 50)
+        response_text += f"\n_Confidence: {confidence}%_"
+
+        await web_client.chat_postMessage(
+            channel=channel,
+            thread_ts=thread_ts,
+            text=response_text,
+        )
+
+        _log_slack_query_usage(team_id, question)
+        logger.info(
+            "Answered thread reply from %s in %s thread_ts=%s",
+            user, channel, thread_ts,
+        )
+
+    except Exception as exc:
+        logger.error(f"Error handling thread reply: {exc}", exc_info=True)
+        try:
+            web_client = AsyncWebClient(token=BOT_TOKEN)
+            await web_client.chat_postMessage(
+                channel=channel,
+                thread_ts=thread_ts,
+                text=f"Sorry, I encountered an error: {exc}",
+            )
+        except Exception:
             pass
 
 
