@@ -519,3 +519,79 @@ register_tool(Tool(
     needs_confirmation=True,      # Confirm before task changes
     category="tasks",
 ))
+
+
+# ---------------------------------------------------------------------------
+# Claw loop tools — MAIN.md updater + Slack post
+# ---------------------------------------------------------------------------
+
+from src.tools.main_md_tools import (
+    list_projects_impl,
+    LIST_PROJECTS_SCHEMA,
+    read_main_md_impl,
+    READ_MAIN_MD_SCHEMA,
+    edit_main_md_impl,
+    EDIT_MAIN_MD_SCHEMA,
+)
+from src.tools.slack_tools import slack_post_impl, SLACK_POST_SCHEMA
+
+
+register_tool(Tool(
+    name="list_projects",
+    description=(
+        "List the team's active projects (directory names under "
+        "/opt/shared/projects/Active/). Use this first to know which "
+        "project slugs are valid before reading or editing a MAIN.md."
+    ),
+    input_schema=LIST_PROJECTS_SCHEMA,
+    execute=list_projects_impl,
+    is_read_only=True,
+    category="projects",
+))
+
+
+register_tool(Tool(
+    name="read_main_md",
+    description=(
+        "Read a project's MAIN.md file. Each active project has a "
+        "MAIN.md with team lead, slack channel, repos, demo links, and "
+        "background. Pass the project_slug exactly as returned by "
+        "list_projects."
+    ),
+    input_schema=READ_MAIN_MD_SCHEMA,
+    execute=read_main_md_impl,
+    is_read_only=True,
+    category="projects",
+))
+
+
+register_tool(Tool(
+    name="edit_main_md",
+    description=(
+        "Edit a project's MAIN.md via exact-substring replacement. "
+        "old_string must be present in the file and unique. The change "
+        "lands on disk uncommitted — a human reviews via git diff before "
+        "committing. Use this ONLY when you have a clearly sourced update "
+        "(e.g. a recent Slack decision) and have already read the file."
+    ),
+    input_schema=EDIT_MAIN_MD_SCHEMA,
+    execute=edit_main_md_impl,
+    is_read_only=False,
+    category="projects",
+))
+
+
+register_tool(Tool(
+    name="slack_post",
+    description=(
+        "Post a message to Slack. To actually NOTIFY a person, you MUST "
+        "pass mention_user_id with their Slack user id (e.g. UHUUD9ERZ). "
+        "Posts without an @-mention don't generate a notification — they "
+        "are just channel chatter. Use thread_ts to reply inside an "
+        "existing thread."
+    ),
+    input_schema=SLACK_POST_SCHEMA,
+    execute=slack_post_impl,
+    is_read_only=False,
+    category="comms",
+))

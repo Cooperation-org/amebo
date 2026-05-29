@@ -52,6 +52,7 @@ class GoalRepo:
         notify_channel: Optional[str] = None,
         created_by_user_id: Optional[int] = None,
         assigned_to_user_id: Optional[int] = None,
+        config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Create a new goal in 'pending' status. Returns the new row."""
         conn = DatabaseConnection.get_connection()
@@ -62,9 +63,10 @@ class GoalRepo:
                     INSERT INTO goals (
                         org_id, title, description, target_criteria,
                         trigger_config, notify_channel,
-                        created_by_user_id, assigned_to_user_id
+                        created_by_user_id, assigned_to_user_id,
+                        config
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING *
                     """,
                     (
@@ -76,6 +78,7 @@ class GoalRepo:
                         notify_channel,
                         created_by_user_id,
                         assigned_to_user_id,
+                        extras.Json(config) if config is not None else extras.Json({}),
                     ),
                 )
                 row = cur.fetchone()

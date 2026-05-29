@@ -49,6 +49,7 @@ class GoalCreateRequest(BaseModel):
     target_criteria: Optional[Dict[str, Any]] = None
     trigger_config: Optional[Dict[str, Any]] = None
     notify_channel: Optional[str] = Field(None, max_length=255)
+    config: Optional[Dict[str, Any]] = None
 
 
 class GoalResponse(BaseModel):
@@ -158,6 +159,7 @@ async def create_goal(
         target_criteria=req.target_criteria,
         trigger_config=req.trigger_config,
         notify_channel=req.notify_channel,
+        config=req.config,
     )
     logger.info("Goal created: id=%s org=%s key=%s",
                 goal["id"], client["org_id"], client["key_name"])

@@ -51,12 +51,27 @@ def test_org_id():
 
 
 def _make_fake_client(text: str = "all done."):
-    """Returns a MagicMock that mimics anthropic.Anthropic.messages.create."""
+    """
+    Returns a MagicMock that mimics anthropic.Anthropic.messages.create.
+
+    Mimics the SDK shape closely enough for the dispatcher's tool-use
+    loop: content blocks expose .type, the response carries a stop_reason
+    of "end_turn" so the loop exits cleanly, and a usage block lets the
+    guardrail cost path run.
+    """
+    from types import SimpleNamespace
     client = MagicMock()
-    block = MagicMock()
-    block.text = text
-    response = MagicMock()
-    response.content = [block]
+    block = SimpleNamespace(type="text", text=text)
+    response = SimpleNamespace(
+        content=[block],
+        stop_reason="end_turn",
+        usage=SimpleNamespace(
+            input_tokens=10,
+            output_tokens=10,
+            cache_creation_input_tokens=0,
+            cache_read_input_tokens=0,
+        ),
+    )
     client.messages.create.return_value = response
     return client
 
@@ -76,7 +91,8 @@ class TestDispatchHappyPath:
         result = dispatcher.dispatch(g["id"])
 
         assert result.status == "completed"
-        assert result.summary == "Drafted the post."
+        # The loop appends stats; the model's text is still the leading content.
+        assert result.summary.startswith("Drafted the post.")
 
         # Goal row reflects completion
         final = engine.get(g["id"])

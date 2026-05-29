@@ -89,6 +89,7 @@ class GoalEngine:
         notify_channel: Optional[str] = None,
         created_by_user_id: Optional[int] = None,
         assigned_to_user_id: Optional[int] = None,
+        config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         goal = self._repo.create(
             org_id=org_id,
@@ -99,6 +100,7 @@ class GoalEngine:
             notify_channel=notify_channel,
             created_by_user_id=created_by_user_id,
             assigned_to_user_id=assigned_to_user_id,
+            config=config,
         )
         self._repo.append_event(
             goal["id"],
