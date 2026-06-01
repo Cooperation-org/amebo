@@ -86,6 +86,20 @@ def _default_notifier(channel: str, message: str) -> bool:
     return True
 
 
+def _is_recurring(goal: Dict[str, Any]) -> bool:
+    """
+    True if the goal's trigger fires repeatedly (a cron schedule). Recurring
+    goals re-arm to pending after each dispatch cycle instead of completing
+    terminally, so the scheduler runs them again on the next cron edge. One-
+    shot goals (manual / event / unspecified trigger) complete and retire.
+
+    Mirrors the cron branch of GoalScheduler._should_fire: a cron trigger is
+    only "recurring" once it actually carries an expression.
+    """
+    cfg = goal.get("trigger_config") or {}
+    return (cfg.get("type") or "").lower() == "cron" and bool(cfg.get("expression"))
+
+
 class GoalDispatcher:
     """
     A dispatcher instance is cheap. It holds repositories and an optional
@@ -169,8 +183,13 @@ class GoalDispatcher:
                 pass  # goal is already terminal
             return DispatchResult(goal_id=goal_id, status="failed", error=str(exc))
 
-        # Mark complete and notify.
-        self._engine.complete(goal_id, summary=summary)
+        # Finish the cycle, then notify. Recurring (cron) goals re-arm to
+        # pending so the scheduler runs them again on the next cron edge;
+        # one-shot goals complete terminally.
+        if _is_recurring(goal):
+            self._engine.rearm(goal_id, summary=summary)
+        else:
+            self._engine.complete(goal_id, summary=summary)
         notification_sent = self._maybe_notify(goal, summary)
 
         return DispatchResult(

@@ -189,3 +189,63 @@ class TestUnknownGoal:
         result = dispatcher.dispatch("00000000-0000-0000-0000-000000000000")
         assert result.status == "failed"
         assert "not found" in (result.error or "").lower()
+
+
+class TestRecurringGoalReArms:
+    """
+    A recurring (cron) goal must not retire after one run. It re-arms to
+    pending so the scheduler picks it up again on the next cron edge.
+    """
+
+    CRON = {"type": "cron", "expression": "0 9 * * *"}
+
+    def test_cron_goal_rearms_instead_of_completing(self, engine, test_org_id):
+        g = engine.create_goal(
+            test_org_id, "Daily reddit scout", trigger_config=self.CRON,
+        )
+
+        dispatcher = GoalDispatcher(anthropic_client=None)  # offline stub
+        result = dispatcher.dispatch(g["id"])
+
+        # The run itself finished fine...
+        assert result.status == "completed"
+        # ...but the goal returns to pending rather than terminal completed.
+        final = engine.get(g["id"])
+        assert final["status"] == "pending"
+        assert final["completed_at"] is None
+
+        actions = [e["action"] for e in engine.events(g["id"])]
+        assert actions == ["created", "activated", "rearmed"]
+
+    def test_cron_goal_can_dispatch_again_after_rearm(self, engine, test_org_id):
+        # Proves recurrence: a re-armed goal is runnable again, not stuck.
+        g = engine.create_goal(
+            test_org_id, "Daily reddit scout", trigger_config=self.CRON,
+        )
+        dispatcher = GoalDispatcher(anthropic_client=None)
+
+        dispatcher.dispatch(g["id"])
+        result2 = dispatcher.dispatch(g["id"])
+
+        assert result2.status == "completed"
+        assert engine.get(g["id"])["status"] == "pending"
+        actions = [e["action"] for e in engine.events(g["id"])]
+        assert actions == [
+            "created", "activated", "rearmed", "activated", "rearmed",
+        ]
+
+    def test_one_shot_goals_still_complete_terminally(self, engine, test_org_id):
+        dispatcher = GoalDispatcher(anthropic_client=None)
+
+        # No trigger_config → one-shot → unchanged terminal completion.
+        g1 = engine.create_goal(test_org_id, "Send one digest")
+        dispatcher.dispatch(g1["id"])
+        assert engine.get(g1["id"])["status"] == "completed"
+
+        # A cron trigger with no expression is not recurring → completes.
+        g2 = engine.create_goal(
+            test_org_id, "Misconfigured cron",
+            trigger_config={"type": "cron"},
+        )
+        dispatcher.dispatch(g2["id"])
+        assert engine.get(g2["id"])["status"] == "completed"

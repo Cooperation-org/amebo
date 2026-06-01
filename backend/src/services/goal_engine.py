@@ -8,11 +8,17 @@ makes sure the lifecycle is recorded consistently.
 
 Lifecycle:
 
-    pending → active → completed
-              ↓
+    pending → active → completed        (one-shot goals)
+              ↓     ↘
+              ↓      pending (rearmed)   (recurring/cron goals: back to wait
+              ↓                           for the next cron edge)
               failed | paused
               ↑
               active (via resume)
+
+    Recurring (cron) goals re-arm active → pending after each dispatch cycle
+    instead of completing, so the scheduler runs them again on the next cron
+    edge. The dispatcher chooses complete() vs rearm() per the trigger type.
 
 Concurrency model:
     activate() uses GoalRepo's row lock to ensure only one caller can move
@@ -43,7 +49,7 @@ class InvalidTransitionError(RuntimeError):
 # the event log lives alongside.
 _TRANSITIONS = {
     "pending":   {"active": "activated", "paused": "paused"},
-    "active":    {"completed": "completed", "failed": "failed", "paused": "paused"},
+    "active":    {"completed": "completed", "failed": "failed", "paused": "paused", "pending": "rearmed"},
     "paused":    {"active": "resumed", "pending": "reset"},
     "completed": {},  # terminal
     "failed":    {},  # terminal
@@ -148,6 +154,36 @@ class GoalEngine:
             require_existing=True,
         )
         assert result is not None  # require_existing=True raises if missing
+        return result
+
+    def rearm(
+        self,
+        goal_id: str,
+        summary: Optional[str] = None,
+        actor_type: str = "claw",
+        actor_user_id: Optional[int] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Re-arm a recurring goal after a dispatch cycle: move active → pending
+        so the scheduler re-evaluates it on the next cron edge instead of
+        retiring it. This bumps updated_at, which _cron_is_due uses as the
+        watermark, so the goal waits for its next fire rather than running
+        again immediately.
+
+        One-shot goals use complete() instead and terminate. The dispatcher
+        decides which path to take (see GoalDispatcher._is_recurring).
+        """
+        result = self._transition(
+            goal_id,
+            to_status="pending",
+            actor_type=actor_type,
+            actor_user_id=actor_user_id,
+            summary=summary,
+            metadata=metadata,
+            require_existing=True,
+        )
+        assert result is not None
         return result
 
     def fail(
