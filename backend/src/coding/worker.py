@@ -65,7 +65,16 @@ class AgentSdkCodingWorker(CodingWorker):
     """
 
     def run(self, session: Dict, prompt: str) -> WorkerResult:
+        from src.coding.config import get_anthropic_credential
+
+        cred = get_anthropic_credential()
+        if cred is None:
+            raise RuntimeError(
+                "No Anthropic credential in env. Set CLAUDE_CODE_OAUTH_TOKEN "
+                "(subscription) or ANTHROPIC_API_KEY before using the SDK worker."
+            )
+        # Credential resolves; the actual SDK session/worktree run is still TODO.
         raise NotImplementedError(
-            "AgentSdkCodingWorker is not wired yet. Use StubCodingWorker until the "
-            "Agent SDK auth + session/worktree run are implemented."
+            "AgentSdkCodingWorker: credential resolved, but the Agent SDK "
+            "session/worktree run is not implemented yet. Use StubCodingWorker."
         )
