@@ -273,7 +273,13 @@ class BackfillService:
         channel_name: str
     ):
         """
-        Store messages in pgvector and PostgreSQL
+        Store messages in BOTH message_metadata (Postgres) AND message_vectors
+        (pgvector).
+
+        The realtime slack_listener writes to both; this batch path historically
+        only wrote to pgvector, which left `message_metadata` silently stale.
+        Any query that joins to message_metadata (channel stats, links, files,
+        thread participants, reactions) breaks without this write.
 
         Args:
             messages: List of Slack messages
@@ -286,29 +292,100 @@ class BackfillService:
         # Get user info for usernames
         user_map = await self._get_user_info([msg.get("user") for msg in messages if msg.get("user")])
 
-        # Prepare data for pgvector batch insert
+        # First write metadata rows and collect the assigned message_id per slack_ts
+        # so pgvector can be linked back via FK. ON CONFLICT keeps re-ingestions
+        # idempotent.
+        ts_to_message_id: Dict[str, int] = {}
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor() as cur:
+                for msg in messages:
+                    text = msg.get("text") or ""
+                    user_id = msg.get("user", "unknown")
+                    user_name = user_map.get(user_id, "unknown")
+                    slack_ts = msg["ts"]
+                    # Slack ts is "<seconds>.<microseconds>". Convert to UTC dt.
+                    try:
+                        created_at = datetime.fromtimestamp(float(slack_ts), tz=timezone.utc)
+                    except (ValueError, TypeError):
+                        created_at = datetime.now(timezone.utc)
+
+                    cur.execute(
+                        """
+                        INSERT INTO message_metadata (
+                            workspace_id, slack_ts, channel_id, channel_name,
+                            user_id, user_name, message_type, thread_ts,
+                            reply_count, reply_users_count,
+                            has_attachments, has_files, has_reactions,
+                            mention_count, link_count,
+                            permalink, is_pinned, edited_at, created_at
+                        ) VALUES (
+                            %s, %s, %s, %s,
+                            %s, %s, %s, %s,
+                            %s, %s,
+                            %s, %s, %s,
+                            %s, %s,
+                            %s, %s, %s, %s
+                        )
+                        ON CONFLICT (workspace_id, slack_ts) DO UPDATE
+                        SET reply_count = EXCLUDED.reply_count,
+                            reply_users_count = EXCLUDED.reply_users_count,
+                            has_reactions = EXCLUDED.has_reactions,
+                            edited_at = EXCLUDED.edited_at
+                        RETURNING message_id
+                        """,
+                        (
+                            self.workspace_id, slack_ts, channel_id, channel_name,
+                            user_id, user_name,
+                            'thread_reply' if msg.get('thread_ts') and msg.get('thread_ts') != slack_ts else 'regular',
+                            msg.get('thread_ts'),
+                            msg.get('reply_count', 0),
+                            msg.get('reply_users_count', 0),
+                            bool(msg.get('attachments')),
+                            bool(msg.get('files')),
+                            bool(msg.get('reactions')),
+                            text.count('<@'),
+                            text.count('<http://') + text.count('<https://'),
+                            msg.get('permalink'),
+                            False,
+                            datetime.fromtimestamp(float(msg['edited']['ts']), tz=timezone.utc)
+                                if isinstance(msg.get('edited'), dict) and msg['edited'].get('ts') else None,
+                            created_at,
+                        ),
+                    )
+                    row = cur.fetchone()
+                    if row is not None:
+                        ts_to_message_id[slack_ts] = row[0]
+                conn.commit()
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error storing message_metadata batch: {e}", exc_info=True)
+        finally:
+            DatabaseConnection.return_connection(conn)
+
+        # Now build the pgvector batch with message_id wired in.
         batch = []
         for msg in messages:
             user_id = msg.get("user", "unknown")
             user_name = user_map.get(user_id, "unknown")
+            slack_ts = msg["ts"]
 
             batch.append({
                 'text': msg["text"],
-                'slack_ts': msg["ts"],
-                'message_id': None,
+                'slack_ts': slack_ts,
+                'message_id': ts_to_message_id.get(slack_ts),
                 'metadata': {
                     'channel_id': channel_id,
                     'channel_name': channel_name,
                     'user_id': user_id,
                     'user_name': user_name,
-                    'timestamp': msg["ts"],
+                    'timestamp': slack_ts,
                 }
             })
 
-        # Store in pgvector
         try:
             self.pgvector.add_messages_batch(self.workspace_id, batch)
-            logger.debug(f"Stored {len(messages)} messages in pgvector")
+            logger.debug(f"Stored {len(messages)} messages in pgvector + metadata")
         except Exception as e:
             logger.error(f"Error storing in pgvector: {e}", exc_info=True)
 
