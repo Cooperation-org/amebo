@@ -26,6 +26,25 @@ The backend serves the bundle as a static file at `/embed/amebo.js`
 | `<amebo-goal>`       | `GET /api/goals/{id}` + `/events` + dispatch-now / pause / resume | Yes |
 | `<amebo-goals>`      | `GET /api/goals/?status=&limit=` | No                                  |
 | `<amebo-digest>`     | `GET /api/digest`          | No                                        |
+| `<amebo-create-goal>` | `POST /api/intentions/place` + `POST /api/intentions/commit` | Yes (writes to abra; creates goal if clawable) |
+
+### `<amebo-create-goal>` — clarifying / placement
+
+Takes free text. Asks amebo to propose where the thought goes in the
+user's abra map: a name (existing or new), labels, optional cron if it
+looks like a clawable goal. User edits any field, can give free-text
+feedback ("no, this is a principle not a goal") to re-propose, and
+confirms — at which point amebo writes to abra and, if clawable, creates
+an amebo goal stamped with a `RUN_BY` binding pointing at it.
+
+Attributes:
+- `data-up` (required) — proxy base URL.
+- `data-scope` — defaults to `golda`.
+- `data-name` — if set, extend mode: assumes that name.
+
+A "clawable goal" pattern in abra: a name labeled `goal` AND bound by
+`RUN_BY` to `amebo:claw/<goal-uuid>`. The matching goal record in
+amebo's `goals` table carries `config.abra_ref = {scope, name}`.
 
 ## Host-shell contract
 
