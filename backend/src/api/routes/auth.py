@@ -29,9 +29,20 @@ from src.api.auth_utils import (
 )
 from src.db.connection import DatabaseConnection
 from src.services.email_service import email_service
+from src.auth_oauth import (
+    GoogleLoginError, GoogleProfile, resolve_google_identity,
+)
+from pydantic import BaseModel
+from typing import Optional
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+class GoogleLoginRequest(BaseModel):
+    id_token: Optional[str] = None
+    code: Optional[str] = None
+    redirect_uri: Optional[str] = None
 
 
 def create_org_slug(org_name: str) -> str:
@@ -545,6 +556,171 @@ async def change_password(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to change password"
+        )
+    finally:
+        DatabaseConnection.return_connection(conn)
+
+
+# ---------------------------------------------------------------------------
+# Google Sign-In
+# ---------------------------------------------------------------------------
+
+
+def _slug_from_email(email: str) -> str:
+    """
+    Build a per-user default org slug from an email. The org is a personal
+    workspace for first-time Google signups — the user can rename it later.
+    """
+    local = email.split('@', 1)[0]
+    slug = create_org_slug(local + "-personal")
+    return slug or "personal"
+
+
+@router.post("/google", response_model=TokenResponse)
+async def google_login(request: GoogleLoginRequest):
+    """
+    Sign in with Google. Accepts either an `id_token` (from the Google
+    Sign-In / One Tap library on the client) or a `code` (from a
+    server-side OAuth redirect).
+
+    First-time users get a personal organization auto-created from their
+    name; they can rename it from settings later.
+    """
+    try:
+        profile: GoogleProfile = resolve_google_identity(
+            id_token=request.id_token,
+            code=request.code,
+            redirect_uri=request.redirect_uri,
+        )
+    except GoogleLoginError as exc:
+        raise HTTPException(status_code=401, detail=str(exc))
+
+    if not profile.email_verified:
+        # We don't want to silently link a user by an unverified email.
+        raise HTTPException(
+            status_code=401,
+            detail="Google account email is not verified.",
+        )
+
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+            # 1. Try to find an existing user — first by (provider, provider_id),
+            #    then by email so password users can link a Google identity.
+            cur.execute(
+                """
+                SELECT user_id, org_id, email, role, auth_provider, auth_provider_id
+                FROM platform_users
+                WHERE auth_provider = 'google' AND auth_provider_id = %s
+                """,
+                (profile.sub,),
+            )
+            user = cur.fetchone()
+
+            if user is None:
+                cur.execute(
+                    "SELECT user_id, org_id, email, role, auth_provider, auth_provider_id "
+                    "FROM platform_users WHERE email = %s",
+                    (profile.email,),
+                )
+                user = cur.fetchone()
+
+            if user is None:
+                # 2. New user — create a personal org + the user record.
+                base_slug = _slug_from_email(profile.email)
+                org_slug = base_slug
+                suffix = 0
+                while True:
+                    cur.execute(
+                        "SELECT 1 FROM organizations WHERE org_slug = %s",
+                        (org_slug,),
+                    )
+                    if cur.fetchone() is None:
+                        break
+                    suffix += 1
+                    org_slug = f"{base_slug}-{suffix}"
+
+                org_name = (profile.name or profile.email.split('@', 1)[0]) + "'s workspace"
+                cur.execute(
+                    """
+                    INSERT INTO organizations (org_name, org_slug, subscription_plan, subscription_status)
+                    VALUES (%s, %s, 'free', 'active')
+                    RETURNING org_id
+                    """,
+                    (org_name, org_slug),
+                )
+                org_id = cur.fetchone()['org_id']
+
+                cur.execute(
+                    """
+                    INSERT INTO platform_users (
+                        org_id, email, full_name, role, is_active, email_verified,
+                        auth_provider, auth_provider_id, avatar_url
+                    )
+                    VALUES (%s, %s, %s, 'owner', true, true, 'google', %s, %s)
+                    RETURNING user_id, org_id, email, role
+                    """,
+                    (org_id, profile.email, profile.name, profile.sub, profile.picture),
+                )
+                user = cur.fetchone()
+                logger.info(
+                    "Google sign-in: created user=%s org=%s for %s",
+                    user['user_id'], org_id, profile.email,
+                )
+            else:
+                # 3. Existing user — link Google identity if not already, refresh
+                #    avatar/last_login_at.
+                if user.get('auth_provider') != 'google' or user.get('auth_provider_id') != profile.sub:
+                    cur.execute(
+                        """
+                        UPDATE platform_users
+                        SET auth_provider = 'google',
+                            auth_provider_id = %s,
+                            email_verified = true,
+                            avatar_url = COALESCE(%s, avatar_url),
+                            last_login_at = NOW(),
+                            updated_at = NOW()
+                        WHERE user_id = %s
+                        """,
+                        (profile.sub, profile.picture, user['user_id']),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        UPDATE platform_users
+                        SET last_login_at = NOW(),
+                            avatar_url = COALESCE(%s, avatar_url)
+                        WHERE user_id = %s
+                        """,
+                        (profile.picture, user['user_id']),
+                    )
+
+            conn.commit()
+
+            token_data = {
+                "user_id": user['user_id'],
+                "org_id": user['org_id'],
+                "email": user['email'],
+                "role": user['role'],
+            }
+            access_token = create_access_token(token_data)
+            refresh_token = create_refresh_token({"user_id": user['user_id']})
+
+            return TokenResponse(
+                access_token=access_token,
+                refresh_token=refresh_token,
+                token_type="bearer",
+                expires_in=3600,
+            )
+
+    except HTTPException:
+        raise
+    except Exception as exc:
+        conn.rollback()
+        logger.error("Google login error: %s", exc, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Google sign-in failed.",
         )
     finally:
         DatabaseConnection.return_connection(conn)
