@@ -39,7 +39,11 @@ DB (additive; existing tables untouched). `tests/test_coding_orchestration.py`
 passes (4/4): per-thread session, seq ordering, Postgres one-in-flight
 serialization, model routing, end-to-end stub flow. Tests self-clean (no residue).
 
+Added `src/coding/runner.py` (`CodingRunner`: asyncio start/stop + tick loop,
+mirrors `GoalScheduler`) and `tests/test_coding_unit.py` (12 unit tests, no DB,
+in-memory fakes). Coding tests: 16/16 pass. Full suite still collects (242).
+
 **Not done yet:** real `AgentSdkCodingWorker` (auth + SDK session/worktree run;
 subscription Agent SDK credits land 2026-06-15). Wiring a coding route into a
-channel adapter. A worker-loop process/service. None of this runs in
-`amebo-backend.service` yet.
+channel adapter, and starting `CodingRunner` from app startup. None of this runs
+in `amebo-backend.service` yet — the runner is not started anywhere.
