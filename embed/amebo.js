@@ -15,19 +15,28 @@
 //       data-ref    — full original target URI (e.g. "amebo:goal/42")
 //       data-scheme — scheme key from sources.yaml (e.g. "amebo:goal")
 //       data-path   — everything after the scheme prefix (e.g. "42")
-//       data-org    — current org context, if known
 //   - Component parses data-path itself; shell stays scheme-agnostic.
+//   - Org is NOT a component attribute. It is resolved server-side from
+//     the authenticated identity (the JWT). Components never carry org.
 //   - All HTTP goes to ${data-up}/api/... ; no host or token in this file.
 //     The view server holds creds and proxies upstream.
 //
-// Bundle loading (per view session, 2026-05-31 14:43):
+// Bundle loading (per Golda, 2026-06-01):
 //
-//   The view shim proxies the bundle alongside the API, served by amebo at
-//   /embed/amebo.js and reached single-origin by the browser via e.g.
-//   <script src="/abra-view/up/amebo/embed/amebo.js"></script>. Single
-//   origin → no CORS, no cookie-domain games, view-server holds the
-//   per-user JWT that the proxy forwards to amebo. Update this bundle
-//   in place; the view picks up the new copy on next page load.
+//   While amebo and the host (abra view) sit on the same VM behind one
+//   nginx, use the same-origin proxy. nginx forwards e.g.
+//   /abra-view/up/amebo/* to amebo's backend on 127.0.0.1:8000. The host
+//   page loads the bundle from /abra-view/up/amebo/embed/amebo.js and
+//   the components call /abra-view/up/amebo/api/... — all same-origin,
+//   no CORS, no cross-origin cookie games.
+//
+//     <script src="/abra-view/up/amebo/embed/amebo.js"></script>
+//     <amebo-goal data-up="/abra-view/up/amebo" ...></amebo-goal>
+//
+//   The bundle also supports cross-origin (data-up="https://amebo.<host>")
+//   for the day amebo moves to its own VM — components fetch with
+//   credentials: 'include' so cookies ride along either way. Auth is
+//   Authorization: Bearer JWT from amebo's Google OAuth; see embed/README.md.
 //
 // Zero dependencies. Vanilla custom elements, no shadow DOM, host page
 // can style via the element tag selectors.
@@ -85,8 +94,57 @@
     return (u && u.replace(/\/+$/, '')) || null;
   }
 
-  function showError(el, msg) {
+  // Render an error in-place. Accepts an Error (HttpError preferred) or a
+  // plain string. The console always gets the full picture (method, url,
+  // status, parsed body) so devs can diagnose without screen-scraping the
+  // UI.
+  function showError(el, errOrMsg) {
+    if (errOrMsg instanceof HttpError) {
+      const tip = `${errOrMsg.method} ${errOrMsg.url} → ${errOrMsg.status}`;
+      el.innerHTML = `<div class="amebo-error" title="${esc(tip)}">amebo: ${esc(errOrMsg.message)}</div>`;
+      return;
+    }
+    const msg = errOrMsg && errOrMsg.message ? errOrMsg.message : String(errOrMsg);
     el.innerHTML = `<div class="amebo-error">amebo: ${esc(msg)}</div>`;
+  }
+
+  // Best-effort body parser: try JSON, fall back to text.
+  async function readBody(r) {
+    let raw = '';
+    try { raw = await r.text(); } catch (_) { return null; }
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (_) { return raw; }
+  }
+
+  // Pick the most useful human-readable message from amebo's error shapes:
+  //   { detail: [{msg, loc, ...}, ...] }    Pydantic validation (422)
+  //   { detail: "..." }                      FastAPI HTTPException
+  //   { error, message }                     amebo's global exception handler
+  //   "...text..."                           anything else
+  function bestMessage(body, status) {
+    if (body == null) return `http ${status}`;
+    if (typeof body === 'string') return body.slice(0, 240) || `http ${status}`;
+    if (Array.isArray(body.detail) && body.detail.length) {
+      return body.detail.map(d => {
+        const loc = Array.isArray(d.loc) ? d.loc.join('.') : '';
+        return (loc ? loc + ': ' : '') + (d.msg || JSON.stringify(d));
+      }).join('; ');
+    }
+    if (typeof body.detail === 'string') return body.detail;
+    if (body.message) return String(body.message);
+    if (body.error) return String(body.error);
+    return `http ${status}`;
+  }
+
+  class HttpError extends Error {
+    constructor(method, url, status, body) {
+      super(bestMessage(body, status));
+      this.name = 'HttpError';
+      this.method = method;
+      this.url = url;
+      this.status = status;
+      this.body = body;
+    }
   }
 
   function relTime(iso) {
@@ -106,19 +164,39 @@
   }
 
   async function jget(url) {
-    const r = await fetch(url, { credentials: 'include' });
-    if (!r.ok) throw new Error('http ' + r.status);
+    let r;
+    try {
+      r = await fetch(url, { credentials: 'include' });
+    } catch (e) {
+      console.error('[amebo] network error', { method: 'GET', url, error: e });
+      throw new Error('network error: ' + (e && e.message || e));
+    }
+    if (!r.ok) {
+      const body = await readBody(r);
+      console.error('[amebo] http error', { method: 'GET', url, status: r.status, body });
+      throw new HttpError('GET', url, r.status, body);
+    }
     return r.json();
   }
 
-  async function jpost(url, body) {
-    const r = await fetch(url, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body || {}),
-    });
-    if (!r.ok) throw new Error('http ' + r.status);
+  async function jpost(url, payload) {
+    let r;
+    try {
+      r = await fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload || {}),
+      });
+    } catch (e) {
+      console.error('[amebo] network error', { method: 'POST', url, error: e, payload });
+      throw new Error('network error: ' + (e && e.message || e));
+    }
+    if (!r.ok) {
+      const body = await readBody(r);
+      console.error('[amebo] http error', { method: 'POST', url, status: r.status, body, payload });
+      throw new HttpError('POST', url, r.status, body);
+    }
     return r.json();
   }
 
@@ -153,7 +231,7 @@
             sources.textContent = `sources: ${data.sources.length}`;
           }
         } catch (err) {
-          answer.innerHTML = `<div class="amebo-error">${esc(err.message)}</div>`;
+          showError(answer, err);
         }
       });
     }
@@ -183,7 +261,7 @@
         ]);
         this._render(g, events);
       } catch (err) {
-        showError(this, err.message);
+        showError(this, err);
       }
     }
 
@@ -219,7 +297,7 @@
             await jpost(`${this._base}/api/goals/${encodeURIComponent(goalId)}/${path}`, {});
             await this._refresh();
           } catch (err) {
-            showError(this, err.message);
+            showError(this, err);
           }
         });
       });
@@ -244,7 +322,7 @@
           <ul>${items}</ul>
         `;
       } catch (err) {
-        showError(this, err.message);
+        showError(this, err);
       }
     }
   }
@@ -268,7 +346,7 @@
         const goals = await jget(url);
         this._render(Array.isArray(goals) ? goals : []);
       } catch (err) {
-        showError(this, err.message);
+        showError(this, err);
       }
     }
 

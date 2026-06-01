@@ -11,7 +11,8 @@ build step.
 
 | File          | What                                                          |
 |---------------|---------------------------------------------------------------|
-| `amebo.js`    | The bundle. Registers `<amebo-ask>`, `<amebo-goal>`, `<amebo-digest>`. |
+| `amebo.js`    | The bundle. Registers `<amebo-ask>`, `<amebo-goal>`, `<amebo-goals>`, `<amebo-digest>`. |
+| `demo.html`   | Standalone sanity page that mounts all four components against a URL-param-configurable `data-up`. |
 | `README.md`   | This file.                                                    |
 
 The backend serves the bundle as a static file at `/embed/amebo.js`
@@ -37,20 +38,41 @@ to fetch from and what it represents:
 | `data-ref`    | shell        | Full original target URI, e.g. `amebo:goal/42`.    |
 | `data-scheme` | shell        | Scheme key from `sources.yaml`, e.g. `amebo:goal`. |
 | `data-path`   | shell        | Everything after the scheme prefix, e.g. `42`.     |
-| `data-org`    | shell        | Current org context, if known.                     |
 
 Components parse `data-path` (or `data-ref`) themselves. The shell stays
 scheme-agnostic — same attribute shape for amebo, Taiga, Odoo, anything.
+
+**Org is not a component attribute.** It is resolved server-side from
+the authenticated identity (the JWT carries the user; amebo derives the
+org from there). Components never carry org.
 
 All HTTP goes to `${this.dataset.up}/api/...`. No host or token in
 this bundle. `credentials: 'include'` so cookies the shell already set
 ride along.
 
-## Deployment shape (single-origin, recommended)
+## Deployment shape
 
-Per the abra view session (2026-05-31): the host shim proxies amebo
-under a single-origin mount, including the bundle. From the page's
-point of view:
+Recommended: **same-origin proxy** while amebo and the host are co-located
+on this VM. nginx proxies a path on the host's origin to amebo's backend.
+Everything stays under one origin: no CORS, no cross-origin cookie games,
+the bundle and the API calls all look like normal same-origin requests.
+
+Example for the abra view on `demos.linkedtrust.us` (path `/abra-view/`):
+add one block to `/etc/nginx/app-proxies/abra-view.conf` (or a sibling
+file), reload nginx:
+
+```nginx
+location /abra-view/up/amebo/ {
+    proxy_pass http://127.0.0.1:8000/;       # amebo backend
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_http_version 1.1;
+}
+```
+
+Page markup:
 
 ```html
 <script src="/abra-view/up/amebo/embed/amebo.js"></script>
@@ -59,23 +81,36 @@ point of view:
 <amebo-goal data-up="/abra-view/up/amebo"
             data-ref="amebo:goal/42"
             data-scheme="amebo:goal"
-            data-path="42"
-            data-org="cooperation.org"></amebo-goal>
+            data-path="42"></amebo-goal>
 <amebo-digest data-up="/abra-view/up/amebo"></amebo-digest>
 ```
 
-The proxy forwards a per-user JWT (carrying `user_uri`) to amebo. amebo
-audits every call as the real user, not the view-server identity.
+Cross-origin direct (`data-up="https://amebo.<host>"`) is supported by
+the bundle and becomes the right shape when amebo moves to its own VM,
+but isn't needed now.
 
-## Auth notes (per-user JWT vs service key)
+## Auth
 
-- `/api/qa/ask` and `/api/digest` use `get_current_user` (JWT). These
-  work end-to-end through the proxy as soon as the proxy mints / forwards
-  a per-user JWT.
-- `/api/goals/*` currently uses `get_service_client` (X-API-Key). To run
-  `<amebo-goal>` through the same proxy with end-to-end user identity,
-  the goals routes need to also accept a JWT. Pending view-session
-  confirmation before widening that surface.
+Amebo authenticates users via Google OAuth (`POST /api/auth/google`,
+team recipe at `/opt/shared/cobox/oauth-login-pattern.md`) and issues a
+JWT used in `Authorization: Bearer ...`.
+
+For the same-origin embed on this VM, the simplest current path: the
+host page makes the user's amebo JWT available to the bundle (e.g.
+`window.AMEBO_JWT = "..."` or `<meta name="amebo-jwt" content="...">`),
+and the embed sends it. If you want, point the host's own Google
+sign-in at amebo's `/api/auth/google` once at login and store the
+returned JWT in the host's session — same Google account, same user
+identity in both apps.
+
+Endpoints:
+- `/api/qa/ask`, `/api/digest`, `/api/goals/*` — all accept Bearer JWT.
+  `/api/goals/*` also accepts `X-API-Key` for service-to-service
+  callers.
+
+The v0 bundle does not yet read `window.AMEBO_JWT`; add when needed.
+Today the bundle fetches with `credentials: 'include'` so anything the
+host has already set as a same-origin cookie also rides along.
 
 ## Updating the bundle
 
