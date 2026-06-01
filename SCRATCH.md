@@ -43,7 +43,14 @@ Added `src/coding/runner.py` (`CodingRunner`: asyncio start/stop + tick loop,
 mirrors `GoalScheduler`) and `tests/test_coding_unit.py` (12 unit tests, no DB,
 in-memory fakes). Coding tests: 16/16 pass. Full suite still collects (242).
 
+Added HTTP route `src/api/routes/coding.py` (POST `/api/coding/message`,
+GET `/api/coding/sessions/{id}/jobs`), **flag-gated** in `src/api/main.py` behind
+`CODING_ENABLED` (default false, mirrors `DEV_AUTH_ENABLED`) and auth-protected
+via `get_current_user`. With the flag OFF the route is absent and the app is
+unchanged (verified). `tests/test_coding_route.py` (6 tests, no DB) covers run/
+no-run/hint/validation/list/auth. Coding tests now 22/22.
+
 **Not done yet:** real `AgentSdkCodingWorker` (auth + SDK session/worktree run;
-subscription Agent SDK credits land 2026-06-15). Wiring a coding route into a
-channel adapter, and starting `CodingRunner` from app startup. None of this runs
-in `amebo-backend.service` yet — the runner is not started anywhere.
+subscription Agent SDK credits land 2026-06-15). Starting `CodingRunner` at app
+startup. `amebo-backend.service` is unchanged and the flag is OFF in prod, so
+nothing here executes there.

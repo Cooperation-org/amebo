@@ -157,6 +157,12 @@ app.include_router(digest.router, prefix="/api/digest", tags=["Digest"])
 # the link looks like a normal short URL when sent through chat/email.
 app.include_router(connections.public_router, tags=["Connections (Public)"])
 
+# Coding-agent orchestration is experimental and only mounted when explicitly
+# enabled. Inert (route absent) unless CODING_ENABLED=true.
+if os.getenv("CODING_ENABLED", "false").lower() == "true":
+    from src.api.routes import coding
+    app.include_router(coding.router, prefix="/api/coding", tags=["Coding"])
+
 # Embed bundle: ships <amebo-ask> / <amebo-goal> / <amebo-digest> as a
 # single static JS file. Host shells (abra view, demos) load it once;
 # components fetch via ${data-up}/api/... so amebo's host is never baked
