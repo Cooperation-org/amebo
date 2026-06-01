@@ -25,12 +25,13 @@ class DatabaseConnection:
     @classmethod
     def initialize_pool(cls, minconn=2, maxconn=20):
         """
-        Initialize the connection pool.
-
-        Args:
-            minconn: Minimum number of connections to maintain
-            maxconn: Maximum number of connections allowed
+        Initialize the connection pool. Idempotent: if a pool already
+        exists, returns without re-creating it. Repos that call this
+        from their __init__ stop replacing the live pool on every
+        construction.
         """
+        if cls._connection_pool is not None:
+            return
         try:
             # Try DATABASE_URL first (Heroku/Cloud style)
             database_url = os.getenv('DATABASE_URL')

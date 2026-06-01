@@ -41,6 +41,7 @@ _MAX_RECENT = 3
 _MAX_ITEMS = 10
 
 
+@router.get("")
 @router.get("/")
 async def get_digest(current_user: dict = Depends(get_current_user)):
     """Return a digest summary for the authenticated user's org."""
