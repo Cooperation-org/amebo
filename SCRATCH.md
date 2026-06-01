@@ -34,4 +34,12 @@ Claude Agent SDK worker is behind an interface and stubbed for now (subscription
 Agent SDK credits land 2026-06-15; API-key auth before that). Nothing here runs
 in `amebo-backend.service` yet.
 
-**Status:** in progress. Committing frequently to this branch.
+**Status:** first slice landed and tested. Migration 013 applied to the `amebo`
+DB (additive; existing tables untouched). `tests/test_coding_orchestration.py`
+passes (4/4): per-thread session, seq ordering, Postgres one-in-flight
+serialization, model routing, end-to-end stub flow. Tests self-clean (no residue).
+
+**Not done yet:** real `AgentSdkCodingWorker` (auth + SDK session/worktree run;
+subscription Agent SDK credits land 2026-06-15). Wiring a coding route into a
+channel adapter. A worker-loop process/service. None of this runs in
+`amebo-backend.service` yet.
