@@ -523,12 +523,74 @@ async def slack_events(request: Request):
         asyncio.create_task(process_mention())
 
     elif event_type == "message":
-        # Ignore bot messages to prevent loops
+        # Skip bot messages to prevent loops.
         if event.get("bot_id"):
             logger.debug("Ignoring bot message")
         else:
             channel = event.get("channel")
-            logger.info(f"Message received in channel {channel}")
+            thread_ts = event.get("thread_ts")
+            ts = event.get("ts")
+            user = event.get("user")
+            text = event.get("text", "")
+            subtype = event.get("subtype")
+
+            # Only thread replies are eligible to be implicit messages
+            # to amebo. A new top-level message is just chatter.
+            # Subtypes like message_changed, message_deleted, etc., we
+            # ignore.
+            if (
+                thread_ts
+                and thread_ts != ts            # not the parent itself
+                and not subtype                # plain user message
+                and user
+                and text
+            ):
+                import asyncio
+                import os
+
+                bot_user_id = os.getenv("SLACK_BOT_USER_ID")
+                team_id = payload.get("team_id")
+
+                async def process_thread_reply():
+                    try:
+                        from src.services.slack_commands import (
+                            is_thread_parent_our_bot, handle_thread_reply,
+                        )
+                        if not bot_user_id:
+                            # First call: discover our own user id via
+                            # auth.test, cache in env for the process.
+                            from slack_sdk.web.async_client import AsyncWebClient
+                            import os as _os
+                            tok = _os.environ.get("SLACK_BOT_TOKEN")
+                            if tok:
+                                try:
+                                    auth = await AsyncWebClient(token=tok).auth_test()
+                                    _os.environ["SLACK_BOT_USER_ID"] = auth.get("user_id", "")
+                                except Exception:
+                                    logger.exception("Could not resolve bot user id")
+                                    return
+                            resolved = _os.environ.get("SLACK_BOT_USER_ID")
+                            if not resolved:
+                                return
+                            bot_uid = resolved
+                        else:
+                            bot_uid = bot_user_id
+
+                        if await is_thread_parent_our_bot(channel, thread_ts, bot_uid):
+                            logger.info(
+                                "Thread reply on amebo's message: "
+                                "channel=%s thread_ts=%s user=%s",
+                                channel, thread_ts, user,
+                            )
+                            await handle_thread_reply(
+                                team_id, channel, text, user, ts, thread_ts,
+                            )
+                    except Exception:
+                        logger.exception("Thread-reply handler failed")
+
+                asyncio.create_task(process_thread_reply())
+            else:
+                logger.debug(f"Message received in channel {channel}")
 
     # Return 200 immediately
     return JSONResponse(content={"ok": True})

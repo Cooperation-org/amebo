@@ -102,18 +102,16 @@ async def get_current_user_optional(
 # ---------------------------------------------------------------------------
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=True)
+api_key_header_optional = APIKeyHeader(name="X-API-Key", auto_error=False)
 
 
-async def get_service_client(api_key: str = Depends(api_key_header)) -> dict:
+def _validate_api_key(api_key: str) -> dict:
     """
-    Authenticate a service-to-service call via API key.
+    Validate an API key string against the api_keys table.
 
-    Looks up the SHA-256 hash of the provided key in the api_keys table.
-    Returns the associated org_id, key_name, and permissions.
-    Updates last_used_at on every successful lookup.
-
-    Raises:
-        HTTPException 401: If the key is missing, invalid, inactive, or expired.
+    Returns the service-client dict (org_id, key_name, permissions) on
+    success. Raises HTTPException 401 on any failure. Updates
+    last_used_at on every successful lookup.
     """
     key_hash = hashlib.sha256(api_key.encode()).hexdigest()
 
@@ -145,7 +143,6 @@ async def get_service_client(api_key: str = Depends(api_key_header)) -> dict:
                     detail="API key has expired",
                 )
 
-            # Update last_used_at
             cur.execute(
                 "UPDATE api_keys SET last_used_at = NOW() WHERE key_id = %s",
                 (row["key_id"],)
@@ -168,3 +165,40 @@ async def get_service_client(api_key: str = Depends(api_key_header)) -> dict:
         )
     finally:
         DatabaseConnection.return_connection(conn)
+
+
+async def get_service_client(api_key: str = Depends(api_key_header)) -> dict:
+    """Authenticate a service-to-service call via X-API-Key header."""
+    return _validate_api_key(api_key)
+
+
+async def get_service_or_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
+    api_key: Optional[str] = Depends(api_key_header_optional),
+) -> dict:
+    """
+    Accept either a user JWT (Authorization: Bearer ...) or a service
+    X-API-Key. Both produce a dict carrying `org_id` so downstream code
+    (which reads `client["org_id"]`) works unchanged.
+
+    Distinguished by the `auth` key:
+      Bearer JWT  → {"org_id", "user_id", "email", "role", "auth": "user"}
+      X-API-Key   → {"org_id", "key_name", "permissions", "auth": "service"}
+
+    Use this on endpoints that should be reachable from either an
+    end-user session (via the view-server proxy carrying a per-user JWT)
+    or from a service-to-service caller.
+    """
+    if credentials:
+        user = await get_current_user(credentials)
+        user["auth"] = "user"
+        return user
+    if api_key:
+        svc = _validate_api_key(api_key)
+        svc["auth"] = "service"
+        return svc
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required (Bearer JWT or X-API-Key)",
+        headers={"WWW-Authenticate": "Bearer"},
+    )

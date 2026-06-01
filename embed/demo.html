@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>amebo embed — sanity demo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body { font-family: system-ui, -apple-system, sans-serif; max-width: 720px; margin: 24px auto; padding: 0 16px; color: #222; }
+  h1 { font-size: 1.2rem; margin: 0 0 4px; }
+  p.lede { margin: 0 0 16px; opacity: 0.75; font-size: 0.9rem; }
+  fieldset { border: 1px solid #ccc; border-radius: 6px; padding: 8px 12px 12px; margin: 0 0 20px; }
+  legend { font-size: 0.8rem; opacity: 0.7; padding: 0 4px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; font-size: 0.85rem; }
+  .row label { min-width: 80px; opacity: 0.7; }
+  .row input { flex: 1; padding: 4px 6px; font: inherit; }
+  section { border: 1px solid #e0e0e0; border-radius: 6px; padding: 12px; margin-bottom: 16px; }
+  section h2 { font-size: 0.9rem; margin: 0 0 8px; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; }
+</style>
+</head>
+<body>
+
+<h1>amebo embed — sanity demo</h1>
+<p class="lede">
+  Mounts all four custom elements against a configurable <code>data-up</code>.
+  Use this to eyeball the bundle without standing up the abra-view shim.
+  Defaults read from URL params: <code>?up=...&amp;goal=...&amp;status=...</code>.
+</p>
+
+<fieldset>
+  <legend>config (URL params)</legend>
+  <div class="row"><label>data-up</label><input id="cfg-up" readonly></div>
+  <div class="row"><label>goal id</label><input id="cfg-goal" readonly></div>
+  <div class="row"><label>goals status</label><input id="cfg-status" readonly></div>
+</fieldset>
+
+<section>
+  <h2>&lt;amebo-ask&gt;</h2>
+  <amebo-ask id="el-ask"></amebo-ask>
+</section>
+
+<section>
+  <h2>&lt;amebo-digest&gt;</h2>
+  <amebo-digest id="el-digest"></amebo-digest>
+</section>
+
+<section>
+  <h2>&lt;amebo-goals&gt;</h2>
+  <amebo-goals id="el-goals"></amebo-goals>
+</section>
+
+<section>
+  <h2>&lt;amebo-goal&gt;</h2>
+  <amebo-goal id="el-goal"></amebo-goal>
+</section>
+
+<script>
+  // Read config from URL params with sensible defaults.
+  const params = new URLSearchParams(location.search);
+  const up = params.get('up') || '';
+  const goal = params.get('goal') || '';
+  const status = params.get('status') || 'active';
+
+  document.getElementById('cfg-up').value = up || '(empty — set ?up=... in URL)';
+  document.getElementById('cfg-goal').value = goal || '(empty — set ?goal=42 in URL)';
+  document.getElementById('cfg-status').value = status;
+
+  // Stamp data-up on every component, plus per-component path/status.
+  for (const id of ['el-ask', 'el-digest', 'el-goals', 'el-goal']) {
+    document.getElementById(id).dataset.up = up;
+  }
+  if (goal) {
+    const el = document.getElementById('el-goal');
+    el.dataset.ref = `amebo:goal/${goal}`;
+    el.dataset.scheme = 'amebo:goal';
+    el.dataset.path = goal;
+  }
+  document.getElementById('el-goals').dataset.status = status;
+</script>
+
+<!-- Loaded last so the data-* attributes above are set before
+     connectedCallback runs. -->
+<script src="./amebo.js"></script>
+
+</body>
+</html>

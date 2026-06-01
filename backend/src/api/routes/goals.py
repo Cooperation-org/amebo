@@ -1,9 +1,11 @@
 """
 Goals REST API.
 
-Service-to-service: authenticates via API key (X-API-Key header). The
-key's org_id is the authority for every operation — callers never
-specify org_id directly. Goals belonging to other orgs are invisible.
+Authenticates via either an X-API-Key (service-to-service) or a Bearer
+JWT (per-user, via the view-server proxy). The authenticated client's
+org_id is the authority for every operation — callers never specify
+org_id directly. Goals belonging to other orgs are invisible regardless
+of which auth path was used.
 
 Endpoints:
     GET    /api/goals/                  list goals for the authenticated org
@@ -27,7 +29,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from src.api.middleware.auth import get_service_client
+from src.api.middleware.auth import get_service_or_user
 from src.db.repositories.goal_repo import GoalRepo, VALID_STATUSES
 from src.services.goal_dispatcher import GoalDispatcher
 from src.services.goal_engine import (
@@ -49,6 +51,7 @@ class GoalCreateRequest(BaseModel):
     target_criteria: Optional[Dict[str, Any]] = None
     trigger_config: Optional[Dict[str, Any]] = None
     notify_channel: Optional[str] = Field(None, max_length=255)
+    config: Optional[Dict[str, Any]] = None
 
 
 class GoalResponse(BaseModel):
@@ -130,7 +133,7 @@ def _load_or_404(engine: GoalEngine, goal_id: str, org_id: int) -> Dict[str, Any
 async def list_goals(
     status: Optional[str] = None,
     limit: int = 100,
-    client: dict = Depends(get_service_client),
+    client: dict = Depends(get_service_or_user),
 ):
     if status is not None and status not in VALID_STATUSES:
         raise HTTPException(
@@ -148,7 +151,7 @@ async def list_goals(
 @router.post("/", response_model=GoalResponse, status_code=201)
 async def create_goal(
     req: GoalCreateRequest,
-    client: dict = Depends(get_service_client),
+    client: dict = Depends(get_service_or_user),
 ):
     engine = _get_engine()
     goal = engine.create_goal(
@@ -158,6 +161,7 @@ async def create_goal(
         target_criteria=req.target_criteria,
         trigger_config=req.trigger_config,
         notify_channel=req.notify_channel,
+        config=req.config,
     )
     logger.info("Goal created: id=%s org=%s key=%s",
                 goal["id"], client["org_id"], client["key_name"])
@@ -167,7 +171,7 @@ async def create_goal(
 @router.get("/{goal_id}", response_model=GoalResponse)
 async def get_goal(
     goal_id: str,
-    client: dict = Depends(get_service_client),
+    client: dict = Depends(get_service_or_user),
 ):
     engine = _get_engine()
     goal = _load_or_404(engine, goal_id, client["org_id"])
@@ -177,7 +181,7 @@ async def get_goal(
 @router.get("/{goal_id}/events", response_model=List[GoalEventResponse])
 async def list_goal_events(
     goal_id: str,
-    client: dict = Depends(get_service_client),
+    client: dict = Depends(get_service_or_user),
 ):
     engine = _get_engine()
     _load_or_404(engine, goal_id, client["org_id"])  # org-scoped existence check
@@ -200,7 +204,7 @@ async def list_goal_events(
 @router.post("/{goal_id}/pause", response_model=GoalResponse)
 async def pause_goal(
     goal_id: str,
-    client: dict = Depends(get_service_client),
+    client: dict = Depends(get_service_or_user),
 ):
     engine = _get_engine()
     _load_or_404(engine, goal_id, client["org_id"])
@@ -214,7 +218,7 @@ async def pause_goal(
 @router.post("/{goal_id}/resume", response_model=GoalResponse)
 async def resume_goal(
     goal_id: str,
-    client: dict = Depends(get_service_client),
+    client: dict = Depends(get_service_or_user),
 ):
     engine = _get_engine()
     _load_or_404(engine, goal_id, client["org_id"])
@@ -228,7 +232,7 @@ async def resume_goal(
 @router.post("/{goal_id}/dispatch-now", response_model=DispatchResultResponse)
 async def dispatch_goal_now(
     goal_id: str,
-    client: dict = Depends(get_service_client),
+    client: dict = Depends(get_service_or_user),
 ):
     """
     Manually trigger dispatch for this goal, bypassing the periodic

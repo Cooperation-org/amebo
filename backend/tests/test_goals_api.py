@@ -79,25 +79,30 @@ def test_org_id():
 @pytest.fixture
 def auth_as(app, test_org_id):
     """
-    Override the get_service_client dependency so tests don't need real
-    API keys. Yields a callable that lets a test switch the impersonated
-    org partway through if needed.
+    Override the goals routes' auth dependency so tests don't need real
+    API keys or JWTs. The routes authenticate via get_service_or_user
+    (accepts either a service X-API-Key or a user JWT); both paths resolve
+    to a client dict carrying org_id, which is all the routes read. Yields a
+    callable that lets a test switch the impersonated org partway through.
     """
-    from src.api.middleware.auth import get_service_client
+    from src.api.middleware.auth import get_service_or_user
 
-    current = {"org_id": test_org_id, "key_name": "test", "permissions": ["read", "write"]}
+    current = {
+        "org_id": test_org_id, "key_name": "test",
+        "permissions": ["read", "write"], "auth": "service",
+    }
 
     def _override():
         return current
 
-    app.dependency_overrides[get_service_client] = _override
+    app.dependency_overrides[get_service_or_user] = _override
 
     def _set_org(org_id: int):
         current["org_id"] = org_id
 
     yield _set_org
 
-    app.dependency_overrides.pop(get_service_client, None)
+    app.dependency_overrides.pop(get_service_or_user, None)
 
 
 # ---------------------------------------------------------------------------

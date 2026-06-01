@@ -40,6 +40,7 @@ from src.db.repositories.instance_repo import InstanceRepo
 from src.services.goal_engine import (
     GoalEngine, GoalNotFoundError, InvalidTransitionError,
 )
+from src.services.goal_guardrails import GuardrailContext, GuardrailTripped
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,20 @@ def _default_notifier(channel: str, message: str) -> bool:
     """
     logger.info("[goal-notify] %s :: %s", channel, message)
     return True
+
+
+def _is_recurring(goal: Dict[str, Any]) -> bool:
+    """
+    True if the goal's trigger fires repeatedly (a cron schedule). Recurring
+    goals re-arm to pending after each dispatch cycle instead of completing
+    terminally, so the scheduler runs them again on the next cron edge. One-
+    shot goals (manual / event / unspecified trigger) complete and retire.
+
+    Mirrors the cron branch of GoalScheduler._should_fire: a cron trigger is
+    only "recurring" once it actually carries an expression.
+    """
+    cfg = goal.get("trigger_config") or {}
+    return (cfg.get("type") or "").lower() == "cron" and bool(cfg.get("expression"))
 
 
 class GoalDispatcher:
@@ -138,6 +153,28 @@ class GoalDispatcher:
             summary, tool_calls = self._pursue(goal, instance, org_context)
         except (CredentialMissing, CredentialExpired, CredentialRevoked) as exc:
             return self._block_on_credential(goal, exc)
+        except GuardrailTripped as exc:
+            logger.warning("Goal %s tripped guardrail %s: %s",
+                           goal_id, exc.which, exc.reason)
+            try:
+                self._goal_repo.append_event(
+                    goal_id=goal_id,
+                    actor_type="claw",
+                    action=f"guardrail_trip:{exc.which}",
+                    result_summary=exc.reason,
+                    metadata=exc.metadata,
+                )
+            except Exception:
+                logger.exception("Failed to record guardrail event")
+            try:
+                self._engine.fail(goal_id, reason=f"guardrail:{exc.which}: {exc.reason}")
+            except InvalidTransitionError:
+                pass
+            return DispatchResult(
+                goal_id=goal_id, status="failed",
+                error=f"guardrail:{exc.which}",
+                summary=exc.reason,
+            )
         except Exception as exc:
             logger.exception("Goal %s dispatch raised", goal_id)
             try:
@@ -146,8 +183,13 @@ class GoalDispatcher:
                 pass  # goal is already terminal
             return DispatchResult(goal_id=goal_id, status="failed", error=str(exc))
 
-        # Mark complete and notify.
-        self._engine.complete(goal_id, summary=summary)
+        # Finish the cycle, then notify. Recurring (cron) goals re-arm to
+        # pending so the scheduler runs them again on the next cron edge;
+        # one-shot goals complete terminally.
+        if _is_recurring(goal):
+            self._engine.rearm(goal_id, summary=summary)
+        else:
+            self._engine.complete(goal_id, summary=summary)
         notification_sent = self._maybe_notify(goal, summary)
 
         return DispatchResult(
@@ -160,6 +202,28 @@ class GoalDispatcher:
         )
 
     # ------------------------------------------------------------- Context
+
+    def _load_primary_workspace_id(self, org_id: int) -> Optional[str]:
+        """
+        Return the org's primary Slack workspace_id (or the first one
+        linked) so tools that need workspace isolation (semantic search,
+        slack ingestion) can be scoped.
+        """
+        from src.db.connection import DatabaseConnection
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT workspace_id FROM org_workspaces "
+                    "WHERE org_id = %s "
+                    "ORDER BY is_primary DESC, added_at ASC "
+                    "LIMIT 1",
+                    (org_id,),
+                )
+                row = cur.fetchone()
+                return row[0] if row else None
+        finally:
+            DatabaseConnection.return_connection(conn)
 
     def _load_instance(self, org_id: int) -> Optional[Dict[str, Any]]:
         """First instance for this org, if any. Returns None when missing."""
@@ -231,9 +295,14 @@ class GoalDispatcher:
         """
         Run the agentic loop. Returns (summary_text, tool_calls).
 
-        If no Anthropic client is configured, this returns a deterministic
-        stub summary so the engine path is still exercisable in dev and
-        tests without burning API tokens.
+        Builds a GuardrailContext from goal.config and runs a bounded
+        Claude tool-use loop. Each tool call goes through `permit_tool`
+        before execution; each Claude response runs through
+        `record_usage` for cost tracking.
+
+        If no Anthropic client is configured, returns a deterministic
+        stub so the engine path is exercisable in dev and tests without
+        burning API tokens.
         """
         system_prompt = self._build_system_prompt(instance, org_context)
         user_prompt = self._build_user_prompt(goal)
@@ -244,10 +313,12 @@ class GoalDispatcher:
                 [],
             )
 
+        guardrails = GuardrailContext.from_goal_config(goal.get("config") or {})
         return self._run_agentic_loop(
-            goal_id=goal["id"],
+            goal=goal,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
+            guardrails=guardrails,
         )
 
     def _build_system_prompt(
@@ -290,32 +361,219 @@ class GoalDispatcher:
 
     def _run_agentic_loop(
         self,
-        goal_id: str,
+        goal: Dict[str, Any],
         system_prompt: str,
         user_prompt: str,
+        guardrails: GuardrailContext,
     ) -> tuple[str, List[Dict[str, Any]]]:
         """
-        Minimal agentic loop. v1: no tools wired in yet — the loop just
-        does a single Claude call. Tool integration plugs in here later;
-        each tool call gets recorded as a goal_event.
+        Bounded Claude tool-use loop with hard guardrails.
+
+        Each iteration:
+        1. begin_round() — trip on rounds / wall-clock limit.
+        2. Call Claude with the available tools.
+        3. record_usage() — trip on cost.
+        4. If response is end_turn or text-only, exit.
+        5. For each tool_use block: permit_tool() (refuses unallowed /
+           write-after-write), execute via registry, record as a
+           goal_event.
+        6. Append tool_results and loop.
         """
-        messages = [{"role": "user", "content": user_prompt}]
-        response = self._client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=DEFAULT_MAX_TOKENS,
-            system=system_prompt,
-            messages=messages,
+        from src.tools.registry import (
+            get_all_tools, get_tool, _tool_to_schema,
         )
 
-        text = ""
-        for block in response.content:
-            if hasattr(block, "text"):
-                text += block.text
+        model = "claude-sonnet-4-20250514"
+        if goal.get("config") and goal["config"].get("model"):
+            model = goal["config"]["model"]
 
-        if not text.strip():
-            text = "(model returned no text)"
+        # Build the tool catalog Claude will see. The goal's allowed_tools
+        # gates this — Claude is only ever offered what the goal permits.
+        all_tools = {t.name: t for t in get_all_tools()}
+        if guardrails.allowed_tools:
+            offered = [
+                _tool_to_schema(all_tools[name])
+                for name in guardrails.allowed_tools
+                if name in all_tools
+            ]
+        else:
+            # No allowlist → no tools (goal didn't ask for any). Loop
+            # degenerates to a single Claude call.
+            offered = []
 
-        return text.strip(), []
+        messages: List[Dict[str, Any]] = [
+            {"role": "user", "content": user_prompt},
+        ]
+        tool_call_summaries: List[Dict[str, Any]] = []
+
+        last_text = ""
+
+        while True:
+            guardrails.begin_round()  # may raise GuardrailTripped
+
+            create_kwargs: Dict[str, Any] = {
+                "model": model,
+                "max_tokens": DEFAULT_MAX_TOKENS,
+                "system": system_prompt,
+                "messages": messages,
+            }
+            if offered:
+                create_kwargs["tools"] = offered
+
+            response = self._client.messages.create(**create_kwargs)
+
+            usage_cost = guardrails.record_usage(
+                getattr(response, "usage", None), model,
+            )
+            logger.debug(
+                "goal=%s round=%s cost=%.6f total=%.6f",
+                goal["id"], guardrails.rounds_used, usage_cost,
+                guardrails.cost_used_usd,
+            )
+
+            # Capture any text emitted this round (model may interleave
+            # text + tool_use blocks).
+            round_text = ""
+            tool_uses = []
+            for block in response.content:
+                btype = getattr(block, "type", None)
+                if btype == "text":
+                    round_text += getattr(block, "text", "") or ""
+                elif btype == "tool_use":
+                    tool_uses.append(block)
+            if round_text:
+                last_text = round_text
+
+            stop_reason = getattr(response, "stop_reason", None)
+            if stop_reason != "tool_use" or not tool_uses:
+                # Conversation done.
+                break
+
+            # Echo the assistant turn back so Claude has continuity, then
+            # run each tool and append tool_results in a single user turn.
+            # SDK response objects don't round-trip through messages.create;
+            # serialize each block to a plain dict before appending.
+            assistant_content: List[Dict[str, Any]] = []
+            for block in response.content:
+                btype2 = getattr(block, "type", None)
+                if btype2 == "tool_use":
+                    assistant_content.append({
+                        "type": "tool_use",
+                        "id": block.id,
+                        "name": block.name,
+                        "input": block.input,
+                    })
+                elif btype2 == "text":
+                    assistant_content.append({
+                        "type": "text",
+                        "text": getattr(block, "text", "") or "",
+                    })
+            messages.append({"role": "assistant", "content": assistant_content})
+
+            tool_result_blocks: List[Dict[str, Any]] = []
+            for use in tool_uses:
+                name = use.name
+                tool_input = use.input or {}
+                use_id = use.id
+
+                tool = all_tools.get(name)
+                if tool is None:
+                    err = f"Unknown tool: {name!r}"
+                    self._record_tool_event(
+                        goal["id"], name, err, {"error": "unknown_tool"},
+                    )
+                    tool_call_summaries.append(
+                        {"name": name, "ok": False, "summary": err},
+                    )
+                    tool_result_blocks.append({
+                        "type": "tool_result",
+                        "tool_use_id": use_id,
+                        "content": err,
+                        "is_error": True,
+                    })
+                    continue
+
+                try:
+                    guardrails.permit_tool(name, is_read_only=tool.is_read_only)
+                except GuardrailTripped:
+                    # Re-raise — handled at the outer try in dispatch().
+                    raise
+
+                # Pass guardrails into the tool's context so tool code can
+                # consult policy (e.g. slack_post checking @-mention rule).
+                ctx = {
+                    "goal_id": goal["id"],
+                    "org_id": goal.get("org_id"),
+                    "workspace_id": goal.get("workspace_id") or self._load_primary_workspace_id(
+                        goal.get("org_id")
+                    ),
+                    "guardrails": guardrails,
+                }
+                try:
+                    result_text = tool.execute(tool_input, ctx) or ""
+                except Exception as exc:
+                    logger.exception("Tool %s raised", name)
+                    result_text = f"Tool {name} raised: {exc}"
+                    is_error = True
+                else:
+                    is_error = result_text.startswith("Error:")
+
+                # Snip very long results before showing the model again,
+                # but record the full thing in the event metadata.
+                snippet = result_text if len(result_text) <= 4000 \
+                    else result_text[:4000] + "\n[...truncated...]"
+
+                self._record_tool_event(
+                    goal["id"], name, snippet,
+                    {
+                        "input": tool_input,
+                        "is_error": is_error,
+                        "cost_so_far_usd": round(guardrails.cost_used_usd, 6),
+                        "round": guardrails.rounds_used,
+                    },
+                )
+                tool_call_summaries.append(
+                    {"name": name, "ok": not is_error, "summary": snippet[:200]},
+                )
+
+                tool_result_blocks.append({
+                    "type": "tool_result",
+                    "tool_use_id": use_id,
+                    "content": snippet,
+                    "is_error": is_error,
+                })
+
+            messages.append({"role": "user", "content": tool_result_blocks})
+
+        summary = last_text.strip() or "(model returned no final text)"
+        summary += (
+            f"\n\n[loop stats: rounds={guardrails.rounds_used}, "
+            f"cost=${guardrails.cost_used_usd:.4f}, "
+            f"tool_calls={len(tool_call_summaries)}]"
+        )
+        return summary, tool_call_summaries
+
+    def _record_tool_event(
+        self,
+        goal_id: str,
+        tool_name: str,
+        result_summary: str,
+        metadata: Dict[str, Any],
+    ) -> None:
+        """Append a tool_call event. Swallows failures — best effort."""
+        try:
+            self._goal_repo.append_event(
+                goal_id=goal_id,
+                actor_type="claw",
+                action=f"tool_call:{tool_name}",
+                result_summary=result_summary,
+                metadata=metadata,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to record tool_call event for goal %s tool %s",
+                goal_id, tool_name,
+            )
 
     # --------------------------------------------------- Credential blocking
 

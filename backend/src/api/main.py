@@ -4,14 +4,16 @@ Handles authentication, document management, Q&A, and Slack OAuth
 """
 
 import os
+import pathlib
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 import logging
 import time
 
-from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces, dev_auth, team, bindings, chat, embeddings, goals, connections
+from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces, dev_auth, team, bindings, chat, embeddings, goals, connections, digest
 from src.api.middleware.rate_limit import RateLimitMiddleware
 from src.db.connection import DatabaseConnection
 
@@ -150,9 +152,18 @@ app.include_router(chat.router, prefix="/api/chat", tags=["Chat"])
 app.include_router(embeddings.router, prefix="/api/embeddings", tags=["Embeddings"])
 app.include_router(goals.router, prefix="/api/goals", tags=["Goals"])
 app.include_router(connections.router, prefix="/api/connections", tags=["Connections"])
+app.include_router(digest.router, prefix="/api/digest", tags=["Digest"])
 # /connect/{short_code} is the user-facing OAuth entry; mounted at root so
 # the link looks like a normal short URL when sent through chat/email.
 app.include_router(connections.public_router, tags=["Connections (Public)"])
+
+# Embed bundle: ships <amebo-ask> / <amebo-goal> / <amebo-digest> as a
+# single static JS file. Host shells (abra view, demos) load it once;
+# components fetch via ${data-up}/api/... so amebo's host is never baked
+# into the embedding page.
+_EMBED_DIR = pathlib.Path(__file__).resolve().parents[3] / "embed"
+if _EMBED_DIR.is_dir():
+    app.mount("/embed", StaticFiles(directory=str(_EMBED_DIR)), name="embed")
 
 
 if __name__ == "__main__":
