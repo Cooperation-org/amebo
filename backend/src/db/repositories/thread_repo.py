@@ -150,6 +150,35 @@ class ThreadRepo:
         finally:
             DatabaseConnection.return_connection(conn)
 
+    def recent_for_org(self, org_id: int, limit: int = 5) -> List[Dict]:
+        """
+        Recent threads for an org, newest-active first.
+
+        Bridges threads to org via `instance_id → instances.org_id` first;
+        falls back to `workspace_id → workspaces.org_id` for threads that
+        predate the org→instance wiring (no instance_id stamped).
+
+        Returns rows: {id, source_type, source_ref, title, last_active_at}.
+        """
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT t.id, t.source_type, t.source_ref, t.title, t.last_active_at
+                    FROM threads t
+                    LEFT JOIN instances  i ON t.instance_id  = i.id
+                    LEFT JOIN workspaces w ON t.workspace_id = w.workspace_id
+                    WHERE i.org_id = %s OR w.org_id = %s
+                    ORDER BY t.last_active_at DESC NULLS LAST
+                    LIMIT %s
+                    """,
+                    (org_id, org_id, limit),
+                )
+                return [dict(r) for r in cur.fetchall()]
+        finally:
+            DatabaseConnection.return_connection(conn)
+
     def clear_thread(self, thread_id: int):
         """Clear all turns and summary for a thread (the 'refresh' button)."""
         conn = DatabaseConnection.get_connection()
