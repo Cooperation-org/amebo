@@ -98,11 +98,22 @@
       amebo-goal ul.events .when { opacity: 0.6; margin-right: 6px; }
       amebo-goal ul.events .action { font-family: ui-monospace, monospace; }
       amebo-goal ul.events .summary { opacity: 0.8; }
-      amebo-claws ul.goals { list-style: none; padding-left: 0; margin: 0; }
-      amebo-claws ul.goals li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-top: 1px solid rgba(0,0,0,0.06); }
-      amebo-claws ul.goals .title { flex: 1; }
-      amebo-claws ul.goals .status { font-size: 12px; opacity: 0.7; }
-      amebo-claws ul.goals .when { font-size: 12px; opacity: 0.5; }
+      amebo-claws ul.claws { list-style: none; padding-left: 0; margin: 0; }
+      amebo-claws ul.claws li { display: block; padding: 8px 0; border-top: 1px solid rgba(0,0,0,0.08); }
+      amebo-claws ul.claws li:first-child { border-top: none; }
+      amebo-claws ul.claws .row { display: flex; gap: 8px; align-items: baseline; }
+      amebo-claws ul.claws .title { flex: 1; font-weight: 500; }
+      amebo-claws ul.claws .pill { font-size: 11px; padding: 1px 6px; border-radius: 9px; }
+      amebo-claws ul.claws .pill.pending   { background: #f4e4b5; color: #5a4500; }
+      amebo-claws ul.claws .pill.active    { background: #c7e6c7; color: #1f5a1f; }
+      amebo-claws ul.claws .pill.completed { background: #d6d6d6; color: #444; }
+      amebo-claws ul.claws .pill.failed    { background: #f3c7c7; color: #7a1f1f; }
+      amebo-claws ul.claws .pill.paused    { background: #d8e2f0; color: #2a3f63; }
+      amebo-claws ul.claws .when { font-size: 11px; opacity: 0.55; white-space: nowrap; }
+      amebo-claws ul.claws .desc { font-size: 12px; opacity: 0.8; margin-top: 2px; line-height: 1.4; }
+      amebo-claws ul.claws .meta { font-size: 11px; opacity: 0.55; margin-top: 3px; display: flex; gap: 10px; flex-wrap: wrap; }
+      amebo-claws ul.claws .meta code { font-family: ui-monospace, monospace; font-size: 10.5px; opacity: 0.8; }
+      amebo-claws .header { display: flex; justify-content: space-between; font-size: 11px; opacity: 0.55; margin-bottom: 6px; }
       amebo-claws .empty { font-size: 12px; opacity: 0.6; }
       amebo-digest ul { padding-left: 1.2em; margin: 4px 0; }
       .amebo-error { color: #b00; font-size: 12px; }
@@ -350,6 +361,25 @@
   }
 
   // ---- <amebo-claws> ------------------------------------------------------
+  // Renders a list of amebo claws (rows from amebo's `goals` table).
+  // Attrs:
+  //   data-up      base URL of the amebo proxy mount or origin (required)
+  //   data-status  filter to one status (pending|active|completed|failed|paused)
+  //   data-limit   max rows, default 20
+  //
+  // No abra context anywhere. Strict-scope: amebo claws only.
+
+  function _truncate(s, n) {
+    s = String(s || '').replace(/\s+/g, ' ').trim();
+    if (s.length <= n) return s;
+    return s.slice(0, n - 1).trimEnd() + '…';
+  }
+
+  function _statusPill(status) {
+    const allowed = ['pending', 'active', 'completed', 'failed', 'paused'];
+    const cls = allowed.includes(status) ? status : '';
+    return `<span class="pill ${cls}">${esc(status || '?')}</span>`;
+  }
 
   class AmeboClaws extends HTMLElement {
     async connectedCallback() {
@@ -358,33 +388,53 @@
       if (!base) return showError(this, 'missing data-up');
       const status = this.dataset.status || '';
       const limit = parseInt(this.dataset.limit || '20', 10);
+      this._statusFilter = status;
       const params = new URLSearchParams();
       if (status) params.set('status', status);
       if (limit) params.set('limit', String(limit));
       const qs = params.toString();
       const url = `${base}/api/goals/${qs ? '?' + qs : ''}`;
-      this.innerHTML = '<div class="amebo-loading">loading goals…</div>';
+      this.innerHTML = '<div class="amebo-loading">loading claws…</div>';
       try {
-        const goals = await jget(url);
-        this._render(Array.isArray(goals) ? goals : []);
+        const claws = await jget(url);
+        this._render(Array.isArray(claws) ? claws : []);
       } catch (err) {
         showError(this, err);
       }
     }
 
-    _render(goals) {
-      if (goals.length === 0) {
-        this.innerHTML = '<div class="empty">No goals.</div>';
+    _render(claws) {
+      if (claws.length === 0) {
+        const filter = this._statusFilter ? ` (status=${esc(this._statusFilter)})` : '';
+        this.innerHTML = `<div class="empty">No claws${filter}.</div>`;
         return;
       }
-      const items = goals.map((g) => `
-        <li>
-          <span class="title"><strong>${esc(g.title || '')}</strong></span>
-          <span class="status">${esc(g.status || '')}</span>
-          <span class="when">${esc(relTime(g.updated_at || g.created_at))}</span>
-        </li>
-      `).join('');
-      this.innerHTML = `<ul class="goals">${items}</ul>`;
+      const items = claws.map((c) => {
+        const desc = c.description ? `<div class="desc">${esc(_truncate(c.description, 240))}</div>` : '';
+        const cron = c.trigger_config && c.trigger_config.cron
+          ? `<span>cron: <code>${esc(c.trigger_config.cron)}</code></span>` : '';
+        const notify = c.notify_channel
+          ? `<span>notify: <code>${esc(c.notify_channel)}</code></span>` : '';
+        const stores = c.config && Array.isArray(c.config.context_stores) && c.config.context_stores.length
+          ? `<span>stores: ${c.config.context_stores.length}</span>` : '';
+        const completed = c.completed_at
+          ? ` · done ${esc(relTime(c.completed_at))}` : '';
+        const meta = (cron || notify || stores)
+          ? `<div class="meta">${cron}${notify}${stores}</div>` : '';
+        return `
+          <li>
+            <div class="row">
+              <span class="title">${esc(c.title || '(untitled)')}</span>
+              ${_statusPill(c.status)}
+              <span class="when">${esc(relTime(c.updated_at || c.created_at))}${completed}</span>
+            </div>
+            ${desc}
+            ${meta}
+          </li>
+        `;
+      }).join('');
+      const header = `<div class="header"><span>${claws.length} claw${claws.length === 1 ? '' : 's'}${this._statusFilter ? ' · ' + esc(this._statusFilter) : ''}</span></div>`;
+      this.innerHTML = `${header}<ul class="claws">${items}</ul>`;
     }
   }
 
