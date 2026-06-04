@@ -1,12 +1,16 @@
 // amebo embed bundle v0
 //
-// Registers three web components for use inside other shells (abra view,
+// Registers web components for use inside other shells (abra view,
 // hosted demos, anything that wants amebo intelligence as a widget):
 //
-//   <amebo-ask>      a question box that posts to /api/qa/ask
-//   <amebo-goal>     one goal's state, with dispatch/pause/resume buttons + last 3 events
-//   <amebo-goals>    a filtered list of goals (data-status, data-limit) from /api/goals/
-//   <amebo-digest>   "what should I look at today?" rendered from /api/digest
+//   <amebo-ask>          a question box that posts to /api/qa/ask
+//   <amebo-claws>        a filtered list of claws (data-status, data-limit) from /api/goals/
+//   <amebo-claw>         (formerly <amebo-goal>) one claw's state, with dispatch/pause/resume + last 3 events
+//                        — rename pending; element still registered as <amebo-goal> for now
+//   <amebo-digest>       "what should I look at today?" rendered from /api/digest
+//   <amebo-create-claw>  pure claw-create form. Posts to POST /api/goals/, no abra write.
+//                        Dispatches an `amebo-claw-created` CustomEvent on success
+//                        so abra-side hosts can write the EXECUTES_VIA binding.
 //
 // Contract with the host shell (per abra view session, 2026-05-31):
 //
@@ -57,28 +61,28 @@
     const s = document.createElement('style');
     s.id = 'amebo-embed-styles';
     s.textContent = `
-      amebo-ask, amebo-goal, amebo-digest, amebo-goals, amebo-create-goal {
+      amebo-ask, amebo-goal, amebo-digest, amebo-claws, amebo-create-claw {
         display: block;
         font-family: system-ui, -apple-system, sans-serif;
         font-size: 14px;
         color: inherit;
         line-height: 1.4;
       }
-      amebo-create-goal .hd { margin-bottom: 8px; }
-      amebo-create-goal .hd .why { font-weight: normal; opacity: 0.7; font-size: 12px; }
-      amebo-create-goal label { display: block; margin: 8px 0; font-size: 13px; }
-      amebo-create-goal label.clawable { display: flex; align-items: center; gap: 6px; }
-      amebo-create-goal input[type=text], amebo-create-goal textarea {
+      amebo-create-claw .hd { margin-bottom: 8px; }
+      amebo-create-claw .hd .why { font-weight: normal; opacity: 0.7; font-size: 12px; }
+      amebo-create-claw label { display: block; margin: 8px 0; font-size: 13px; }
+      amebo-create-claw label.clawable { display: flex; align-items: center; gap: 6px; }
+      amebo-create-claw input[type=text], amebo-create-claw textarea {
         width: 100%; padding: 6px 8px; font: inherit; box-sizing: border-box;
       }
-      amebo-create-goal .actions { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
-      amebo-create-goal button { padding: 6px 12px; cursor: pointer; font: inherit; }
-      amebo-create-goal button.commit { font-weight: 600; }
-      amebo-create-goal details.feedback { margin: 10px 0; font-size: 12px; opacity: 0.85; }
-      amebo-create-goal details.feedback summary { cursor: pointer; }
-      amebo-create-goal details.feedback textarea { margin-top: 6px; }
-      amebo-create-goal .status { margin-top: 8px; font-size: 12px; }
-      amebo-create-goal.saved code, amebo-create-goal .saved code {
+      amebo-create-claw .actions { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; }
+      amebo-create-claw button { padding: 6px 12px; cursor: pointer; font: inherit; }
+      amebo-create-claw button.commit { font-weight: 600; }
+      amebo-create-claw details.feedback { margin: 10px 0; font-size: 12px; opacity: 0.85; }
+      amebo-create-claw details.feedback summary { cursor: pointer; }
+      amebo-create-claw details.feedback textarea { margin-top: 6px; }
+      amebo-create-claw .status { margin-top: 8px; font-size: 12px; }
+      amebo-create-claw.saved code, amebo-create-claw .saved code {
         background: rgba(0,0,0,0.06); padding: 1px 4px; border-radius: 3px;
         font-size: 12px;
       }
@@ -94,12 +98,12 @@
       amebo-goal ul.events .when { opacity: 0.6; margin-right: 6px; }
       amebo-goal ul.events .action { font-family: ui-monospace, monospace; }
       amebo-goal ul.events .summary { opacity: 0.8; }
-      amebo-goals ul.goals { list-style: none; padding-left: 0; margin: 0; }
-      amebo-goals ul.goals li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-top: 1px solid rgba(0,0,0,0.06); }
-      amebo-goals ul.goals .title { flex: 1; }
-      amebo-goals ul.goals .status { font-size: 12px; opacity: 0.7; }
-      amebo-goals ul.goals .when { font-size: 12px; opacity: 0.5; }
-      amebo-goals .empty { font-size: 12px; opacity: 0.6; }
+      amebo-claws ul.goals { list-style: none; padding-left: 0; margin: 0; }
+      amebo-claws ul.goals li { display: flex; gap: 8px; align-items: baseline; padding: 4px 0; border-top: 1px solid rgba(0,0,0,0.06); }
+      amebo-claws ul.goals .title { flex: 1; }
+      amebo-claws ul.goals .status { font-size: 12px; opacity: 0.7; }
+      amebo-claws ul.goals .when { font-size: 12px; opacity: 0.5; }
+      amebo-claws .empty { font-size: 12px; opacity: 0.6; }
       amebo-digest ul { padding-left: 1.2em; margin: 4px 0; }
       .amebo-error { color: #b00; font-size: 12px; }
       .amebo-loading { opacity: 0.6; font-size: 12px; }
@@ -345,9 +349,9 @@
     }
   }
 
-  // ---- <amebo-goals> ------------------------------------------------------
+  // ---- <amebo-claws> ------------------------------------------------------
 
-  class AmeboGoals extends HTMLElement {
+  class AmeboClaws extends HTMLElement {
     async connectedCallback() {
       ensureStyles();
       const base = upBase(this);
@@ -384,183 +388,138 @@
     }
   }
 
-  // ---- <amebo-create-goal> ------------------------------------------------
-  // A clarifying / placement component.
+  // ---- <amebo-create-claw> ------------------------------------------------
   //
-  // Takes free text from the user. Calls /api/intentions/place which uses
-  // amebo's AI to propose where the thought belongs in the user's abra map
-  // (name, content summary, labels, optional cron if amebo should actively
-  // work on it). User edits any field, can re-propose with free-text
-  // feedback ("no, this is a principle not a goal"), and confirms — at
-  // which point /api/intentions/commit writes to abra and (if clawable)
-  // creates an amebo goal stamped with a RUN_BY binding pointing at it.
+  // Pure claw-create form. Posts to POST /api/goals/ to create a new claw row
+  // in amebo's `goals` table (org-scoped, from the authenticated JWT). Does
+  // NOT write to abra. Amebo manages claws; abra owns goals; the optional
+  // linkage (goal -> claw) is recorded abra-side via an EXECUTES_VIA binding
+  // by whatever surface triggered this component.
   //
-  // Attributes:
-  //   data-up      base URL of the amebo proxy mount (required)
-  //   data-scope   defaults to "golda"
-  //   data-name    optional — if set, the component is in extend mode
-  //                and assumes that name; the user is adding to it.
+  // On successful create, the element dispatches a bubbling, composed
+  // `amebo-claw-created` CustomEvent with the new claw payload in `detail`,
+  // so a host (e.g. an abra-side goals page) can write the EXECUTES_VIA
+  // binding itself.
+  //
+  // Attributes (all optional except data-up):
+  //   data-up           base URL of the amebo proxy mount or origin (required)
+  //   data-title        pre-fill title
+  //   data-description  pre-fill description
+  //   data-cron         pre-fill cron string
+  //   data-notify       pre-fill notify channel
+  //   data-stores       comma-separated list of opaque context-store URLs
+  //                     the claw should read/write at each tick. Each URL
+  //                     implements the context-store-contract.md endpoints
+  //                     (POST/GET /entries). Amebo never parses these.
+  //   data-provenance   who created this claw and how, as a JSON blob
+  //                     (e.g. {"created_by":"urn:abra:user/golda","via":"amebo-claws-attach"}).
+  //
+  // The stores list and provenance pass through into the claw's `config`
+  // unchanged. Amebo does not interpret them. See arch_notes.md
+  // "Context stores and claws" and context-store-contract.md for the contract.
 
-  class AmeboCreateGoal extends HTMLElement {
+  class AmeboCreateClaw extends HTMLElement {
     connectedCallback() {
       ensureStyles();
       this._base = upBase(this);
       if (!this._base) return showError(this, 'missing data-up');
-      this._scope = this.dataset.scope || 'golda';
-      this._nameHint = this.dataset.name || null;
-      this._proposal = null;
-      this._renderInput();
-    }
-
-    _renderInput(prev) {
-      const title = this._nameHint
-        ? `Add to <em>${esc(this._nameHint)}</em>`
-        : 'Place a new thought';
-      this.innerHTML = `
-        <div class="amebo-create-goal">
-          <div class="hd"><strong>${title}</strong></div>
-          <textarea class="input" rows="4"
-            placeholder="What's on your mind? Amebo will figure out where it goes."
-            >${esc(prev || '')}</textarea>
-          <div class="actions">
-            <button class="propose" type="button">Propose placement</button>
-          </div>
-          <div class="status"></div>
-        </div>
-      `;
-      this.querySelector('button.propose').addEventListener('click', () => this._propose());
-    }
-
-    async _propose(feedback) {
-      const text = (this.querySelector('textarea.input') || {}).value || '';
-      if (!text.trim()) {
-        this._setStatus('type something first.');
-        return;
-      }
-      this._setStatus('thinking…', true);
-      try {
-        const body = { text, scope: this._scope };
-        if (this._nameHint) body.name = this._nameHint;
-        if (feedback) body.feedback = feedback;
-        const p = await jpost(`${this._base}/api/intentions/place`, body);
-        this._proposal = p;
-        this._renderProposal(text, p);
-      } catch (err) {
-        showError(this, err);
-      }
-    }
-
-    _renderProposal(originalText, p) {
-      const cronVal = p.cron || '';
-      const labelsStr = (p.labels || []).join(', ');
-      this.innerHTML = `
-        <div class="amebo-create-goal proposal">
-          <div class="hd"><strong>Proposed placement</strong>${
-            p.reasoning ? `<span class="why"> — ${esc(p.reasoning)}</span>` : ''
-          }</div>
-
-          <label>Name<br><input class="f-name" type="text" value="${esc(p.name)}"></label>
-          <label>Scope<br><input class="f-scope" type="text" value="${esc(p.scope)}"></label>
-          <label>Content (what gets stored)<br><textarea class="f-content" rows="5">${esc(p.content_summary)}</textarea></label>
-          <label>Labels (comma-separated)<br><input class="f-labels" type="text" value="${esc(labelsStr)}"></label>
-
-          <label class="clawable">
-            <input type="checkbox" class="f-clawable" ${p.make_clawable ? 'checked' : ''}>
-            Make this a clawable goal (amebo will actively work on it)
-          </label>
-          <div class="claw-fields" ${p.make_clawable ? '' : 'hidden'}>
-            <label>Title<br><input class="f-title" type="text" value="${esc(p.title)}"></label>
-            <label>Description<br><textarea class="f-desc" rows="2">${esc(p.description)}</textarea></label>
-            <label>Cron (blank = manual)<br><input class="f-cron" type="text" value="${esc(cronVal)}" placeholder="0 9 * * 1"></label>
-          </div>
-
-          <details class="feedback">
-            <summary>Not quite right? Tell amebo what to fix</summary>
-            <textarea class="f-feedback" rows="2" placeholder="e.g. 'this is a principle not a goal' or 'watch weekly not daily'"></textarea>
-            <button class="re-propose" type="button">Re-propose</button>
-          </details>
-
-          <div class="actions">
-            <button class="commit" type="button">Save to abra</button>
-            <button class="cancel" type="button">Start over</button>
-          </div>
-          <div class="status"></div>
-        </div>
-      `;
-
-      this.querySelector('.f-clawable').addEventListener('change', (e) => {
-        const fields = this.querySelector('.claw-fields');
-        if (e.target.checked) fields.removeAttribute('hidden');
-        else fields.setAttribute('hidden', '');
-      });
-      this.querySelector('button.commit').addEventListener('click', () => this._commit());
-      this.querySelector('button.cancel').addEventListener('click', () => this._renderInput(originalText));
-      this.querySelector('button.re-propose').addEventListener('click', () => {
-        const fb = (this.querySelector('.f-feedback') || {}).value || '';
-        // re-render the input so we can re-call propose with the original text + feedback
-        const text = originalText;
-        this._renderInput(text);
-        // populate then propose
-        const ta = this.querySelector('textarea.input');
-        if (ta) ta.value = text;
-        this._propose(fb);
-      });
-    }
-
-    _collectProposal() {
-      const labels = (this.querySelector('.f-labels').value || '')
-        .split(',').map(s => s.trim()).filter(Boolean);
-      const clawable = this.querySelector('.f-clawable').checked;
-      return {
-        scope: this.querySelector('.f-scope').value.trim() || this._scope,
-        name: this.querySelector('.f-name').value.trim(),
-        name_is_new: !!this._proposal && this._proposal.name_is_new,
-        content_summary: this.querySelector('.f-content').value,
-        labels,
-        make_clawable: clawable,
-        cron: clawable ? (this.querySelector('.f-cron').value.trim() || null) : null,
-        title: clawable ? (this.querySelector('.f-title').value.trim() || '') : '',
-        description: clawable ? (this.querySelector('.f-desc').value || '') : '',
-        reasoning: this._proposal ? this._proposal.reasoning : '',
+      this._defaults = {
+        title:       this.dataset.title || '',
+        description: this.dataset.description || '',
+        cron:        this.dataset.cron || '',
+        notify:      this.dataset.notify || '',
+        stores:      this.dataset.stores || '',
       };
+      let prov = null;
+      if (this.dataset.provenance) {
+        try { prov = JSON.parse(this.dataset.provenance); } catch (e) { prov = null; }
+      }
+      this._provenance = prov;
+      this._renderForm(this._defaults);
+    }
+
+    _renderForm(values) {
+      this.innerHTML = `
+        <div class="amebo-create-claw">
+          <div class="hd"><strong>New claw</strong></div>
+
+          <label>Title<br>
+            <input class="f-title" type="text" value="${esc(values.title)}" maxlength="500">
+          </label>
+          <label>Description<br>
+            <textarea class="f-desc" rows="3">${esc(values.description)}</textarea>
+          </label>
+          <label>Cron schedule (blank = manual dispatch only)<br>
+            <input class="f-cron" type="text" value="${esc(values.cron)}" placeholder="0 9 * * 1">
+          </label>
+          <label>Notify channel (Slack channel id, optional)<br>
+            <input class="f-notify" type="text" value="${esc(values.notify)}" maxlength="255">
+          </label>
+          <label>Context store URLs (optional, comma-separated)<br>
+            <input class="f-stores" type="text" value="${esc(values.stores)}" placeholder="https://abra.example.org/store/<scope>/<catcode>/">
+          </label>
+
+          <div class="actions">
+            <button class="commit" type="button">Create claw</button>
+          </div>
+          <div class="status"></div>
+        </div>
+      `;
+      this.querySelector('button.commit').addEventListener('click', () => this._commit());
+    }
+
+    _collect() {
+      const title       = ((this.querySelector('.f-title')  || {}).value || '').trim();
+      const description = ((this.querySelector('.f-desc')   || {}).value || '').trim();
+      const cron        = ((this.querySelector('.f-cron')   || {}).value || '').trim();
+      const notify      = ((this.querySelector('.f-notify') || {}).value || '').trim();
+      const storesRaw   = ((this.querySelector('.f-stores') || {}).value || '').trim();
+      const stores = storesRaw.split(',').map(s => s.trim()).filter(Boolean);
+      const body = { title };
+      if (description) body.description = description;
+      if (cron) body.trigger_config = { cron };
+      if (notify) body.notify_channel = notify;
+      // Opaque context fields go into config; amebo stores, the context store interprets.
+      const config = {};
+      if (stores.length) config.context_stores = stores;
+      if (this._provenance) config.provenance = this._provenance;
+      if (Object.keys(config).length) body.config = config;
+      return body;
     }
 
     async _commit() {
-      const proposal = this._collectProposal();
-      if (!proposal.name) {
-        this._setStatus('name is required.');
+      const body = this._collect();
+      if (!body.title) {
+        this._setStatus('title is required.');
         return;
       }
-      if (!proposal.content_summary.trim()) {
-        this._setStatus('content is empty.');
-        return;
-      }
-      this._setStatus('saving…', true);
+      this._setStatus('creating…', true);
       try {
-        const r = await jpost(`${this._base}/api/intentions/commit`, proposal);
+        const r = await jpost(`${this._base}/api/goals/`, body);
         this._renderSaved(r);
+        this.dispatchEvent(new CustomEvent('amebo-claw-created', {
+          detail: r, bubbles: true, composed: true,
+        }));
       } catch (err) {
         showError(this, err);
       }
     }
 
     _renderSaved(r) {
-      const goalLine = r.goal_id
-        ? `<div>Created amebo goal <code>${esc(r.goal_id)}</code> — claw will pick it up on its next tick.</div>`
-        : '';
       this.innerHTML = `
-        <div class="amebo-create-goal saved">
-          <div class="hd"><strong>Saved.</strong></div>
-          <div>Name: <code>${esc(r.scope)}/${esc(r.name)}</code></div>
-          <div>Content blob id: <code>${esc(r.content_id)}</code></div>
-          <div>${esc(r.bindings_written)} binding${r.bindings_written === 1 ? '' : 's'} written. Labels: ${esc((r.labels_set || []).join(', ') || '(none)')}.</div>
-          ${goalLine}
+        <div class="amebo-create-claw saved">
+          <div class="hd"><strong>Claw created.</strong></div>
+          <div>id: <code>${esc(r.id)}</code></div>
+          <div>title: ${esc(r.title)}</div>
+          <div>status: ${esc(r.status)}</div>
           <div class="actions">
-            <button class="again" type="button">Place another</button>
+            <button class="again" type="button">Create another</button>
           </div>
         </div>
       `;
-      this.querySelector('button.again').addEventListener('click', () => this._renderInput(''));
+      this.querySelector('button.again').addEventListener('click', () => this._renderForm({
+        title: '', description: '', cron: '', notify: '',
+      }));
     }
 
     _setStatus(msg, loading) {
@@ -573,7 +532,7 @@
 
   if (!customElements.get('amebo-ask')) customElements.define('amebo-ask', AmeboAsk);
   if (!customElements.get('amebo-goal')) customElements.define('amebo-goal', AmeboGoal);
-  if (!customElements.get('amebo-goals')) customElements.define('amebo-goals', AmeboGoals);
+  if (!customElements.get('amebo-claws')) customElements.define('amebo-claws', AmeboClaws);
   if (!customElements.get('amebo-digest')) customElements.define('amebo-digest', AmeboDigest);
-  if (!customElements.get('amebo-create-goal')) customElements.define('amebo-create-goal', AmeboCreateGoal);
+  if (!customElements.get('amebo-create-claw')) customElements.define('amebo-create-claw', AmeboCreateClaw);
 })();

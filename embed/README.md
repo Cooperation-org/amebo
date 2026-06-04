@@ -4,14 +4,14 @@ Single-file vanilla web components that surface amebo data inside any
 host shell (abra view, demos, internal pages). Zero dependencies, no
 build step.
 
-`<amebo-goals>` accepts `data-status="active|pending|paused|..."` and
+`<amebo-claws>` accepts `data-status="active|pending|paused|..."` and
 `data-limit="N"` (default 20) to filter the list.
 
 ## What's here
 
 | File          | What                                                          |
 |---------------|---------------------------------------------------------------|
-| `amebo.js`    | The bundle. Registers `<amebo-ask>`, `<amebo-goal>`, `<amebo-goals>`, `<amebo-digest>`. |
+| `amebo.js`    | The bundle. Registers `<amebo-ask>`, `<amebo-goal>`, `<amebo-claws>`, `<amebo-digest>`. |
 | `demo.html`   | Standalone sanity page that mounts all four components against a URL-param-configurable `data-up`. |
 | `README.md`   | This file.                                                    |
 
@@ -24,27 +24,29 @@ The backend serves the bundle as a static file at `/embed/amebo.js`
 |----------------------|----------------------------|-------------------------------------------|
 | `<amebo-ask>`        | `POST /api/qa/ask`         | No (queries only)                         |
 | `<amebo-goal>`       | `GET /api/goals/{id}` + `/events` + dispatch-now / pause / resume | Yes |
-| `<amebo-goals>`      | `GET /api/goals/?status=&limit=` | No                                  |
+| `<amebo-claws>`      | `GET /api/goals/?status=&limit=` | No                                  |
 | `<amebo-digest>`     | `GET /api/digest`          | No                                        |
-| `<amebo-create-goal>` | `POST /api/intentions/place` + `POST /api/intentions/commit` | Yes (writes to abra; creates goal if clawable) |
+| `<amebo-create-claw>` | `POST /api/goals/`         | Yes (creates a claw in amebo's goals table; no abra write) |
 
-### `<amebo-create-goal>` — clarifying / placement
+### `<amebo-create-claw>` — pure claw-create form
 
-Takes free text. Asks amebo to propose where the thought goes in the
-user's abra map: a name (existing or new), labels, optional cron if it
-looks like a clawable goal. User edits any field, can give free-text
-feedback ("no, this is a principle not a goal") to re-propose, and
-confirms — at which point amebo writes to abra and, if clawable, creates
-an amebo goal stamped with a `RUN_BY` binding pointing at it.
+Plain form for creating a new claw row in amebo's `goals` table. No abra
+involvement. Amebo manages claws; abra owns goals; the optional
+goal-to-claw linkage is recorded abra-side via an EXECUTES_VIA binding,
+written by whatever surface triggered this component (typically an
+abra-side goals page listening for the `amebo-claw-created` CustomEvent
+this component dispatches on success).
 
-Attributes:
-- `data-up` (required) — proxy base URL.
-- `data-scope` — defaults to `golda`.
-- `data-name` — if set, extend mode: assumes that name.
+Attributes (all optional except `data-up`):
+- `data-up` (required) — proxy base URL or origin.
+- `data-title` — pre-fill title.
+- `data-description` — pre-fill description.
+- `data-cron` — pre-fill cron schedule (blank means manual dispatch only).
+- `data-notify` — pre-fill notify channel (e.g. Slack channel id).
+- `data-stores` — comma-separated list of context-store URLs the claw should read/write at each tick. Each URL implements the [`context-store-contract.md`](../../abra/context-store-contract.md) endpoints (POST/GET /entries). Amebo never parses these. Surfaces as an optional form input the user can override.
+- `data-provenance` — who created this claw and how, as a JSON blob. Machine-fed only; not shown in the form.
 
-A "clawable goal" pattern in abra: a name labeled `goal` AND bound by
-`RUN_BY` to `amebo:claw/<goal-uuid>`. The matching goal record in
-amebo's `goals` table carries `config.abra_ref = {scope, name}`.
+The stores list and provenance pass through into the claw's `config` JSON unchanged. Amebo does not interpret them. See `arch_notes.md` "Context stores and claws" and `context-store-contract.md` for the durable contract.
 
 ## Host-shell contract
 
