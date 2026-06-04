@@ -29,10 +29,13 @@ Amebo works without abra. With abra, it knows who it helps.
 
 One thing amebo does well: bring signals from many channels (Slack, email, Discord, SMS, webhooks) into one optional unified feed.
 
+Amebo is a funnel. A lot comes in. The core engine function is **crystallizing**: distilling that input down to the smallest output that still carries the meaning the receiver needs, in the receiver's voice and at the receiver's bandwidth. For a human, that is one or two lines on a cold ping, more only when the receiver is already engaged. The crystallize step matters more than any single channel adapter. See [`docs/CRYSTALLIZE.md`](docs/CRYSTALLIZE.md).
+
 ---
 
 **Detail**
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [`docs/CRYSTALLIZE.md`](docs/CRYSTALLIZE.md)
 - [`docs/ORGS_GOALS_CLAW.md`](docs/ORGS_GOALS_CLAW.md)
 - [`docs/POWERS_PLAN.md`](docs/POWERS_PLAN.md)
 - [`docs/CHANNEL_CONTRACT.md`](docs/CHANNEL_CONTRACT.md)
