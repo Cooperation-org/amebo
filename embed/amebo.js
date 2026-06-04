@@ -98,23 +98,55 @@
       amebo-goal ul.events .when { opacity: 0.6; margin-right: 6px; }
       amebo-goal ul.events .action { font-family: ui-monospace, monospace; }
       amebo-goal ul.events .summary { opacity: 0.8; }
-      amebo-claws ul.claws { list-style: none; padding-left: 0; margin: 0; }
-      amebo-claws ul.claws li { display: block; padding: 8px 0; border-top: 1px solid rgba(0,0,0,0.08); }
-      amebo-claws ul.claws li:first-child { border-top: none; }
-      amebo-claws ul.claws .row { display: flex; gap: 8px; align-items: baseline; }
-      amebo-claws ul.claws .title { flex: 1; font-weight: 500; }
-      amebo-claws ul.claws .pill { font-size: 11px; padding: 1px 6px; border-radius: 9px; }
-      amebo-claws ul.claws .pill.pending   { background: #f4e4b5; color: #5a4500; }
-      amebo-claws ul.claws .pill.active    { background: #c7e6c7; color: #1f5a1f; }
-      amebo-claws ul.claws .pill.completed { background: #d6d6d6; color: #444; }
-      amebo-claws ul.claws .pill.failed    { background: #f3c7c7; color: #7a1f1f; }
-      amebo-claws ul.claws .pill.paused    { background: #d8e2f0; color: #2a3f63; }
-      amebo-claws ul.claws .when { font-size: 11px; opacity: 0.55; white-space: nowrap; }
-      amebo-claws ul.claws .desc { font-size: 12px; opacity: 0.8; margin-top: 2px; line-height: 1.4; }
-      amebo-claws ul.claws .meta { font-size: 11px; opacity: 0.55; margin-top: 3px; display: flex; gap: 10px; flex-wrap: wrap; }
-      amebo-claws ul.claws .meta code { font-family: ui-monospace, monospace; font-size: 10.5px; opacity: 0.8; }
-      amebo-claws .header { display: flex; justify-content: space-between; font-size: 11px; opacity: 0.55; margin-bottom: 6px; }
-      amebo-claws .empty { font-size: 12px; opacity: 0.6; }
+      /* Visual style mirrors abra's Recent feed: soft-bordered card per
+         item with collapsible details. Uses currentColor so host palette
+         drives the tone. */
+      amebo-claws .claws-controls { display: flex; justify-content: flex-end; margin-bottom: 0.5rem; }
+      amebo-claws .claws-controls .count { margin-right: auto; font-size: 11px; opacity: 0.6; }
+      amebo-claws .claws-toggle {
+        background: transparent; border: none; color: inherit; cursor: pointer;
+        padding: 4px 8px; font: inherit; font-size: 0.9rem; opacity: 0.6;
+      }
+      amebo-claws .claws-toggle:hover { opacity: 1; }
+      amebo-claws .claws-toggle i { transition: transform 0.15s ease; transform: rotate(-90deg); display: inline-block; }
+      amebo-claws .claws-toggle.expanded i { transform: rotate(0deg); }
+      amebo-claws .claws-feed { display: flex; flex-direction: column; gap: 0.6rem; }
+      amebo-claws .claw-item {
+        border: 1px solid rgba(127,127,127,0.25);
+        border-radius: 8px;
+        padding: 0.6rem 0.85rem;
+        background: rgba(127,127,127,0.04);
+      }
+      amebo-claws .claw-item > .claw-head {
+        list-style: none; cursor: pointer;
+        display: flex; gap: 0.6rem; align-items: baseline; font-size: 0.9rem;
+      }
+      amebo-claws .claw-item > .claw-head::-webkit-details-marker { display: none; }
+      amebo-claws .claw-item:not([open]) > .claw-body { display: none; }
+      amebo-claws .claw-head .title { flex: 1; font-weight: 500; }
+      amebo-claws .claw-head .when { font-size: 11px; opacity: 0.55; white-space: nowrap; }
+      amebo-claws .pill {
+        font-size: 10.5px; padding: 1px 7px; border-radius: 9px;
+        border: 1px solid rgba(127,127,127,0.35);
+      }
+      amebo-claws .pill.pending   { background: rgba(244,228,181,0.55); border-color: rgba(180,150,80,0.5); }
+      amebo-claws .pill.active    { background: rgba(199,230,199,0.55); border-color: rgba(80,150,80,0.5); }
+      amebo-claws .pill.completed { background: rgba(220,220,220,0.45); border-color: rgba(140,140,140,0.5); }
+      amebo-claws .pill.failed    { background: rgba(243,199,199,0.55); border-color: rgba(180,80,80,0.5); }
+      amebo-claws .pill.paused    { background: rgba(216,226,240,0.6);  border-color: rgba(90,120,170,0.5); }
+      amebo-claws .claw-body { margin-top: 0.5rem; padding-top: 0.5rem; border-top: 1px dashed rgba(127,127,127,0.25); }
+      amebo-claws .claw-body .desc { white-space: pre-wrap; line-height: 1.5; font-size: 0.9rem; }
+      amebo-claws .claw-body .meta {
+        margin-top: 0.4rem; font-size: 11.5px; opacity: 0.7;
+        display: flex; gap: 0.9rem; flex-wrap: wrap;
+      }
+      amebo-claws .claw-body .meta code { font-family: ui-monospace, monospace; font-size: 11px; }
+      amebo-claws .claw-body .stores { margin-top: 0.3rem; font-size: 11.5px; opacity: 0.7; }
+      amebo-claws .claw-body .stores ul { margin: 0.2rem 0 0 0; padding-left: 1.2rem; }
+      amebo-claws .claw-body .stores code { font-family: ui-monospace, monospace; font-size: 10.5px; opacity: 0.85; word-break: break-all; }
+      amebo-claws .claw-body .open-link { display: inline-block; margin-top: 0.4rem; font-size: 11px; opacity: 0.7; }
+      amebo-claws .claw-body .open-link:hover { opacity: 1; }
+      amebo-claws .empty { font-size: 12px; opacity: 0.6; padding: 0.5rem 0; }
       amebo-digest ul { padding-left: 1.2em; margin: 4px 0; }
       .amebo-error { color: #b00; font-size: 12px; }
       .amebo-loading { opacity: 0.6; font-size: 12px; }
@@ -389,6 +421,7 @@
       const status = this.dataset.status || '';
       const limit = parseInt(this.dataset.limit || '20', 10);
       this._statusFilter = status;
+      this._base = base;
       const params = new URLSearchParams();
       if (status) params.set('status', status);
       if (limit) params.set('limit', String(limit));
@@ -409,32 +442,53 @@
         this.innerHTML = `<div class="empty">No claws${filter}.</div>`;
         return;
       }
+      const base = this._base || '';
       const items = claws.map((c) => {
-        const desc = c.description ? `<div class="desc">${esc(_truncate(c.description, 240))}</div>` : '';
         const cron = c.trigger_config && c.trigger_config.cron
           ? `<span>cron: <code>${esc(c.trigger_config.cron)}</code></span>` : '';
         const notify = c.notify_channel
           ? `<span>notify: <code>${esc(c.notify_channel)}</code></span>` : '';
-        const stores = c.config && Array.isArray(c.config.context_stores) && c.config.context_stores.length
-          ? `<span>stores: ${c.config.context_stores.length}</span>` : '';
         const completed = c.completed_at
-          ? ` · done ${esc(relTime(c.completed_at))}` : '';
-        const meta = (cron || notify || stores)
-          ? `<div class="meta">${cron}${notify}${stores}</div>` : '';
+          ? `<span>done: ${esc(relTime(c.completed_at))}</span>` : '';
+        const metaParts = [cron, notify, completed].filter(Boolean).join('');
+        const meta = metaParts ? `<div class="meta">${metaParts}</div>` : '';
+        const stores = c.config && Array.isArray(c.config.context_stores) && c.config.context_stores.length
+          ? `<div class="stores">stores:<ul>${c.config.context_stores.map(s => `<li><code>${esc(s)}</code></li>`).join('')}</ul></div>`
+          : '';
+        const desc = c.description ? `<div class="desc">${esc(_truncate(c.description, 1200))}</div>` : '';
+        const openLink = `<a class="open-link" href="${esc(base)}/claws/${esc(c.id)}" target="_blank" rel="noopener">open ↗</a>`;
         return `
-          <li>
-            <div class="row">
+          <details class="claw-item">
+            <summary class="claw-head">
               <span class="title">${esc(c.title || '(untitled)')}</span>
               ${_statusPill(c.status)}
-              <span class="when">${esc(relTime(c.updated_at || c.created_at))}${completed}</span>
+              <span class="when">${esc(relTime(c.updated_at || c.created_at))}</span>
+            </summary>
+            <div class="claw-body">
+              ${desc}
+              ${meta}
+              ${stores}
+              ${openLink}
             </div>
-            ${desc}
-            ${meta}
-          </li>
+          </details>
         `;
       }).join('');
-      const header = `<div class="header"><span>${claws.length} claw${claws.length === 1 ? '' : 's'}${this._statusFilter ? ' · ' + esc(this._statusFilter) : ''}</span></div>`;
-      this.innerHTML = `${header}<ul class="claws">${items}</ul>`;
+      const countLabel = `${claws.length} claw${claws.length === 1 ? '' : 's'}${this._statusFilter ? ' · ' + esc(this._statusFilter) : ''}`;
+      this.innerHTML = `
+        <div class="claws-controls">
+          <span class="count">${countLabel}</span>
+          <button type="button" class="claws-toggle" aria-label="collapse or expand all">
+            <i>▾</i>
+          </button>
+        </div>
+        <div class="claws-feed">${items}</div>
+      `;
+      // master toggle: clicking expands or collapses all <details>.
+      const toggle = this.querySelector('.claws-toggle');
+      toggle.addEventListener('click', () => {
+        const expanded = toggle.classList.toggle('expanded');
+        this.querySelectorAll('details.claw-item').forEach(d => { d.open = expanded; });
+      });
     }
   }
 
