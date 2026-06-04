@@ -129,6 +129,59 @@ app.add_api_route("/slack/events", slack_events, methods=["POST"], tags=["Slack 
 app.add_api_route("/slack/commands", slack_commands, methods=["POST"], tags=["Slack Commands"])
 
 
+# Routable per-claw view (per view session 2026-06-04: every viewable thing
+# gets a routable URL so the user can copy from UI and paste into voice).
+# The page mounts the embed bundle's singular claw component. Auth happens
+# in the browser via credentials: 'include'; if the user is not signed in,
+# the bundle will surface a 401 inline. The URL itself is always live.
+from fastapi.responses import HTMLResponse
+import html as _html
+
+_CLAW_PAGE_TEMPLATE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>amebo claw {short_id}</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root {{ color-scheme: light dark; }}
+  body {{
+    font-family: system-ui, -apple-system, sans-serif;
+    max-width: 760px; margin: 2rem auto; padding: 0 1rem;
+    line-height: 1.5;
+  }}
+  header {{ margin-bottom: 1rem; opacity: 0.7; font-size: 13px; }}
+  header code {{ font-family: ui-monospace, monospace; }}
+  .uri {{ font-family: ui-monospace, monospace; font-size: 12px; opacity: 0.7; }}
+  amebo-goal {{ display: block; margin-top: 1rem; }}
+</style>
+</head>
+<body>
+<header>
+  amebo claw · <code>{full_id}</code> ·
+  <span class="uri">amebo:claw/{full_id}</span>
+</header>
+<amebo-goal data-up="" data-path="{full_id}"></amebo-goal>
+<script src="/embed/amebo.js"></script>
+</body>
+</html>
+"""
+
+
+@app.get("/claws/{claw_id}", include_in_schema=False)
+async def claw_view(claw_id: str) -> HTMLResponse:
+    """Routable human-viewable page for one claw.
+
+    Renders the singular embed component (still registered as <amebo-goal>
+    pending its rename). Auth is browser-side; no claw data is rendered
+    server-side, so this endpoint does not leak across orgs.
+    """
+    safe_id = _html.escape(claw_id)
+    short = _html.escape(claw_id[:8])
+    body = _CLAW_PAGE_TEMPLATE.format(full_id=safe_id, short_id=short)
+    return HTMLResponse(content=body)
+
+
 # Include routers
 # Use real authentication by default
 app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
