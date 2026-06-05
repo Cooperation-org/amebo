@@ -10,7 +10,6 @@ Collaborators (repo, odoo, authenticate) are injected so the pipeline is unit-
 testable with fakes and crafted email.message objects.
 """
 
-import html
 import logging
 import re
 from email.message import Message
@@ -30,15 +29,19 @@ SERVICE_URI = "urn:abra:service:email-poller"
 
 
 def _provenance_body(sender: str, recipient: str, body: str, forwarded: bool = False) -> str:
-    """Chatter HTML with a visible provenance line, so the reader sees this was
-    added by the poller and from whom (not a human edit)."""
+    """
+    Plain-text chatter body with a visible provenance line, so the reader sees
+    this was added by the poller and from whom (not a human edit).
+
+    Plain text on purpose: Odoo's message_post over XML-RPC treats the body as
+    plaintext (it would escape any HTML we sent), and converts it to readable
+    HTML itself. Plain text also avoids any HTML-injection from the email body.
+    """
     if forwarded:
-        line = (f"via email-poller &middot; forwarded by {html.escape(sender)} "
-                f"&middot; original from {html.escape(recipient)}")
+        line = f"via email-poller · forwarded by {sender} · original from {recipient}"
     else:
-        line = (f"via email-poller &middot; from {html.escape(sender)} "
-                f"&middot; to {html.escape(recipient)}")
-    return f"<p><em>{line}</em></p><pre>{html.escape(body or '')}</pre>"
+        line = f"via email-poller · from {sender} · to {recipient}"
+    return f"{line}\n\n{body or ''}"
 
 
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
