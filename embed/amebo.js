@@ -146,6 +146,23 @@
       amebo-claws .claw-body .stores code { font-family: ui-monospace, monospace; font-size: 10.5px; opacity: 0.85; word-break: break-all; }
       amebo-claws .claw-body .open-link { display: inline-block; margin-top: 0.4rem; font-size: 11px; opacity: 0.7; }
       amebo-claws .claw-body .open-link:hover { opacity: 1; }
+      amebo-claws .claw-body .controls { margin-top: 0.5rem; display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
+      amebo-claws .claw-body .controls button {
+        padding: 3px 9px; font: inherit; font-size: 12px; cursor: pointer;
+        background: rgba(127,127,127,0.08); color: inherit;
+        border: 1px solid rgba(127,127,127,0.35); border-radius: 5px;
+      }
+      amebo-claws .claw-body .controls button:hover:not(:disabled) { background: rgba(127,127,127,0.2); }
+      amebo-claws .claw-body .controls button:disabled { opacity: 0.4; cursor: progress; }
+      amebo-claws .claw-body .controls button.danger { border-color: rgba(180,80,80,0.5); }
+      amebo-claws .claw-body .controls button.danger:hover:not(:disabled) { background: rgba(180,80,80,0.18); color: #7a1f1f; }
+      amebo-claws .claw-body .controls .control-status { font-size: 11.5px; opacity: 0.75; margin-left: 0.3rem; }
+      amebo-claws .claw-body .dispatch-result {
+        margin-top: 0.5rem; padding: 0.4rem 0.6rem; font-size: 12px;
+        background: rgba(127,127,127,0.06); border: 1px dashed rgba(127,127,127,0.3);
+        border-radius: 5px; white-space: pre-wrap; line-height: 1.4;
+      }
+      amebo-claws .claw-body .dispatch-result .head { font-weight: 500; font-size: 11.5px; margin-bottom: 0.2rem; opacity: 0.85; }
       amebo-claws .empty { font-size: 12px; opacity: 0.6; padding: 0.5rem 0; }
       amebo-digest ul { padding-left: 1.2em; margin: 4px 0; }
       .amebo-error { color: #b00; font-size: 12px; }
@@ -263,6 +280,22 @@
       throw new HttpError('POST', url, r.status, body);
     }
     return r.json();
+  }
+
+  async function jdelete(url) {
+    let r;
+    try {
+      r = await fetch(url, { method: 'DELETE', credentials: 'include' });
+    } catch (e) {
+      console.error('[amebo] network error', { method: 'DELETE', url, error: e });
+      throw new Error('network error: ' + (e && e.message || e));
+    }
+    if (!r.ok) {
+      const body = await readBody(r);
+      console.error('[amebo] http error', { method: 'DELETE', url, status: r.status, body });
+      throw new HttpError('DELETE', url, r.status, body);
+    }
+    return null; // 204 No Content
   }
 
   // ---- <amebo-ask> --------------------------------------------------------
@@ -443,36 +476,7 @@
         return;
       }
       const base = this._base || '';
-      const items = claws.map((c) => {
-        const cron = c.trigger_config && c.trigger_config.cron
-          ? `<span>cron: <code>${esc(c.trigger_config.cron)}</code></span>` : '';
-        const notify = c.notify_channel
-          ? `<span>notify: <code>${esc(c.notify_channel)}</code></span>` : '';
-        const completed = c.completed_at
-          ? `<span>done: ${esc(relTime(c.completed_at))}</span>` : '';
-        const metaParts = [cron, notify, completed].filter(Boolean).join('');
-        const meta = metaParts ? `<div class="meta">${metaParts}</div>` : '';
-        const stores = c.config && Array.isArray(c.config.context_stores) && c.config.context_stores.length
-          ? `<div class="stores">stores:<ul>${c.config.context_stores.map(s => `<li><code>${esc(s)}</code></li>`).join('')}</ul></div>`
-          : '';
-        const desc = c.description ? `<div class="desc">${esc(_truncate(c.description, 1200))}</div>` : '';
-        const openLink = `<a class="open-link" href="${esc(base)}/claws/${esc(c.id)}" target="_blank" rel="noopener">open ↗</a>`;
-        return `
-          <details class="claw-item">
-            <summary class="claw-head">
-              <span class="title">${esc(c.title || '(untitled)')}</span>
-              ${_statusPill(c.status)}
-              <span class="when">${esc(relTime(c.updated_at || c.created_at))}</span>
-            </summary>
-            <div class="claw-body">
-              ${desc}
-              ${meta}
-              ${stores}
-              ${openLink}
-            </div>
-          </details>
-        `;
-      }).join('');
+      const items = claws.map((c) => this._renderClaw(c, base)).join('');
       const countLabel = `${claws.length} claw${claws.length === 1 ? '' : 's'}${this._statusFilter ? ' · ' + esc(this._statusFilter) : ''}`;
       this.innerHTML = `
         <div class="claws-controls">
@@ -489,6 +493,127 @@
         const expanded = toggle.classList.toggle('expanded');
         this.querySelectorAll('details.claw-item').forEach(d => { d.open = expanded; });
       });
+      // per-claw controls
+      this.querySelectorAll('details.claw-item').forEach((li) => {
+        const runBtn = li.querySelector('button.run-now');
+        if (runBtn) runBtn.addEventListener('click', (e) => this._runNow(e, li));
+        const delBtn = li.querySelector('button.delete-claw');
+        if (delBtn) delBtn.addEventListener('click', (e) => this._delete(e, li));
+      });
+    }
+
+    _renderClaw(c, base) {
+      const cron = c.trigger_config && c.trigger_config.cron
+        ? `<span>cron: <code>${esc(c.trigger_config.cron)}</code></span>` : '';
+      const notify = c.notify_channel
+        ? `<span>notify: <code>${esc(c.notify_channel)}</code></span>` : '';
+      const completed = c.completed_at
+        ? `<span>done: ${esc(relTime(c.completed_at))}</span>` : '';
+      const metaParts = [cron, notify, completed].filter(Boolean).join('');
+      const meta = metaParts ? `<div class="meta">${metaParts}</div>` : '';
+      const stores = c.config && Array.isArray(c.config.context_stores) && c.config.context_stores.length
+        ? `<div class="stores">stores:<ul>${c.config.context_stores.map(s => `<li><code>${esc(s)}</code></li>`).join('')}</ul></div>`
+        : '';
+      const desc = c.description ? `<div class="desc">${esc(_truncate(c.description, 1200))}</div>` : '';
+      const openLink = `<a class="open-link" href="${esc(base)}/claws/${esc(c.id)}" target="_blank" rel="noopener">open ↗</a>`;
+
+      // Conditional controls.
+      // Run-now: any claw not in a terminal status (so pending/active/paused).
+      //   `active` is shown too because dispatch-now is the way to manually
+      //   re-tick a still-running claw. Excludes completed and failed.
+      // Delete: completed only. Per Golda 2026-06-05, terminal-and-done
+      //   claws are safe to remove from the UI; failed is intentionally not
+      //   surfaced here because the path forward on failed is usually retry,
+      //   not delete.
+      const runnable = c.status === 'pending' || c.status === 'active' || c.status === 'paused';
+      const deletable = c.status === 'completed';
+      const controlButtons = [
+        runnable ? `<button type="button" class="run-now">Run now</button>` : '',
+        deletable ? `<button type="button" class="delete-claw danger">Delete</button>` : '',
+      ].filter(Boolean).join('');
+      const controls = controlButtons
+        ? `<div class="controls" data-claw-id="${esc(c.id)}">${controlButtons}<span class="control-status"></span></div>`
+        : '';
+
+      return `
+        <details class="claw-item" data-claw-id="${esc(c.id)}">
+          <summary class="claw-head">
+            <span class="title">${esc(c.title || '(untitled)')}</span>
+            ${_statusPill(c.status)}
+            <span class="when">${esc(relTime(c.updated_at || c.created_at))}</span>
+          </summary>
+          <div class="claw-body">
+            ${desc}
+            ${meta}
+            ${stores}
+            ${openLink}
+            ${controls}
+            <div class="dispatch-result" hidden></div>
+          </div>
+        </details>
+      `;
+    }
+
+    async _runNow(ev, li) {
+      const btn = ev.currentTarget;
+      const id = li.dataset.clawId;
+      const title = (li.querySelector('.title') || {}).textContent || '(this claw)';
+      if (!confirm(`Run "${title}" now? It will execute its dispatch cycle.`)) return;
+      const status = li.querySelector('.control-status');
+      const result = li.querySelector('.dispatch-result');
+      this._setBusy(li, true);
+      if (status) { status.textContent = 'dispatching…'; status.className = 'control-status amebo-loading'; }
+      try {
+        const r = await jpost(`${this._base}/api/goals/${encodeURIComponent(id)}/dispatch-now`);
+        if (status) { status.textContent = ''; status.className = 'control-status'; }
+        if (result) {
+          const lines = [
+            `<div class="head">dispatched · status: ${esc(r.status || '?')}${r.notification_sent ? ' · notified' : ''}</div>`,
+            r.summary ? esc(r.summary) : '(no summary)',
+            r.error ? `\n\nerror: ${esc(r.error)}` : '',
+          ].join('');
+          result.innerHTML = lines;
+          result.hidden = false;
+        }
+      } catch (err) {
+        if (status) { status.textContent = 'dispatch failed'; status.className = 'control-status amebo-error'; }
+        console.error('[amebo] dispatch-now failed', err);
+      } finally {
+        this._setBusy(li, false);
+      }
+    }
+
+    async _delete(ev, li) {
+      const id = li.dataset.clawId;
+      const title = (li.querySelector('.title') || {}).textContent || '(this claw)';
+      if (!confirm(`Delete "${title}"? This removes the claw and its event history. This cannot be undone.`)) return;
+      this._setBusy(li, true);
+      const status = li.querySelector('.control-status');
+      if (status) { status.textContent = 'deleting…'; status.className = 'control-status amebo-loading'; }
+      try {
+        await jdelete(`${this._base}/api/goals/${encodeURIComponent(id)}`);
+        // remove the card from the DOM, update count
+        const card = li;
+        const list = this.querySelector('.claws-feed');
+        const countSpan = this.querySelector('.claws-controls .count');
+        card.remove();
+        if (list && countSpan) {
+          const remaining = list.querySelectorAll('details.claw-item').length;
+          const filt = this._statusFilter ? ' · ' + esc(this._statusFilter) : '';
+          countSpan.textContent = `${remaining} claw${remaining === 1 ? '' : 's'}${filt}`;
+          if (remaining === 0) {
+            this.innerHTML = `<div class="empty">No claws${this._statusFilter ? ' (status=' + esc(this._statusFilter) + ')' : ''}.</div>`;
+          }
+        }
+      } catch (err) {
+        if (status) { status.textContent = 'delete failed'; status.className = 'control-status amebo-error'; }
+        console.error('[amebo] delete failed', err);
+        this._setBusy(li, false);
+      }
+    }
+
+    _setBusy(li, busy) {
+      li.querySelectorAll('.controls button').forEach(b => { b.disabled = !!busy; });
     }
   }
 

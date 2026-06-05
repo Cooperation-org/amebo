@@ -250,3 +250,26 @@ async def dispatch_goal_now(
         error=result.error,
         notification_sent=result.notification_sent,
     )
+
+
+@router.delete("/{goal_id}", status_code=204)
+async def delete_goal(
+    goal_id: str,
+    client: dict = Depends(get_service_or_user),
+):
+    """Hard-delete a claw and its event history. Org-scoped: the
+    underlying engine call rejects if the claw does not belong to the
+    caller's org.
+
+    Per Golda 2026-06-05: deletion is appropriate for completed claws
+    that will not run again. The web component only surfaces this
+    control on terminal-status rows. Other callers (CLI, future admin)
+    can use it on any status; that is by design — the engine is the
+    enforcer of policy, not the route layer.
+    """
+    engine = _get_engine()
+    _load_or_404(engine, goal_id, client["org_id"])
+    engine.delete_goal(goal_id, org_id=client["org_id"])
+    logger.info("Goal deleted: id=%s org=%s key=%s",
+                goal_id, client["org_id"], client["key_name"])
+    return None

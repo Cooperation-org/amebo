@@ -199,6 +199,26 @@ class GoalRepo:
         finally:
             DatabaseConnection.return_connection(conn)
 
+    # --------------------------------------------------------------- Deletion
+
+    def delete(self, goal_id: str, org_id: int) -> bool:
+        """Hard-delete a goal. Returns True if a row was deleted, False if
+        the goal id was unknown or belonged to a different org. The
+        goal_events FK is `ON DELETE CASCADE`, so the audit trail goes with
+        the goal."""
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM goals WHERE id = %s AND org_id = %s",
+                    (goal_id, org_id),
+                )
+                deleted = cur.rowcount > 0
+            conn.commit()
+            return deleted
+        finally:
+            DatabaseConnection.return_connection(conn)
+
     # ---------------------------------------------------------------- Events
 
     def append_event(

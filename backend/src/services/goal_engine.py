@@ -186,6 +186,15 @@ class GoalEngine:
         assert result is not None
         return result
 
+    def delete_goal(self, goal_id: str, org_id: int) -> bool:
+        """Hard-delete a claw (and its events via FK CASCADE). Returns
+        True if a row was deleted. Org-scoped: rejects deletion of claws
+        belonging to a different org by returning False (the repo level
+        enforces this). Callers (routes, CLI, internal) decide their
+        own policy on which status values they allow this on; the engine
+        will delete any status."""
+        return self._repo.delete(goal_id, org_id)
+
     def fail(
         self,
         goal_id: str,
