@@ -54,3 +54,17 @@ no-run/hint/validation/list/auth. Coding tests now 22/22.
 subscription Agent SDK credits land 2026-06-15). Starting `CodingRunner` at app
 startup. `amebo-backend.service` is unchanged and the flag is OFF in prod, so
 nothing here executes there.
+
+---
+
+## 2026-06-05 — REVIEW REQUESTED: email→CRM poller
+
+Design doc: `docs/email-poller-architecture.md`. Please review/comment before code.
+
+Summary: send/BCC email to one inbox (amebo2019@gmail.com); poller files it.
+Separation of concerns is the hard rule — amebo polls, Odoo + abra each work
+independently, resolver is pluggable (`OdooResolver` default = To: → contact;
+`AbraResolver` later). Plus-alias routing (+crm/+project/+task/+rag), resolution
+order (reply-headers → To:/Cc → body token → dead-letter), idempotency on
+Message-ID. MVP = `+crm` → To: match → `odoo-cli log` to chatter; rest stubbed.
+Open questions for reviewers at the bottom of the doc.
