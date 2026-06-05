@@ -111,3 +111,104 @@ contact's chatter.
 3. Where should the poller run: its own process/systemd unit, or inside an
    existing amebo service? (Leaning own process, keeps it off the live web app.)
 4. One inbox for everything via `+tags`, or separate inboxes per destination?
+
+---
+
+## Review (view session, 2026-06-05)
+
+Critical review at Golda's request. Reviewed against the abra
+`security-design.md` working draft (sibling abra repo) so the
+threat model is consistent across both surfaces.
+
+### HIGH severity
+
+1. **Forgeable `To:` is a third-party CRM write attack.** Anyone on
+   the internet can send to `amebo2019+crm@gmail.com` with any `To:`
+   value. The poller matches `To:` → `res.partner` and posts to that
+   contact's chatter. No check that the email actually came from the
+   team. So an attacker sends `To: client@…`, `Bcc: amebo2019+crm@…`,
+   and the attacker's content lands in CRM under that client's
+   record, with downstream notifications to `mail.followers`.
+   **Fix:** dead-letter (or hard-drop) anything whose `From:` /
+   `Sender:` doesn't resolve to an allowlisted team identity (or
+   DKIM-validated team domain). Add as step 0 of the resolution
+   order, before any routing.
+
+2. **Plus-alias gives spoofers full router control.** Once `+crm` /
+   `+project` / `+task` ship, they're public knowledge. Anyone
+   hitting `amebo2019+task@…` triggers the task router. Hardening
+   the sender check in (1) closes this.
+
+3. **Credential management and OAuth aren't mentioned.** The poller
+   authenticates to Gmail (IMAP) somehow — app password? OAuth2
+   refresh token? Where does the secret live, who rotates, what
+   happens on revocation? Doc is silent. Same OAuth-required
+   principle as the rest of the team. For inbound polling, OAuth2
+   with a service-account-style refresh token, encrypted at rest,
+   rotation documented.
+
+4. **Author resolution NOW is "basic" but undefined.** §From →
+   partner: basic NOW; create-vs-skip policy STUB. If basic means
+   auto-create, an attacker can pollute the contact DB with phantom
+   records or hijack identity attribution. Lock NOW to
+   "skip-if-not-found"; auto-create only when the create-vs-skip
+   policy lands.
+
+### MEDIUM severity
+
+5. **Idempotency seen-set unbounded.** Storing every `Message-ID`
+   forever lets a sender DOS the dedup table with unique IDs. Bound
+   by TTL (30 days?) or hash-only with size cap; document the
+   policy.
+
+6. **Multi-recipient silent single-target.** §"single-target rule
+   for now; log the ambiguity" — but if no human reviews the log,
+   senders won't know that emails addressed to N clients filed
+   under one. Surface skipped recipients explicitly, ideally as a
+   follow-up task or a dead-letter row.
+
+7. **Dead-letter queue with no review workflow == silent drop.**
+   Doc calls it "never silently drop" but doesn't define the review
+   surface (CLI? web UI? Slack ping?) or cadence. Without that, it
+   is silent drop with a different name.
+
+8. **PII / retention not addressed.** Emails carry PII. No mention
+   of retention windows, encryption at rest, deletion-on-request.
+   Out of scope for MVP but flag as a "deferred" item with a
+   target.
+
+### LOW severity
+
+9. **Threading via `In-Reply-To` could leak across organizations**
+   if two senders happen to reuse a Message-ID (rare but specified).
+   Confirm the resolver doesn't follow stale IDs into the wrong
+   customer's thread.
+
+10. **`odoo-cli log` is a new verb** and the doc treats it as a
+    given. Cross-link to the odoo-cli repo PR; document version-skew
+    handling.
+
+11. **Plus-addressing locks you to Gmail.** Migration to any other
+    provider (Workspace switch, self-hosted IMAP) breaks routing.
+    Acceptable for v1, note as future migration cost.
+
+12. **Open questions miss the security ones.** Add to "Open
+    questions for reviewers" above: (a) sender authentication
+    mechanism; (b) credential storage and rotation; (c) explicit
+    threat model — what attacker are we defending against?
+
+### Strong points worth keeping
+
+- Resolution order is well-thought (reply headers → `To:` → token →
+  dead-letter).
+- Hard rule separation between Odoo, abra, amebo is sound.
+- `AbraResolver` stubbed behind an interface keeps amebo standalone.
+- Build-now vs stub split is honest about scope.
+
+### Cross-reference
+
+These HIGH findings overlap with abra's auth model in
+`abra/security-design.md`. Forgeable `To:` is the same shape as
+abra's "unauthenticated cross-scope write." OAuth credential
+management is the same gap as abra's "real identity at the entry
+point." Solving once across both surfaces is cheaper than twice.
