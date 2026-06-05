@@ -17,8 +17,10 @@ import re
 from email.utils import parseaddr
 from typing import Iterable, List, Tuple
 
-# Receiver-added Authentication-Results we trust (Gmail stamps this on receipt).
 _DKIM_PASS = re.compile(r"\bdkim=pass\b", re.IGNORECASE)
+
+# Default authserv-ids we trust (Gmail stamps Authentication-Results on receipt).
+DEFAULT_TRUSTED_AUTHSERV = ("google.com",)
 
 
 def _domain(addr: str) -> str:
@@ -30,6 +32,7 @@ def authenticate(
     auth_results_headers: Iterable[str],
     allowlist: Iterable[str],
     trusted_domains: Iterable[str],
+    trusted_authserv: Iterable[str] = DEFAULT_TRUSTED_AUTHSERV,
 ) -> Tuple[bool, str]:
     """
     Return (accepted, reason).
@@ -38,6 +41,8 @@ def authenticate(
     auth_results_headers: all Authentication-Results header values on the message.
     allowlist: exact sender addresses permitted.
     trusted_domains: domains whose every address is permitted (own domains only).
+    trusted_authserv: authserv-ids whose Authentication-Results we trust. Only
+        the receiver (Gmail) is trusted; a sender can forge this header otherwise.
     """
     _, addr = parseaddr(from_header or "")
     addr = addr.lower().strip()
@@ -52,14 +57,25 @@ def authenticate(
     if not (in_allowlist or in_trusted_domain):
         return False, "sender_not_allowlisted"
 
-    if not _dkim_passed(auth_results_headers):
+    if not _dkim_passed(auth_results_headers, trusted_authserv):
         return False, "dkim_not_passed"
 
     return True, "ok"
 
 
-def _dkim_passed(auth_results_headers: Iterable[str]) -> bool:
-    return any(_DKIM_PASS.search(h or "") for h in auth_results_headers)
+def _dkim_passed(auth_results_headers: Iterable[str], trusted_authserv: Iterable[str]) -> bool:
+    """dkim=pass, but only on a header stamped by a trusted authserv-id."""
+    authserv = [a.lower().strip() for a in trusted_authserv if a.strip()]
+    for h in auth_results_headers:
+        if not h:
+            continue
+        # authserv-id is the first token, before the first ';'
+        head = h.split(";", 1)[0].lower()
+        if authserv and not any(a in head for a in authserv):
+            continue   # not from our receiver — could be forged by the sender
+        if _DKIM_PASS.search(h):
+            return True
+    return False
 
 
 def auth_results_from_message(msg) -> List[str]:

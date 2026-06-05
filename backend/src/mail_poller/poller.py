@@ -10,6 +10,7 @@ Collaborators (repo, odoo, authenticate) are injected so the pipeline is unit-
 testable with fakes and crafted email.message objects.
 """
 
+import html
 import logging
 import re
 from email.message import Message
@@ -20,6 +21,22 @@ from src.mail_poller.sender_auth import authenticate as _authenticate
 from src.mail_poller.sender_auth import auth_results_from_message
 
 logger = logging.getLogger(__name__)
+
+# Stable service identity for this writer. Used as the provenance/trust signal so
+# a poller-written record is distinguishable from a human edit. When the poller
+# writes to abra, this is the binding's created_by (and needs a scope_access
+# grant there). For Odoo chatter today it appears in the message stamp.
+SERVICE_URI = "urn:abra:service:email-poller"
+
+
+def _provenance_body(sender: str, recipient: str, body: str) -> str:
+    """Chatter HTML with a visible provenance line, so the reader sees this was
+    added by the poller and from whom (not a human edit)."""
+    stamp = (
+        f"<p><em>via email-poller &middot; from {html.escape(sender)} "
+        f"&middot; to {html.escape(recipient)}</em></p>"
+    )
+    return stamp + f"<pre>{html.escape(body or '')}</pre>"
 
 
 def is_auto_reply(msg: Message) -> bool:
@@ -127,6 +144,7 @@ class Poller:
         ok, reason = self._authenticate(
             from_hdr, auth_results_from_message(msg),
             self.config.allowlist, self.config.trusted_domains,
+            getattr(self.config, "trusted_authserv", ("google.com",)),
         )
         if not ok:
             self.repo.dead_letter(reason, message_id=mid, from_addr=parseaddr(from_hdr)[1],
@@ -149,13 +167,14 @@ class Poller:
             return "no_recipient"
 
         target = recips[0]
+        sender = parseaddr(from_hdr)[1]
         partner_id = self.odoo.find_partner_by_email(target)
         created = False
         if partner_id is None:
             partner_id = self.odoo.create_partner(_name_for(msg, target), target)
             created = True
 
-        self.odoo.post_message(partner_id, subject, body_text(msg))
+        self.odoo.post_message(partner_id, subject, _provenance_body(sender, target, body_text(msg)))
 
         for other in recips[1:]:
             self.repo.dead_letter("skipped_recipient", message_id=mid, to_addrs=other,

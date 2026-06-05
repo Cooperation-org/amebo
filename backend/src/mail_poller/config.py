@@ -24,6 +24,9 @@ class PollerConfig:
     # Step 0
     allowlist: List[str] = field(default_factory=lambda: _csv("MAIL_POLLER_ALLOWLIST"))
     trusted_domains: List[str] = field(default_factory=lambda: _csv("MAIL_POLLER_TRUSTED_DOMAINS"))
+    # authserv-ids whose Authentication-Results we trust (our receiver only)
+    trusted_authserv: List[str] = field(
+        default_factory=lambda: _csv("MAIL_POLLER_TRUSTED_AUTHSERV") or ["google.com"])
     # idempotency seen-set TTL
     seen_ttl_days: int = field(default_factory=lambda: int(os.getenv("MAIL_POLLER_SEEN_TTL_DAYS", "90")))
 

@@ -57,6 +57,20 @@ def test_free_provider_domain_never_trusted_by_accident():
     assert not ok
 
 
+def test_forged_authserv_id_not_trusted():
+    # Sender forges their own Authentication-Results with a non-receiver authserv-id.
+    forged = "attacker.test; dkim=pass header.i=@gmail.com"
+    ok, reason = authenticate("btucson1@gmail.com", [forged], ALLOW, TRUSTED)
+    assert not ok and reason == "dkim_not_passed"
+
+
+def test_real_gmail_result_among_forged_is_trusted():
+    forged = "attacker.test; dkim=pass"
+    real = "mx.google.com; dkim=pass; dmarc=pass"
+    ok, reason = authenticate("btucson1@gmail.com", [forged, real], ALLOW, TRUSTED)
+    assert ok and reason == "ok"
+
+
 def test_auth_results_extracted_from_message():
     m = Message()
     m["From"] = "btucson1@gmail.com"

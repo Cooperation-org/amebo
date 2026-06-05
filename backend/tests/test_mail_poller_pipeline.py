@@ -91,6 +91,9 @@ def test_files_onto_existing_contact():
     assert odoo.posts[0]["partner_id"] == 88
     assert odoo.posts[0]["subject"] == "Hello"
     assert "hi there" in odoo.posts[0]["body"]
+    # provenance / trust signal is visible in the chatter post
+    assert "via email-poller" in odoo.posts[0]["body"]
+    assert "btucson1@gmail.com" in odoo.posts[0]["body"]
     assert "<abc@x>" in repo.seen
 
 
