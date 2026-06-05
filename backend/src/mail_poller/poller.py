@@ -29,14 +29,48 @@ logger = logging.getLogger(__name__)
 SERVICE_URI = "urn:abra:service:email-poller"
 
 
-def _provenance_body(sender: str, recipient: str, body: str) -> str:
+def _provenance_body(sender: str, recipient: str, body: str, forwarded: bool = False) -> str:
     """Chatter HTML with a visible provenance line, so the reader sees this was
     added by the poller and from whom (not a human edit)."""
-    stamp = (
-        f"<p><em>via email-poller &middot; from {html.escape(sender)} "
-        f"&middot; to {html.escape(recipient)}</em></p>"
-    )
-    return stamp + f"<pre>{html.escape(body or '')}</pre>"
+    if forwarded:
+        line = (f"via email-poller &middot; forwarded by {html.escape(sender)} "
+                f"&middot; original from {html.escape(recipient)}")
+    else:
+        line = (f"via email-poller &middot; from {html.escape(sender)} "
+                f"&middot; to {html.escape(recipient)}")
+    return f"<p><em>{line}</em></p><pre>{html.escape(body or '')}</pre>"
+
+
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+_FWD_MARKER_RE = re.compile(
+    r"(-{2,}\s*Forwarded message|Begin forwarded message|-{2,}\s*Original Message)",
+    re.IGNORECASE,
+)
+_FROM_LINE_RE = re.compile(r"^\s*From:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
+_INLINE_WROTE_RE = re.compile(r"\bOn\b.+?<?([\w.+-]+@[\w-]+\.[\w.-]+)>?\s*wrote:", re.IGNORECASE | re.DOTALL)
+
+
+def forwarded_origin_address(body: str) -> Optional[str]:
+    """
+    The original sender of a forwarded email (the client), pulled from the
+    forwarded block. Used when the client is not in To:/Cc (a plain forward).
+    """
+    if not body:
+        return None
+    # 1. A forwarded-block header: take the first From: after the marker.
+    m = _FWD_MARKER_RE.search(body)
+    if m:
+        after = body[m.end():]
+        fm = _FROM_LINE_RE.search(after)
+        if fm:
+            em = _EMAIL_RE.search(fm.group(1))
+            if em:
+                return em.group(0).lower()
+    # 2. Inline quote: "On <date>, Name <addr> wrote:"
+    im = _INLINE_WROTE_RE.search(body)
+    if im:
+        return im.group(1).lower()
+    return None
 
 
 def is_auto_reply(msg: Message) -> bool:
@@ -159,24 +193,31 @@ class Poller:
             self.repo.mark_seen(mid)
             return "unrouted_tag"
 
-        recips = recipient_addresses(msg, exclude_locals=[self._base_local])
-        if not recips:
-            self.repo.dead_letter("no_recipient", message_id=mid, from_addr=parseaddr(from_hdr)[1],
-                                  subject=subject, tag="crm")
-            self.repo.mark_seen(mid)
-            return "no_recipient"
-
-        target = recips[0]
         sender = parseaddr(from_hdr)[1]
+        body = body_text(msg)
+        recips = recipient_addresses(msg, exclude_locals=[self._base_local])
+        forwarded = False
+        if recips:
+            target, skipped = recips[0], recips[1:]
+        else:
+            # No client in To:/Cc — a plain forward. File under the original sender.
+            target, skipped, forwarded = forwarded_origin_address(body), [], True
+            if not target:
+                self.repo.dead_letter("no_recipient", message_id=mid, from_addr=sender,
+                                      subject=subject, tag="crm")
+                self.repo.mark_seen(mid)
+                return "no_recipient"
+
         partner_id = self.odoo.find_partner_by_email(target)
         created = False
         if partner_id is None:
             partner_id = self.odoo.create_partner(_name_for(msg, target), target)
             created = True
 
-        self.odoo.post_message(partner_id, subject, _provenance_body(sender, target, body_text(msg)))
+        self.odoo.post_message(
+            partner_id, subject, _provenance_body(sender, target, body, forwarded=forwarded))
 
-        for other in recips[1:]:
+        for other in skipped:
             self.repo.dead_letter("skipped_recipient", message_id=mid, to_addrs=other,
                                   subject=subject, tag="crm", detail=f"filed under {target}")
 

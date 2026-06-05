@@ -168,6 +168,56 @@ def test_multi_recipient_files_first_and_deadletters_rest():
     assert any(d["reason"] == "skipped_recipient" for d in repo.dead)
 
 
+FWD_BODY = (
+    "FYI below.\n\n"
+    "---------- Forwarded message ---------\n"
+    "From: Pat Client <pat@client.com>\n"
+    "Date: Mon, 2 Jun 2026\n"
+    "Subject: Proposal\n"
+    "To: Golda <gvelez17@gmail.com>\n\n"
+    "Here is the signed proposal.\n"
+)
+
+
+def test_forwarded_email_files_under_original_sender():
+    # To: is only the poller inbox (no client) -> parse forwarded From.
+    odoo = FakeOdoo()
+    m = msg(to="amebo2019+crm@gmail.com", subject="Fwd: Proposal", body=FWD_BODY)
+    assert poller(odoo=odoo).process(m) == "filed_created"
+    assert odoo.created[0]["email"] == "pat@client.com"
+    assert "forwarded by btucson1@gmail.com" in odoo.posts[0]["body"]
+    assert "original from pat@client.com" in odoo.posts[0]["body"]
+
+
+def test_forwarded_email_matches_existing_contact():
+    odoo = FakeOdoo(partners={"pat@client.com": 77})
+    m = msg(to="amebo2019+crm@gmail.com", body=FWD_BODY)
+    assert poller(odoo=odoo).process(m) == "filed"
+    assert odoo.posts[0]["partner_id"] == 77
+
+
+def test_inline_forward_on_wrote_form():
+    odoo = FakeOdoo()
+    body = "thoughts?\n\nOn Mon, Jun 2, 2026, Pat <pat@client.com> wrote:\n> hello\n"
+    m = msg(to="amebo2019+crm@gmail.com", body=body)
+    assert poller(odoo=odoo).process(m) == "filed_created"
+    assert odoo.created[0]["email"] == "pat@client.com"
+
+
+def test_forward_with_no_parseable_origin_dead_letters():
+    repo = FakeRepo()
+    m = msg(to="amebo2019+crm@gmail.com", body="just a note, nothing forwarded")
+    assert poller(repo).process(m) == "no_recipient"
+
+
+def test_direct_recipient_takes_priority_over_forwarded_block():
+    # If a real client is in To:, use that even if the body also has a forward.
+    odoo = FakeOdoo(partners={"client@acme.com": 9})
+    m = msg(to="Client <client@acme.com>", body=FWD_BODY)
+    assert poller(odoo=odoo).process(m) == "filed"
+    assert odoo.posts[0]["partner_id"] == 9   # acme, not pat@client.com
+
+
 def test_no_message_id_dead_letters():
     repo = FakeRepo()
     m = msg(mid=None)
