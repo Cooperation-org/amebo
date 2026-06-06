@@ -170,11 +170,14 @@ class TestLoopHappyPath:
         assert "Updated alpha" in result.summary
         assert "[loop stats:" in result.summary
 
-        # 4 tools called in order
+        # slack_post is GATED by the draft-approval gate (outbound action): it is
+        # held for approval and does NOT execute, so it is absent from the
+        # executed-tool calls. The free read/edit tools run normally.
         call_names = [c[0] for c in fake_tools["calls"]]
-        assert call_names == ["list_projects", "read_main_md", "edit_main_md", "slack_post"]
+        assert call_names == ["list_projects", "read_main_md", "edit_main_md"]
 
-        # Each tool call recorded as a goal_event
+        # Each tool call is still recorded as a goal_event (event recording runs
+        # whether the action executed or was held), including the held slack_post.
         events = engine.events(g["id"])
         actions = [e["action"] for e in events]
         assert "tool_call:list_projects" in actions

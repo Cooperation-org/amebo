@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from apscheduler.triggers.cron import CronTrigger
@@ -49,6 +49,21 @@ class GoalScheduler:
         self._tick_seconds = tick_seconds
         self._task: Optional[asyncio.Task] = None
         self._stopped = asyncio.Event()
+
+        # State-decay GC: register the standard per-store policies (threads,
+        # goal_events, abra working memory) so run_gc() in tick() can decay
+        # idle state (docs/STATE_DECAY_GC.md). register_default_policies is
+        # idempotent. GC is throttled (see _gc_due) — it need not run every tick.
+        self._last_gc: Optional[datetime] = None
+        self._gc_interval = timedelta(hours=1)
+        try:
+            from src.services.state_decay.stores import register_default_policies
+            register_default_policies()
+        except Exception:
+            logger.exception("state-decay policy registration failed")
+
+    def _gc_due(self, now: datetime) -> bool:
+        return self._last_gc is None or (now - self._last_gc) >= self._gc_interval
 
     # ---------------------------------------------------------------- Loop
 
@@ -117,6 +132,17 @@ class GoalScheduler:
                     continue
                 if result.status in ("completed", "failed"):
                     dispatched += 1
+
+        # State-decay GC pass (throttled; cheap, side-effect-isolated). Threads
+        # decay past their idle TTL, goal_events archival/no-delete, abra
+        # working memory dry-run. docs/STATE_DECAY_GC.md.
+        if self._gc_due(now):
+            self._last_gc = now
+            try:
+                from src.services.state_decay import run_gc
+                run_gc()
+            except Exception:
+                logger.exception("state-decay GC pass failed")
 
         return dispatched
 

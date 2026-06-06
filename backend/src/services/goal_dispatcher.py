@@ -41,6 +41,10 @@ from src.services.goal_engine import (
     GoalEngine, GoalNotFoundError, InvalidTransitionError,
 )
 from src.services.goal_guardrails import GuardrailContext, GuardrailTripped
+from src.services.draft_approval_service import DraftApprovalService
+from src.services.human_output_gate import (
+    HumanOutputGate, Disposition, register_output_gate_gc,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +123,30 @@ class GoalDispatcher:
         self._engine = engine or GoalEngine(self._goal_repo)
         self._instance_repo = instance_repo or InstanceRepo()
         self._client = anthropic_client          # may be None in tests
-        self._notify = notifier or _default_notifier
+
+        # Human-output (noise) gate: wrap the raw notifier so the claw's own
+        # status messages are deduped / thread-preferred / rate-limited /
+        # batched before they reach a human (docs/OUTPUT_GATE.md). The raw
+        # notifier is kept for the draft-approval gate's "approval needed"
+        # notices, which must always go out and not be batched/suppressed.
+        raw_notifier = notifier or _default_notifier
+        self._raw_notify = raw_notifier
+        self._output_gate = HumanOutputGate()
+        register_output_gate_gc(self._output_gate)
+
+        def _gated_notify(channel: str, message: str) -> bool:
+            decision = self._output_gate.gate(message, channel=channel)
+            if decision.disposition is Disposition.SEND:
+                return bool(raw_notifier(channel, decision.text or message))
+            # DEFER → queued for the daily stand-up; SUPPRESS → duplicate/noise.
+            return True
+
+        self._notify = _gated_notify
+
+        # Draft-approval gate: outbound/destructive tool calls are held for
+        # human approval before they execute (docs/DRAFT_APPROVAL_GATE.md).
+        # Approval notices use the raw notifier so they are never suppressed.
+        self._draft_gate = DraftApprovalService(notifier=raw_notifier)
 
     # ----------------------------------------------------------------- API
 
@@ -510,13 +537,34 @@ class GoalDispatcher:
                     "guardrails": guardrails,
                 }
                 try:
-                    result_text = tool.execute(tool_input, ctx) or ""
+                    # Draft-approval gate: FREE (read-only/internal) tools run
+                    # immediately; GATED outbound/destructive tools are held as
+                    # a pending_action for human approval and do NOT execute now
+                    # (docs/DRAFT_APPROVAL_GATE.md). Default-deny by action type.
+                    gate_result = self._draft_gate.gate_or_execute(
+                        org_id=goal.get("org_id"),
+                        action_type=name,
+                        acting_identity=f"amebo:{goal.get('org_id')}",
+                        executor=lambda _a: tool.execute(tool_input, ctx) or "",
+                        target=tool_input.get("channel") or tool_input.get("to"),
+                        payload=tool_input,
+                        preview=f"{name} requested by claw for goal {goal.get('title')}",
+                        goal_id=goal["id"],
+                    )
+                    if gate_result.gated:
+                        pa_id = (gate_result.pending_action or {}).get("id")
+                        result_text = (
+                            f"[held for approval] {name} requires human approval "
+                            f"before it runs. Pending action {pa_id} created."
+                        )
+                        is_error = False
+                    else:
+                        result_text = gate_result.result or ""
+                        is_error = result_text.startswith("Error:")
                 except Exception as exc:
                     logger.exception("Tool %s raised", name)
                     result_text = f"Tool {name} raised: {exc}"
                     is_error = True
-                else:
-                    is_error = result_text.startswith("Error:")
 
                 # Snip very long results before showing the model again,
                 # but record the full thing in the event metadata.
