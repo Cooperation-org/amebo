@@ -170,7 +170,7 @@ could leak. Isolation is already guaranteed by the existing
 `user:Y`.
 
 A migration file is included for documentation and an optional index:
-`backend/migrations/015_credential_helper_label_convention.sql` —
+`backend/migrations/016_credential_helper_label_convention.sql` —
 **NOT APPLIED**. It only adds a column comment recording the label
 convention and one partial index; it adds no token data and changes no
 existing column. Apply it only after the OAuth owners confirm the

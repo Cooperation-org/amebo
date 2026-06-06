@@ -42,7 +42,7 @@ registry; the existing `ThreadRepo.garbage_collect` is left untouched.
 
 ### Retention marker for threads
 
-Migration `015_thread_retention.sql` (committed, **not applied**) adds a
+Migration `017_thread_retention.sql` (committed, **not applied**) adds a
 nullable `threads.retained_until TIMESTAMPTZ`. When the retention judgment
 decides a thread is worth keeping past its idle TTL, it stamps a future
 timestamp there; the thread store treats `retained_until > NOW()` as durable
