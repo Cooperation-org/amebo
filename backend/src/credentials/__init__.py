@@ -29,6 +29,17 @@ from src.credentials.connect import (
     get_connect_link,
     consume_connect_link,
 )
+from src.credentials.credential_helper import (
+    CredentialHelper,
+    CredentialStore,
+    ResolverCredentialStore,
+    EnvCredentialStore,
+    ScopedToken,
+    KIND_DELEGATED,
+    KIND_SERVICE,
+    delegated_author_uri,
+    service_author_uri,
+)
 
 
 __all__ = [
@@ -43,4 +54,14 @@ __all__ = [
     "mint_connect_link",
     "get_connect_link",
     "consume_connect_link",
+    # Two-authority consumer seam
+    "CredentialHelper",
+    "CredentialStore",
+    "ResolverCredentialStore",
+    "EnvCredentialStore",
+    "ScopedToken",
+    "KIND_DELEGATED",
+    "KIND_SERVICE",
+    "delegated_author_uri",
+    "service_author_uri",
 ]
