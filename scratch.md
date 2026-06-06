@@ -9,10 +9,12 @@ This VM blocks SSH to `github.com:22`. Pushes work over GitHub's 443 endpoint
 The up-to-date local `main` is at **`/home/golda/amebo`** (origin = GitHub). Shared checkouts under
 `/opt/shared/repos/*` were stale — reconcile before pulling. Git network calls: disable the Bash sandbox.
 
-## Two tracks — do not collide
-- **AUTH/SSO session:** OIDC provider dev→live + deployment. Spec: `~/work/6-06-2026-ITERATION-HANDOFF.md`.
-  Deploys feature branches that land in `main`; does NOT build features.
-- **ORCHESTRATION (features) session:** builds additive, gated feature branches; merges to `main`.
+## OWNERSHIP (Golda's call, 2026-06-06 — supersedes the old two-track split)
+- **SSO session: SSO ONLY.** `trust_claim_backend` OIDC provider dev→live + VM 508 cutover. Isolated repo, no
+  amebo. Does NOT touch amebo `main`, wiring, or deploy any more.
+- **THIS session (orchestration): ALL OF AMEBO.** Features, `main`, wiring/hooks, gating reconciliation, deploy
+  to the amebo VM, and the roadmap. Single owner of amebo `main` and the live amebo build now. No more two-cooks.
+  → First action under new ownership: fold `deploy/foundation` into `main` (below), reconcile gating to one path.
 
 ## Merged to `main` (foundation — additive, currently OFF/unwired)
 boundaries doc, draft-approval gate, credential helper, state-decay/GC, reference-integrity claw, output gate.
