@@ -1,5 +1,12 @@
 # System Architecture
 
+> **Legacy framing.** This document describes an earlier "workspace intelligence platform"
+> shape (ChromaDB vector store, JWT/password auth, document-upload Q&A). The canonical model
+> for Amebo is now the **agency layer** described in [`BOUNDARIES.md`](BOUNDARIES.md) and
+> [`../OVERVIEW.md`](../OVERVIEW.md): one engine (live + claw), pgvector via Abra, OAuth/SSO.
+> Parts of this file are superseded. Read `BOUNDARIES.md` first; treat anything here that
+> conflicts with it as historical, not current guidance.
+
 🏗️ **Amebo Architecture** - Comprehensive overview of system design, components, and data flow.
 
 ## 🎯 Architecture Overview
