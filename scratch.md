@@ -18,17 +18,29 @@ The up-to-date local `main` is at **`/home/golda/amebo`** (origin = GitHub). Sha
 boundaries doc, draft-approval gate, credential helper, state-decay/GC, reference-integrity claw, output gate.
 Migrations 015–017 are file-only (not applied). Integration hooks documented but unwired.
 
-## Feature branches — BUILT + TESTED, awaiting CRITICAL REVIEW before merge
-(Golda: review carefully before merging.)
-- `feat-pm-claw` — PUSHED (`f87c60a`). 9 tests pass. PM daily-standup claw (read Taiga+goal_events → one standup via output gate; off-track flags; outbound gated).
-- `feat-tool-layer` — local `/home/golda/amebo-tools` (`aecd5bb`), PUSH PENDING. 26 tests. Read tools (odoo_search, crm_read_latest_email, abra_search, taiga_list) + gated actuators. NOTE: registers `slack_post_gated` (a `slack_post` already exists). TODOs on unconfirmed CLI subcommands (mcp-taiga create flags, odoo chatter read) — fail safe.
-- `feat-email-to-task-flow` — local `/home/golda/amebo-flagship` (`72f569e`), PUSH PENDING. 6 tests. Flagship: latest forwarded CRM email → drafted Taiga task + Slack notify, ALL outbound held as approval drafts (never sent directly).
+## Feature branches — CRITICAL REVIEW underway (orchestration session, 2026-06-06)
+All three pushed to origin. STATUS:
+- `feat-pm-claw` — PUSHED (`f87c60a`). REVIEWED ✅ APPROVE. 9 tests pass (re-run). Tests assert the real
+  invariants (executor never runs, send gated + deferred, quiet no-op, org-scoping). One follow-up to note at
+  wire time: approval-gate send and output-gate digest are two draft paths that must reconcile to one message.
+- `feat-tool-layer` — PUSHED (`aecd5bb`). REVIEW FOUND CLI-BINDING BUGS — FIXING before merge (do NOT deploy yet).
+  Design/gating correct (default-deny verified; read tools FREE; actuators gated). But 4 CLI bindings were wrong
+  vs the LIVE CLIs (confirmed via `--help` 2026-06-06), and the tests encoded the same wrong argv so "passing"
+  meant nothing. Corrections (editing in `/home/golda/amebo-tools`, will amend branch + force-push):
+    * odoo_search:  `search contacts` → `contact-search <query>` (CLI has no leads search; dropped model param)
+    * crm_read_latest_email: `show contact` → `comms <name>`
+    * taiga_list:   project optional → `mcp-taiga list <project>` (PROJECT is required positional)
+    * taiga_create_task executor: `create <subj> --project` → `create <project> <subject> [-d desc]` (both positional, project required)
+  Note: `slack_post_gated` tool gates under action_type `slack_post`; coexists with the pre-existing ungated
+  `slack_post` (governed by per-instance allowed_tools — a claw must be granted the _gated_ one only).
+- `feat-email-to-task-flow` — PUSHED (`72f569e`). REVIEW PENDING (next). Task-create abstracted behind injected
+  `TaskCreator` Protocol (TODO adapter), so the taiga_create_task fix above does not affect it.
 
-## Next steps (whoever picks up)
-1. Push `feat-tool-layer` + `feat-email-to-task-flow` (via the 443 route).
-2. CRITICAL REVIEW each before merge — especially `feat-tool-layer` (subprocess/CLI execution; confirm the TODO'd CLI subcommands against the real `mcp-taiga`/`odoo-cli`).
-3. Merge to `main`, delete the branch.
-4. Auth/SSO session deploys from `main`.
+## Next steps
+1. ~~Push all three~~ DONE (SSH-over-443 fixed: single `Host github.com`, HostName ssh.github.com, Port 443).
+2. Finish tool-layer CLI fixes + update tests to correct argv, re-run, amend+push. ← IN PROGRESS
+3. Review feat-email-to-task-flow.
+4. Merge approved branches to `main`, delete each, push. Auth/SSO session deploys from `main` AFTER merge.
 Remaining roadmap: BD-coach claw, self-improving `code_agent` loop (Claude Code subagent → draft PRs). See `~/work/6-06-2026-ITERATION-HANDOFF.md` §7.
 
 ## Rules
