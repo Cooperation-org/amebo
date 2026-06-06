@@ -73,6 +73,42 @@ a permanent mind-map. Amebo's Abra scope therefore needs its own decay policy; i
 same as the human `golda` scope, which is durable and human-authored. Do not assume one GC
 policy fits every store.
 
+## Permissions: Amebo acts as the principal, never on its own authority
+
+Amebo has no ambient authority of its own. Every action it takes is taken *as* a principal:
+the person it is helping live, or the org a claw runs for. Its permission to reach a
+downstream system (CRM, Taiga, LinkedTrust, Abra) is exactly that principal's permission,
+never more. If the principal cannot do it, Amebo cannot do it on their behalf.
+
+Credentials (JWT, OAuth access/refresh tokens, API keys) are held behind an **encapsulated
+token helper, keyed by principal**. The rest of Amebo never sees raw secrets; it asks the
+helper "give me principal X's token for system Y" and gets back a scoped token or nothing.
+Permission resolution is therefore: identify who this turn is for, then retrieve that
+principal's tokens. Depending on who we are talking to, we retrieve the appropriate
+permissions.
+
+Rules this enforces:
+
+- **No god-token.** Amebo never holds a single super-credential that bypasses per-principal
+  scope. There is no "Amebo can do anything" path.
+- **Encapsulation.** Token storage is hidden behind the helper so it can evolve (env var →
+  vault → KMS → SSO broker) without touching any call site. Call sites ask for a capability,
+  not a secret.
+- **Per-principal, per-system.** The helper returns the token for a specific (principal,
+  system) pair. One principal's tokens are never visible to another principal's turn. This
+  is the mechanism behind the multi-tenant isolation the spin-off startups will need.
+- **Stamp the actor.** Every write Amebo performs carries the acting principal's identity
+  (author URI / session stamp), so the audit trail and any system-of-record write records
+  who it was really done as.
+
+This composes with the coarse per-instance `allowed_tools` gate (which tools exist at all for
+an instance) and the finer token-scoped permission (what those tools may actually do as this
+principal). Both apply.
+
+> Coordination note: the SSO / OAuth implementation that issues these tokens across
+> LinkedTrust, Amebo, Taiga, and the CRM is being built separately. This section records the
+> boundary principle the token helper must satisfy; it is not the implementation.
+
 ## Keep key understandings in a system of record
 
 This document is itself an instance of the principle. The understanding it records does not
