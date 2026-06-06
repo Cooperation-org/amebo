@@ -1,4 +1,4 @@
--- Migration 015: credential-helper label convention (two-authority seam)
+-- Migration 016: credential-helper label convention (two-authority seam)
 --
 -- STATUS: NOT APPLIED. This file documents and (optionally) optimises the
 -- storage convention used by src/credentials/credential_helper.py. Apply

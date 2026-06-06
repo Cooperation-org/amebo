@@ -1,4 +1,4 @@
--- Migration 015: Thread retention marker for State Decay + Per-Store GC
+-- Migration 017: Thread retention marker for State Decay + Per-Store GC
 -- Additive only. Adds one nullable column to `threads`. No existing data is
 -- changed; existing rows get retained_until = NULL (the default), which means
 -- "not explicitly kept" — i.e. the normal decay policy applies.
