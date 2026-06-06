@@ -65,12 +65,15 @@ class SlackHelperApp:
 
         # Get port from environment variable, default to 8003
         api_port = int(os.getenv('API_PORT', 8003))
+        # Bind localhost by default; nginx fronts public traffic. Override
+        # with API_HOST=0.0.0.0 only when running without a reverse proxy.
+        api_host = os.getenv('API_HOST', '127.0.0.1')
 
-        logger.info(f"Starting FastAPI server on http://0.0.0.0:{api_port}")
+        logger.info(f"Starting FastAPI server on http://{api_host}:{api_port}")
 
         config = Config(
             app=fastapi_app,
-            host="0.0.0.0",
+            host=api_host,
             port=api_port,
             log_level="info",
             access_log=True,

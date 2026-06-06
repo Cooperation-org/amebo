@@ -25,13 +25,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize FastAPI app
+# Schema-discovery endpoints (docs, redoc, openapi) are disabled by default
+# to avoid leaking the full route surface on internal networks. Set
+# ENABLE_DOCS=true to re-enable for local development.
+_docs_enabled = os.getenv("ENABLE_DOCS", "false").lower() == "true"
 app = FastAPI(
     title="Slack Helper Bot API",
     description="Backend API for Slack Helper Bot - Q&A, Document Management, and Slack Integration",
     version="1.0.0",
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/openapi.json"  # FastAPI serves this at root, not under /api
+    docs_url="/api/docs" if _docs_enabled else None,
+    redoc_url="/api/redoc" if _docs_enabled else None,
+    openapi_url="/openapi.json" if _docs_enabled else None,
 )
 
 # CORS Configuration
