@@ -34,7 +34,8 @@ Amebo is a funnel. A lot comes in. The core engine function is **crystallizing**
 ---
 
 **Detail**
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+- [`docs/BOUNDARIES.md`](docs/BOUNDARIES.md) — what Amebo owns vs. references; the actor-not-database rule; one engine, two triggers; decay/GC discipline
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — *legacy framing; see BOUNDARIES.md for the canonical model*
 - [`docs/CRYSTALLIZE.md`](docs/CRYSTALLIZE.md)
 - [`docs/ORGS_GOALS_CLAW.md`](docs/ORGS_GOALS_CLAW.md)
 - [`docs/POWERS_PLAN.md`](docs/POWERS_PLAN.md)
