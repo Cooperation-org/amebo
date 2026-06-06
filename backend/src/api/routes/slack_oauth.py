@@ -464,6 +464,15 @@ async def slack_events(request: Request):
     # Read body once
     body = await request.body()
 
+    # Verify Slack signature on every inbound event. Without this anyone
+    # who can reach this URL can POST forged events; Slack's signed-request
+    # contract is the only authentication on this path.
+    timestamp = request.headers.get("X-Slack-Request-Timestamp", "")
+    signature = request.headers.get("X-Slack-Signature", "")
+    if not timestamp or not signature or not verify_slack_signature(body, timestamp, signature):
+        logger.warning("slack.events.signature_invalid ts=%s sig_present=%s", timestamp, bool(signature))
+        raise HTTPException(status_code=401, detail="Invalid signature")
+
     # Parse JSON from body
     try:
         import json

@@ -71,6 +71,7 @@ async def signup(request: UserSignupRequest):
                 (request.email,)
             )
             if cur.fetchone():
+                logger.warning("auth.signup.rejected email=%s reason=email_exists", request.email)
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Email already registered"
@@ -82,6 +83,7 @@ async def signup(request: UserSignupRequest):
                 (org_slug,)
             )
             if cur.fetchone():
+                logger.warning("auth.signup.rejected email=%s reason=org_taken slug=%s", request.email, org_slug)
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Organization name already taken. Please choose a different name."
@@ -177,6 +179,7 @@ async def login(request: UserLoginRequest):
             user = cur.fetchone()
 
             if not user:
+                logger.warning("auth.login.failed email=%s reason=unknown_email", request.email)
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid email or password"
@@ -184,6 +187,7 @@ async def login(request: UserLoginRequest):
 
             # Verify password
             if not verify_password(request.password, user['password_hash']):
+                logger.warning("auth.login.failed email=%s reason=bad_password", request.email)
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Invalid email or password"
@@ -191,6 +195,7 @@ async def login(request: UserLoginRequest):
 
             # Check if user is active
             if not user['is_active']:
+                logger.warning("auth.login.failed email=%s reason=inactive", request.email)
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail="Account is disabled"
