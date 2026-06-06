@@ -73,41 +73,58 @@ a permanent mind-map. Amebo's Abra scope therefore needs its own decay policy; i
 same as the human `golda` scope, which is durable and human-authored. Do not assume one GC
 policy fits every store.
 
-## Permissions: Amebo acts as the principal, never on its own authority
+## Permissions: two kinds of authority, both scoped, neither a god-token
 
-Amebo has no ambient authority of its own. Every action it takes is taken *as* a principal:
-the person it is helping live, or the org a claw runs for. Its permission to reach a
-downstream system (CRM, Taiga, LinkedTrust, Abra) is exactly that principal's permission,
-never more. If the principal cannot do it, Amebo cannot do it on their behalf.
+Amebo acts under one of two kinds of authority, and which one is in play depends on who the
+turn is for:
 
-Credentials (JWT, OAuth access/refresh tokens, API keys) are held behind an **encapsulated
-token helper, keyed by principal**. The rest of Amebo never sees raw secrets; it asks the
-helper "give me principal X's token for system Y" and gets back a scoped token or nothing.
-Permission resolution is therefore: identify who this turn is for, then retrieve that
-principal's tokens. Depending on who we are talking to, we retrieve the appropriate
-permissions.
+1. **Delegated (live, on behalf of a person).** When Amebo is helping a specific person, it
+   acts *as* that person. Its reach into a downstream system (CRM, Taiga, LinkedTrust, Abra)
+   is exactly that person's permission, never more. If the person cannot do it, Amebo cannot
+   do it on their behalf. These tokens belong to the person; Amebo only retrieves and uses
+   them for the duration of the turn.
+
+2. **Service / team (background, on behalf of a team).** A claw running in the background for
+   a team is not acting as any one live user. For this, Amebo holds **its own team-scoped
+   service permissions, which it stores itself** (a service identity, like a bot account,
+   granted by the team). This authority is bounded by the team's grant and isolated per team:
+   Amebo's stored permissions for team A never apply to team B. This is what lets a claw do
+   useful background work for a team without a human in the loop and without impersonating a
+   specific member.
+
+Both kinds live behind an **encapsulated credential helper**. The rest of Amebo never sees
+raw secrets; it asks the helper for a capability ("a token to call system Y, for this turn's
+principal" or "this team's background token for system Y") and gets back a scoped token or
+nothing. Permission resolution is: identify whose authority this turn runs under (a person,
+or a team's service identity), then retrieve the matching scoped credential.
 
 Rules this enforces:
 
-- **No god-token.** Amebo never holds a single super-credential that bypasses per-principal
-  scope. There is no "Amebo can do anything" path.
-- **Encapsulation.** Token storage is hidden behind the helper so it can evolve (env var →
-  vault → KMS → SSO broker) without touching any call site. Call sites ask for a capability,
-  not a secret.
-- **Per-principal, per-system.** The helper returns the token for a specific (principal,
-  system) pair. One principal's tokens are never visible to another principal's turn. This
-  is the mechanism behind the multi-tenant isolation the spin-off startups will need.
-- **Stamp the actor.** Every write Amebo performs carries the acting principal's identity
-  (author URI / session stamp), so the audit trail and any system-of-record write records
-  who it was really done as.
+- **No god-token.** Neither path ever yields a single super-credential that bypasses scope.
+  There is no "Amebo can do anything everywhere" path. Delegated authority is bounded by the
+  person; service authority is bounded by the team's grant.
+- **Amebo stores its own service credentials, not the users'.** The team-scoped service
+  tokens are Amebo's to keep (it is the service identity). Per-person delegated tokens are
+  retrieved as needed and belong to the person, not to Amebo.
+- **Encapsulation.** Storage is hidden behind the helper so it can evolve (env var → vault →
+  KMS → SSO broker) without touching any call site. Call sites ask for a capability, not a
+  secret.
+- **Per-principal / per-team isolation.** The helper returns a credential for a specific
+  (principal-or-team, system) pair. One team's or person's credentials are never visible to
+  another's turn. This is the mechanism behind the multi-tenant isolation the spin-off
+  startups will need.
+- **Stamp the actor.** Every write carries the acting identity (the person's author URI, or
+  `amebo:<team>` for service-identity actions), so the audit trail records who it was really
+  done as, including when it was Amebo's own team-scoped background identity.
 
 This composes with the coarse per-instance `allowed_tools` gate (which tools exist at all for
-an instance) and the finer token-scoped permission (what those tools may actually do as this
-principal). Both apply.
+an instance) and the finer credential-scoped permission (what those tools may actually do as
+this principal or team identity). Both apply.
 
-> Coordination note: the SSO / OAuth implementation that issues these tokens across
+> Coordination note: the SSO / OAuth implementation that issues delegated tokens across
 > LinkedTrust, Amebo, Taiga, and the CRM is being built separately. This section records the
-> boundary principle the token helper must satisfy; it is not the implementation.
+> boundary principle the credential helper must satisfy (delegated and service authority,
+> both scoped); it is not the implementation.
 
 ## Keep key understandings in a system of record
 
