@@ -52,6 +52,12 @@ FREE_ACTIONS: Set[str] = {
     "list_hot_tags",
     "list_projects",
     "read_main_md",
+    # Read tools — Amebo's "eyes" (cli_read_tools.py). Side-effect-free CLI
+    # lookups; safe to run unsupervised.
+    "odoo_search",
+    "crm_read_latest_email",
+    "abra_search",
+    "taiga_list",
     # Internal, reversible write (lands uncommitted; human reviews git diff)
     "edit_main_md",
 }
@@ -62,12 +68,14 @@ FREE_ACTIONS: Set[str] = {
 # Listed explicitly for documentation/auditing; classification still
 # default-denies, so an unlisted action type is also gated.
 GATED_ACTIONS: Set[str] = {
-    "slack_post",     # sends a message to Slack (outbound)
-    "send_email",     # sends email (outbound)
-    "odoo_cli",       # writes to the CRM (destructive/outbound side effects)
-    "mcp_taiga",      # writes to Taiga task management (destructive/outbound)
-    "open_pr",        # opens a pull request (outbound)
-    "merge_pr",       # merges a pull request (irreversible)
+    "slack_post",        # sends a message to Slack (outbound)
+    "slack_post_gated",  # actuator (gated_actuators.py) — Slack post via the gate
+    "taiga_create_task", # actuator (gated_actuators.py) — creates a Taiga task (outbound)
+    "send_email",        # sends email (outbound)
+    "odoo_cli",          # writes to the CRM (destructive/outbound side effects)
+    "mcp_taiga",         # writes to Taiga task management (destructive/outbound)
+    "open_pr",           # opens a pull request (outbound)
+    "merge_pr",          # merges a pull request (irreversible)
 }
 
 

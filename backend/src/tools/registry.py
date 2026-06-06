@@ -595,3 +595,111 @@ register_tool(Tool(
     is_read_only=False,
     category="comms",
 ))
+
+
+# ---------------------------------------------------------------------------
+# Amebo tool layer — "eyes" (read, ungated) and "hands" (outbound, gated).
+#
+# READ tools are side-effect-free CLI lookups, classified FREE in
+# gated_actions and so always exposed when allowed. GATED actuators route
+# every outbound action through the EXISTING DraftApprovalService gate (they
+# create a pending_action and return it instead of performing the side
+# effect). All are behind per-instance allowed_tools, like every other tool.
+# See docs/TOOL_LAYER.md.
+# ---------------------------------------------------------------------------
+
+from src.tools.cli_read_tools import (
+    odoo_search_impl, ODOO_SEARCH_SCHEMA,
+    crm_read_latest_email_impl, CRM_READ_LATEST_EMAIL_SCHEMA,
+    abra_search_impl, ABRA_SEARCH_SCHEMA,
+    taiga_list_impl, TAIGA_LIST_SCHEMA,
+)
+from src.tools.gated_actuators import (
+    taiga_create_task_impl, TAIGA_CREATE_TASK_SCHEMA,
+    slack_post_impl as slack_post_gated_impl, SLACK_POST_SCHEMA as SLACK_POST_GATED_SCHEMA,
+)
+
+
+# --- Read tools (ungated) --------------------------------------------------
+
+register_tool(Tool(
+    name="odoo_search",
+    description=(
+        "Search the CRM (Odoo) for contacts or leads matching a query. "
+        "Read only — never writes. Use when asked who/what contacts exist "
+        "for a person, company, or email fragment."
+    ),
+    input_schema=ODOO_SEARCH_SCHEMA,
+    execute=odoo_search_impl,
+    is_read_only=True,
+    category="crm",
+))
+
+register_tool(Tool(
+    name="crm_read_latest_email",
+    description=(
+        "Read the latest forwarded email / chatter logged in the CRM for a "
+        "given sender (email address or contact). Read only. Use to see the "
+        "most recent message from someone before drafting a reply."
+    ),
+    input_schema=CRM_READ_LATEST_EMAIL_SCHEMA,
+    execute=crm_read_latest_email_impl,
+    is_read_only=True,
+    category="crm",
+))
+
+register_tool(Tool(
+    name="abra_search",
+    description=(
+        "Search the team knowledge base (abra). mode='search' for full-text, "
+        "mode='about' for everything known about a name. Read only."
+    ),
+    input_schema=ABRA_SEARCH_SCHEMA,
+    execute=abra_search_impl,
+    is_read_only=True,
+    category="knowledge",
+))
+
+register_tool(Tool(
+    name="taiga_list",
+    description=(
+        "List tasks in Taiga (optionally scoped to a project). Read only. "
+        "Use to check current tasks/status before drafting a new task."
+    ),
+    input_schema=TAIGA_LIST_SCHEMA,
+    execute=taiga_list_impl,
+    is_read_only=True,
+    category="tasks",
+))
+
+
+# --- Gated actuators (outbound — routed through draft-approval gate) -------
+
+register_tool(Tool(
+    name="taiga_create_task",
+    description=(
+        "Create a Taiga task. OUTBOUND: this does not create the task "
+        "directly — it drafts a pending action that a human must approve "
+        "before the task is created. Returns the pending action id."
+    ),
+    input_schema=TAIGA_CREATE_TASK_SCHEMA,
+    execute=taiga_create_task_impl,
+    is_read_only=False,
+    needs_confirmation=True,
+    category="tasks",
+))
+
+register_tool(Tool(
+    name="slack_post_gated",
+    description=(
+        "Post a message to Slack THROUGH THE APPROVAL GATE. OUTBOUND: it does "
+        "not post directly — it drafts a pending action that a human must "
+        "approve before the message is sent. Pass mention_user_id to notify a "
+        "person, thread_ts to reply in a thread. Returns the pending action id."
+    ),
+    input_schema=SLACK_POST_GATED_SCHEMA,
+    execute=slack_post_gated_impl,
+    is_read_only=False,
+    needs_confirmation=True,
+    category="comms",
+))
