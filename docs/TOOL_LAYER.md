@@ -14,16 +14,18 @@ This is additive: new adapter modules plus appended registrations in
 
 | Tool | Kind | Module | Gated? | CLI it shells to |
 |---|---|---|---|---|
-| `odoo_search` | eyes | `cli_read_tools.py` | no (FREE) | `odoo-cli search contacts\|leads "<q>"` |
-| `crm_read_latest_email` | eyes | `cli_read_tools.py` | no (FREE) | `odoo-cli show contact <sender>` † |
+| `odoo_search` | eyes | `cli_read_tools.py` | no (FREE) | `odoo-cli contact-search "<q>"` |
+| `crm_read_latest_email` | eyes | `cli_read_tools.py` | no (FREE) | `odoo-cli comms <sender>` |
 | `abra_search` | eyes | `cli_read_tools.py` | no (FREE) | `abra search\|about "<q>"` |
-| `taiga_list` | eyes | `cli_read_tools.py` | no (FREE) | `mcp-taiga list [project]` |
-| `taiga_create_task` | hands | `gated_actuators.py` | **yes** | `mcp-taiga create <subject> …` † (only after approval) |
+| `taiga_list` | eyes | `cli_read_tools.py` | no (FREE) | `mcp-taiga list <project>` (project required) |
+| `taiga_create_task` | hands | `gated_actuators.py` | **yes** | `mcp-taiga create <project> <subject> [-d desc]` (only after approval) |
 | `slack_post_gated` | hands | `gated_actuators.py` | **yes** | reuses `slack_tools.slack_post_impl` (only after approval) |
 
-† TODO markers in the code where a real CLI subcommand/flag is not yet
-confirmed. All such cases fail safe — a read returns empty/erroring output, and
-a write subprocess only ever runs after human approval, never speculatively.
+All CLI bindings above were confirmed against the live `odoo-cli` / `mcp-taiga`
+/ `abra` (`--help`, 2026-06-06). Reads fail safe (empty/erroring output, never a
+write); a gated write subprocess only ever runs after human approval, never
+speculatively. `mcp-taiga` requires a project for both `list` and `create`, so
+those tools refuse (no subprocess) when no project is supplied.
 
 ## How read vs. gated compose with `allowed_tools`
 

@@ -143,11 +143,14 @@ def taiga_create_task_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) 
         return "Error: subject is required."
     subject = subject.strip()
     project = (tool_input.get("project") or "").strip()
+    if not project:
+        # Confirmed against the live CLI: `mcp-taiga create PROJECT SUBJECT`
+        # requires a project. Refuse to draft a task with no project rather
+        # than create a pending action that can never execute.
+        return "Error: project is required (a Taiga project slug/name)."
     description = (tool_input.get("description") or "").strip()
 
-    payload: Dict[str, Any] = {"subject": subject}
-    if project:
-        payload["project"] = project
+    payload: Dict[str, Any] = {"subject": subject, "project": project}
     if description:
         payload["description"] = description
     if (context or {}).get("notify_channel"):
@@ -155,21 +158,17 @@ def taiga_create_task_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) 
 
     def _executor(_action: Dict[str, Any]) -> str:
         # Runs ONLY after approval (via execute_approved). Built with list args
-        # and no shell. The exact create subcommand is the documented
-        # ``mcp-taiga create``; flags below are the conservative, known form.
-        # TODO(mcp-taiga): confirm the precise flag names for project and
-        # description (``--project`` / ``--description`` assumed). If unknown at
-        # run time, this fails safe by surfacing mcp-taiga's own error rather
-        # than guessing a destructive variant.
-        argv = ["mcp-taiga", "create", subject]
-        if project:
-            argv += ["--project", project]
+        # and no shell. Confirmed against the live CLI (`mcp-taiga create
+        # --help`, 2026-06-06): `create PROJECT SUBJECT [-d DESCRIPTION]` —
+        # PROJECT and SUBJECT are positional (project first); description is the
+        # `-d/--description` option.
+        argv = ["mcp-taiga", "create", project, subject]
         if description:
             argv += ["--description", description]
         return run_cli(argv)
 
-    target = project or "taiga"
-    preview = f"Create Taiga task: {subject!r}" + (f" in {project!r}" if project else "")
+    target = project
+    preview = f"Create Taiga task: {subject!r} in {project!r}"
     return _route_through_gate(
         action_type="taiga_create_task",
         context=context,

@@ -58,33 +58,32 @@ def _capture_run():
 
 class TestReadTools:
     def test_odoo_search_contacts(self):
+        # Confirmed against the live CLI: read verb is `contact-search <query>`.
         calls, fake = _capture_run()
         with patch.object(cli_read_tools.subprocess, "run", side_effect=fake):
             out = cli_read_tools.odoo_search_impl({"query": "Mozilla"}, {"org_id": 1})
-        assert calls == [["odoo-cli", "search", "contacts", "Mozilla"]]
+        assert calls == [["odoo-cli", "contact-search", "Mozilla"]]
         assert "result-text" in out
 
-    def test_odoo_search_leads_model(self):
+    def test_odoo_search_ignores_unknown_keys(self):
+        # No model param any more (CLI has no leads search); extra keys ignored.
         calls, fake = _capture_run()
         with patch.object(cli_read_tools.subprocess, "run", side_effect=fake):
             cli_read_tools.odoo_search_impl({"query": "grant", "model": "leads"}, {})
-        assert calls == [["odoo-cli", "search", "leads", "grant"]]
-
-    def test_odoo_search_rejects_bad_model(self):
-        out = cli_read_tools.odoo_search_impl({"query": "x", "model": "evil"}, {})
-        assert "model must be" in out
+        assert calls == [["odoo-cli", "contact-search", "grant"]]
 
     def test_odoo_search_requires_query(self):
         out = cli_read_tools.odoo_search_impl({}, {})
         assert "query is required" in out
 
     def test_crm_read_latest_email(self):
+        # Confirmed against the live CLI: read verb is `comms <name>`.
         calls, fake = _capture_run()
         with patch.object(cli_read_tools.subprocess, "run", side_effect=fake):
             cli_read_tools.crm_read_latest_email_impl(
                 {"sender": "jane@example.org"}, {}
             )
-        assert calls == [["odoo-cli", "show", "contact", "jane@example.org"]]
+        assert calls == [["odoo-cli", "comms", "jane@example.org"]]
 
     def test_crm_read_latest_email_requires_sender(self):
         out = cli_read_tools.crm_read_latest_email_impl({}, {})
@@ -108,11 +107,14 @@ class TestReadTools:
         out = cli_read_tools.abra_search_impl({"query": "x", "mode": "delete"}, {})
         assert "mode must be" in out
 
-    def test_taiga_list_no_project(self):
+    def test_taiga_list_requires_project(self):
+        # Confirmed against the live CLI: `mcp-taiga list PROJECT` needs a
+        # required positional project; refuse (no subprocess) when absent.
         calls, fake = _capture_run()
         with patch.object(cli_read_tools.subprocess, "run", side_effect=fake):
-            cli_read_tools.taiga_list_impl({}, {})
-        assert calls == [["mcp-taiga", "list"]]
+            out = cli_read_tools.taiga_list_impl({}, {})
+        assert calls == []
+        assert "project is required" in out
 
     def test_taiga_list_with_project(self):
         calls, fake = _capture_run()
@@ -223,14 +225,14 @@ class TestGatedActuators:
     def test_actuator_requires_org_context(self):
         _, gate = _gate_with_fake_repo()
         out = gated_actuators.taiga_create_task_impl(
-            {"subject": "x"}, {"draft_gate": gate}
+            {"subject": "x", "project": "amebo"}, {"draft_gate": gate}
         )
         assert "no org context" in out
 
     def test_actuator_delegated_identity_stamp(self):
         repo, gate = _gate_with_fake_repo()
         gated_actuators.taiga_create_task_impl(
-            {"subject": "x"},
+            {"subject": "x", "project": "amebo"},
             {"org_id": 9, "principal": "golda", "draft_gate": gate},
         )
         assert repo.created[0]["acting_identity"] == "urn:amebo:user:golda"
@@ -238,6 +240,14 @@ class TestGatedActuators:
     def test_taiga_create_requires_subject(self):
         out = gated_actuators.taiga_create_task_impl({}, {"org_id": 1})
         assert "subject is required" in out
+
+    def test_taiga_create_requires_project(self):
+        # Confirmed against the live CLI: `mcp-taiga create PROJECT SUBJECT`
+        # requires a project; refuse to draft an unrunnable task.
+        out = gated_actuators.taiga_create_task_impl(
+            {"subject": "x"}, {"org_id": 1}
+        )
+        assert "project is required" in out
 
     def test_slack_post_requires_channel_and_text(self):
         assert "channel is required" in gated_actuators.slack_post_impl(

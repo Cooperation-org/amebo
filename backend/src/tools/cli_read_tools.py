@@ -87,13 +87,11 @@ def odoo_search_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str
     query = _require(tool_input, "query")
     if query is None:
         return "Error: query is required."
-    model = (tool_input.get("model") or "contacts").strip()
-    # Whitelist the searchable models so a bad value can't become an arbitrary
-    # odoo-cli subcommand. Both are read-only searches.
-    if model not in ("contacts", "leads"):
-        return "Error: model must be 'contacts' or 'leads'."
-    # odoo-cli search contacts "<query>"  (per next-steps.md #2)
-    return run_cli(["odoo-cli", "search", model, query])
+    # Confirmed against the live CLI (`odoo-cli --help`, 2026-06-06): the read
+    # search verb is `contact-search <query>` — searches contacts by name,
+    # email, or catcode. odoo-cli exposes no separate "leads" search, so there
+    # is no model to choose: a single read-only contact search.
+    return run_cli(["odoo-cli", "contact-search", query])
 
 
 ODOO_SEARCH_SCHEMA = {
@@ -102,11 +100,6 @@ ODOO_SEARCH_SCHEMA = {
         "query": {
             "type": "string",
             "description": "Text to search for (name, company, email fragment).",
-        },
-        "model": {
-            "type": "string",
-            "description": "What to search: 'contacts' (default) or 'leads'.",
-            "enum": ["contacts", "leads"],
         },
     },
     "required": ["query"],
@@ -120,21 +113,20 @@ ODOO_SEARCH_SCHEMA = {
 
 def crm_read_latest_email_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
     """
-    Read the latest forwarded email / chatter message logged in the CRM for a
-    given sender (email address or contact). Read only.
+    Read the message / note history logged in the CRM for a given sender
+    (contact name or email). Read only.
 
-    TODO(odoo-cli): the exact subcommand that returns a contact's most recent
-    chatter/email is not confirmed in next-steps.md. We use the documented
-    read subcommand ``odoo-cli show contact <id-or-email>`` which surfaces the
-    contact record including recent messages. If a dedicated
-    ``odoo-cli messages <sender>`` (or similar) exists, switch to it here. This
-    is a READ, so an unknown/empty result is the worst case — never a write.
+    Confirmed against the live CLI (`odoo-cli --help`, 2026-06-06): the
+    read verb is ``odoo-cli comms <name>`` — "Show full message/note history
+    for a contact". This surfaces the recent chatter/emails on the contact.
+    It resolves a contact by name; an email fragment may also match. This is a
+    READ, so an unknown/empty result is the worst case — never a write.
     """
     sender = _require(tool_input, "sender")
     if sender is None:
         return "Error: sender is required (email address or contact identifier)."
-    # Read-only: show the contact record, which includes recent chatter/emails.
-    return run_cli(["odoo-cli", "show", "contact", sender])
+    # Read-only: contact's full message/note history (recent chatter/emails).
+    return run_cli(["odoo-cli", "comms", sender])
 
 
 CRM_READ_LATEST_EMAIL_SCHEMA = {
@@ -195,13 +187,14 @@ ABRA_SEARCH_SCHEMA = {
 
 
 def taiga_list_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
-    """List tasks in Taiga via mcp-taiga. Read only."""
-    # mcp-taiga list [project]   (per next-steps.md #2)
-    argv = ["mcp-taiga", "list"]
-    project = tool_input.get("project")
-    if isinstance(project, str) and project.strip():
-        argv.append(project.strip())
-    return run_cli(argv)
+    """List user stories in a Taiga project. Read only."""
+    # Confirmed against the live CLI (`mcp-taiga list --help`, 2026-06-06):
+    # `mcp-taiga list PROJECT` — PROJECT is a REQUIRED positional argument.
+    # (Use the `mcp-taiga projects` command to discover valid project slugs.)
+    project = _require(tool_input, "project")
+    if project is None:
+        return "Error: project is required (a Taiga project slug/name)."
+    return run_cli(["mcp-taiga", "list", project])
 
 
 TAIGA_LIST_SCHEMA = {
@@ -209,8 +202,8 @@ TAIGA_LIST_SCHEMA = {
     "properties": {
         "project": {
             "type": "string",
-            "description": "Optional Taiga project slug/name to scope the listing.",
+            "description": "Taiga project slug/name to list (required).",
         },
     },
-    "required": [],
+    "required": ["project"],
 }
