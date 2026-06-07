@@ -159,7 +159,13 @@ encapsulated capability (the `/task` slash command is the only remaining front d
     list_projects, abra_search, odoo_search, crm_read_latest_email.
 - **Verified live e2e**: web chat -> AI calls taiga_create_task -> gated pending_action (with due) -> approve via
   API -> task on board as owner 434 with due date. 434 tests pass (1 pre-existing chromadb failure).
-- **REMAINING for the flow**: (1) `/task` slash command (deterministic, human-issued, no gate). (2) amebo is a
-  member of project 77 only — add it to other boards before tasks target them (`mcp-taiga add-member`, which the
-  mcp-taiga session just added). (3) wire notify-people (slack_post_gated) for the full intake->done loop.
-- Note: mcp-taiga is now being co-edited by another session (add-member etc.) — coordinate, don't clobber.
+- **`/task` slash command SHIPPED** (`5a870bc`): deterministic `/task <project> <subject…> due:YYYY-MM-DD
+  [assign:user] [cash:N]`, creates immediately as amebo (human-issued = no AI, no gate). parse unit-tested.
+  ⚠️ Needs the `/task` command REGISTERED in the Slack app config (Slash Commands) — Slack-admin UI step,
+  can't be done via API. `/ask`,`/askall` already registered; /task won't reach amebo until added there.
+- **amebo added to ALL story-capable boards** (55 of 81 projects; the other 26 have no story-creating role —
+  likely stale, part of Golda's board cleanup). Notify policies set (quiet). Cross-board create verified
+  (made+deleted a story in business-development-june-july as owner 434).
+- **STILL REMAINING for the full flow**: wire notify-people (slack_post_gated) after task creation;
+  then the intake bucket + follow-up loop (roadmap #2,#5). Board cleanup is Golda's (separate session).
+- Note: mcp-taiga is being co-edited by another session (add-member etc.) — coordinate, don't clobber.
