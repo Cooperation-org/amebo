@@ -146,6 +146,7 @@ class TestCreateAndList:
                 "R", (), {
                     "goal_id": a["id"], "status": "skipped",
                     "summary": None, "error": None, "notification_sent": False,
+                    "tool_rounds": 0, "tool_calls": [],
                 },
             )()
             client.post(f"/api/goals/{a['id']}/dispatch-now")
@@ -253,6 +254,11 @@ class TestDispatchNow:
         fake_result = type("R", (), {
             "goal_id": g["id"], "status": "completed",
             "summary": "done", "error": None, "notification_sent": True,
+            "tool_rounds": 2,
+            "tool_calls": [
+                {"name": "abra_search", "ok": True, "summary": "found 3"},
+                {"name": "slack_post", "ok": True, "summary": "[held for approval] ..."},
+            ],
         })()
 
         with patch("src.api.routes.goals.GoalDispatcher") as DP:
@@ -260,10 +266,16 @@ class TestDispatchNow:
             resp = client.post(f"/api/goals/{g['id']}/dispatch-now")
 
         assert resp.status_code == 200
+        # The per-step trail is surfaced so a manual run is never blank.
         assert resp.json() == {
             "goal_id": g["id"],
             "status": "completed",
             "summary": "done",
             "error": None,
             "notification_sent": True,
+            "tool_rounds": 2,
+            "tool_calls": [
+                {"name": "abra_search", "ok": True, "summary": "found 3"},
+                {"name": "slack_post", "ok": True, "summary": "[held for approval] ..."},
+            ],
         }
