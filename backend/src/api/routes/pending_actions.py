@@ -35,6 +35,7 @@ from src.db.repositories.pending_action_repo import VALID_STATUSES
 from src.services.draft_approval_service import (
     DraftApprovalService, PendingActionNotFound,
 )
+from src.services.action_executors import get_executor
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -146,23 +147,43 @@ async def approve_pending_action(
     action_id: str,
     client: dict = Depends(get_service_or_user),
 ):
-    """Approve a pending action. Transitions pending → approved; does NOT
-    execute. The executor performs the action separately after approval."""
+    """Approve a pending action and execute it.
+
+    Transitions pending → approved, then runs the action's registered executor
+    (see src/services/action_executors.py), transitioning approved → executed
+    (or → failed on error). If no executor is registered for the action type,
+    the action is left approved and a human/other process must run it.
+    """
     svc = _service()
+    org_id = client["org_id"]
     try:
         updated = svc.approve(
-            action_id, approver=_approver_identity(client), org_id=client["org_id"],
+            action_id, approver=_approver_identity(client), org_id=org_id,
         )
     except PendingActionNotFound:
         # Either unknown/other-org (true 404) or not pending (409). Disambiguate
         # without leaking other orgs' existence.
         try:
-            svc.get(action_id, client["org_id"])
+            svc.get(action_id, org_id)
         except PendingActionNotFound:
             raise HTTPException(status_code=404, detail="Pending action not found")
         raise HTTPException(status_code=409, detail="Action is not pending")
-    logger.info("Pending action approved: id=%s org=%s", action_id, client["org_id"])
-    return _to_response(updated)
+    logger.info("Pending action approved: id=%s org=%s", action_id, org_id)
+
+    executor = get_executor(updated["action_type"])
+    if executor is None:
+        logger.warning(
+            "No executor registered for action_type=%s; action %s left approved.",
+            updated["action_type"], action_id,
+        )
+        return _to_response(updated)
+
+    executed = svc.execute_approved(action_id, org_id, executor)
+    logger.info(
+        "Pending action executed: id=%s org=%s status=%s",
+        action_id, org_id, executed.get("status"),
+    )
+    return _to_response(executed)
 
 
 @router.post("/{action_id}/reject", response_model=PendingActionResponse)

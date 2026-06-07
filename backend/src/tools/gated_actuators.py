@@ -133,10 +133,53 @@ def _route_through_gate(
 # ---------------------------------------------------------------------------
 
 
+def execute_taiga_create(action: Dict[str, Any]) -> str:
+    """Perform a Taiga task creation from a (pending) action's payload.
+
+    This is THE single side effect for ``taiga_create_task``: used both as the
+    gate's executor at draft time and — via the same reference in the executor
+    registry — when a human approves the pending_action later. It reads
+    everything from ``action["payload"]`` so it works without the original
+    closure. Built with list args and no shell.
+
+    CLI shape (confirmed against the live ``mcp-taiga``): ``create PROJECT
+    SUBJECT [--description D] [--due YYYY-MM-DD] [--assign USER] [--cash N]``.
+    """
+    payload = action.get("payload") or {}
+    project = payload.get("project")
+    subject = payload.get("subject")
+    if not project or not subject:
+        return "Error: cannot create task — payload is missing project or subject."
+
+    argv = ["mcp-taiga", "create", project, subject]
+    if payload.get("description"):
+        argv += ["--description", payload["description"]]
+    if payload.get("due_date"):
+        argv += ["--due", payload["due_date"]]
+    if payload.get("assignee"):
+        argv += ["--assign", payload["assignee"]]
+    if payload.get("cash") is not None:
+        argv += ["--cash", str(payload["cash"])]
+    return run_cli(argv)
+
+
+def _valid_due_date(value: str) -> bool:
+    from datetime import datetime
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+        return True
+    except ValueError:
+        return False
+
+
 def taiga_create_task_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
     """
     Draft the creation of a Taiga task. Routes through the gate; the task is
     only created after a human approves the draft.
+
+    A deadline is REQUIRED on every task (team rule). If no due date is given,
+    we refuse and tell the model to ask the user for one rather than create a
+    dateless task.
     """
     subject = tool_input.get("subject")
     if not isinstance(subject, str) or not subject.strip():
@@ -148,34 +191,48 @@ def taiga_create_task_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) 
         # requires a project. Refuse to draft a task with no project rather
         # than create a pending action that can never execute.
         return "Error: project is required (a Taiga project slug/name)."
-    description = (tool_input.get("description") or "").strip()
 
-    payload: Dict[str, Any] = {"subject": subject, "project": project}
+    due_date = (tool_input.get("due_date") or "").strip()
+    if not due_date:
+        return (
+            "Error: due_date is required (YYYY-MM-DD). Every task needs a "
+            "deadline — ask the user for one, then create the task."
+        )
+    if not _valid_due_date(due_date):
+        return f"Error: due_date {due_date!r} is not a valid date. Use YYYY-MM-DD."
+
+    description = (tool_input.get("description") or "").strip()
+    assignee = (tool_input.get("assignee") or "").strip()
+    cash = tool_input.get("cash")
+
+    payload: Dict[str, Any] = {
+        "subject": subject,
+        "project": project,
+        "due_date": due_date,
+    }
     if description:
         payload["description"] = description
+    if assignee:
+        payload["assignee"] = assignee
+    if cash is not None:
+        payload["cash"] = cash
     if (context or {}).get("notify_channel"):
         payload["notify_channel"] = context["notify_channel"]
 
-    def _executor(_action: Dict[str, Any]) -> str:
-        # Runs ONLY after approval (via execute_approved). Built with list args
-        # and no shell. Confirmed against the live CLI (`mcp-taiga create
-        # --help`, 2026-06-06): `create PROJECT SUBJECT [-d DESCRIPTION]` —
-        # PROJECT and SUBJECT are positional (project first); description is the
-        # `-d/--description` option.
-        argv = ["mcp-taiga", "create", project, subject]
-        if description:
-            argv += ["--description", description]
-        return run_cli(argv)
+    bits = [f"Create Taiga task: {subject!r} in {project!r} due {due_date}"]
+    if assignee:
+        bits.append(f"assigned to {assignee}")
+    if cash is not None:
+        bits.append(f"${cash}")
+    preview = ", ".join(bits)
 
-    target = project
-    preview = f"Create Taiga task: {subject!r} in {project!r}"
     return _route_through_gate(
         action_type="taiga_create_task",
         context=context,
-        target=target,
+        target=project,
         payload=payload,
         preview=preview,
-        executor=_executor,
+        executor=execute_taiga_create,
     )
 
 
@@ -188,15 +245,35 @@ TAIGA_CREATE_TASK_SCHEMA = {
         },
         "project": {
             "type": "string",
-            "description": "Optional Taiga project slug/name to create the task in.",
+            "description": "Taiga project slug/name to create the task in (required).",
         },
         "description": {
             "type": "string",
-            "description": "Optional task description / body.",
+            "description": "Task description / body. Include full context so the "
+                           "task is doable on its own — not a one-liner.",
+        },
+        "due_date": {
+            "type": "string",
+            "description": "Deadline as YYYY-MM-DD. REQUIRED — every task needs a "
+                           "deadline. If the user didn't give one, ask before creating.",
+        },
+        "assignee": {
+            "type": "string",
+            "description": "Optional Taiga username to assign the task to.",
+        },
+        "cash": {
+            "type": "integer",
+            "description": "Optional funds to attach to the task (adds a cash tag).",
         },
     },
-    "required": ["subject"],
+    "required": ["subject", "project", "due_date"],
 }
+
+
+# Register the executor so an approved taiga_create_task pending_action can be
+# run from its stored payload (see src/services/action_executors.py).
+from src.services.action_executors import register_executor  # noqa: E402
+register_executor("taiga_create_task", execute_taiga_create)
 
 
 # ---------------------------------------------------------------------------
