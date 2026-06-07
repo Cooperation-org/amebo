@@ -10,11 +10,14 @@ Collaborators (repo, odoo, authenticate) are injected so the pipeline is unit-
 testable with fakes and crafted email.message objects.
 """
 
+import hashlib
 import logging
 import re
+import subprocess
+from datetime import date
 from email.message import Message
 from email.utils import getaddresses, parseaddr
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 from src.mail_poller.sender_auth import authenticate as _authenticate
 from src.mail_poller.sender_auth import auth_results_from_message
@@ -152,13 +155,71 @@ def _strip_html(s: str) -> str:
     return re.sub(r"<[^>]+>", "", s or "").strip()
 
 
+_URL_RE = re.compile(r"https?://[^\s>)\]]+")
+
+# Where amebo's intake bucket lives in abra. Own scope + catcode so intake
+# items never pollute golda's contacts or the linkedtrust refs.
+INTAKE_SCOPE = "amebo"
+
+
+def _abra_intake_sink(item: dict) -> None:
+    """Default intake sink: store one intake item into the abra bucket via the
+    abra CLI (abra self-configures its own DB; runs as the poller's amebo user
+    with /opt/shared/tools on PATH). List args, no shell."""
+    argv = [
+        "abra", "store", item["name"], item["content"],
+        "--qualifier", item["summary"],
+        "--scope", INTAKE_SCOPE,
+        "--cat", item["cat"],
+        "--date", "today",
+    ]
+    result = subprocess.run(argv, capture_output=True, text=True, timeout=30)
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"abra store failed for intake item: {result.stderr.strip() or result.stdout.strip()}"
+        )
+
+
 class Poller:
-    def __init__(self, config, repo, odoo, authenticate=_authenticate):
+    def __init__(self, config, repo, odoo, authenticate=_authenticate,
+                 intake_sink: Optional[Callable[[dict], None]] = None):
         self.config = config
         self.repo = repo
         self.odoo = odoo
         self._authenticate = authenticate
         self._base_local = (config.imap_user.split("@", 1)[0] or "").lower()
+        self.intake_sink = intake_sink or _abra_intake_sink
+
+    def _deposit_intake(self, msg: Message, mid: str, sender: str, subject: str) -> None:
+        """Build a keyword-searchable intake item from an email and hand it to
+        the intake sink (abra by default). Dead-letters on sink failure so an
+        intake is never silently lost."""
+        body = body_text(msg)
+        links = _URL_RE.findall(body or "")
+        today = date.today().isoformat()
+        short = hashlib.sha1(mid.encode()).hexdigest()[:8]
+        name = f"intake-{today}-{short}"
+        summary = (f"{subject or '(no subject)'} — from {sender}")[:100]
+        content_parts = [
+            f"Subject: {subject}",
+            f"From: {sender}",
+            f"Captured: {today} (via +intake)",
+        ]
+        if links:
+            content_parts.append("Links:\n" + "\n".join(links))
+        content_parts.append("\n" + (body or "").strip()[:4000])
+        item = {
+            "name": name,
+            "summary": summary,
+            "content": "\n".join(content_parts),
+            "cat": f"amebo/intake/{today[:4]}/{today[5:7]}",
+        }
+        try:
+            self.intake_sink(item)
+        except Exception as e:
+            logger.warning("intake sink failed for %s: %s", mid, e)
+            self.repo.dead_letter("intake_sink_failed", message_id=mid, from_addr=sender,
+                                  subject=subject, tag="intake", detail=str(e)[:200])
 
     def process(self, msg: Message) -> str:
         """Process one message. Returns a short status string."""
@@ -190,6 +251,13 @@ class Poller:
             return reason
 
         tag = extract_tag(msg, self._base_local)
+        if tag == "intake":
+            # +intake → the amebo intake bucket (abra). Async drop, processed
+            # later; connected to a task by keyword (either direction). Kept
+            # under amebo's own scope+catcode so it never pollutes other data.
+            self._deposit_intake(msg, mid, parseaddr(from_hdr)[1], subject)
+            self.repo.mark_seen(mid)
+            return "intake_filed"
         if tag != "crm":
             self.repo.dead_letter("unrouted_tag", message_id=mid, from_addr=parseaddr(from_hdr)[1],
                                   subject=subject, tag=tag, detail=f"+{tag} not handled yet")
