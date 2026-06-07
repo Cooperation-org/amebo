@@ -117,3 +117,14 @@ wiring — if a hook needs a dispatcher seam I'll propose it here first.
   `amebo-backend` (a LIVE action). Holding for Golda's go per "never break live".
 
 ### Next (this session): EVALUATE-ASK-FOR-HELP hook (task 7) — claws get stuck / act uselessly.
+
+---
+
+## DEPLOY DONE — 2026-06-07 (Golda: "work live, does not matter if amebo goes down")
+- **LIVE primary `amebo-backend` (:8000) now runs `main`** (`/opt/shared/repos/amebo` ff'd deploy/foundation→main,
+  restarted). Health 200. Claw output-visibility is LIVE: served `/embed/amebo.js` has the step renderer; backend
+  serializes `tool_calls`/`tool_rounds` (unit test drives the real app + asserts the JSON). No new migrations/deps.
+- **`tmp-amebo2-backend` STOPPED + DISABLED.** It was crash-looping because `:8001` is held by **amos's**
+  `due-diligence` Django runserver (different user/project, up 19d) — NOT amebo. Left amos's process alone; the
+  amebo test unit was simply misconfigured onto a taken port. No isolated test instance exists; we work live for now.
+- Live checkout `/opt/shared/repos/amebo` is on `main` (group-writable golda:devteam per the SSO session's fix).
