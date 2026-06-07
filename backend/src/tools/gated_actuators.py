@@ -289,6 +289,26 @@ register_executor("taiga_create_task", execute_taiga_create)
 # ---------------------------------------------------------------------------
 
 
+def execute_slack_post(action: Dict[str, Any]) -> str:
+    """Post a Slack message from a (pending) action's payload.
+
+    THE single side effect for slack_post: used by the gate at draft time and,
+    via the executor registry, when a human approves the pending_action later.
+    Delegates the real posting (token, @-mention rules) to slack_tools so it
+    lives in one place. Raises on failure so a silently-failed post is recorded
+    as 'failed', not 'executed' (slack_tools returns 'Error: …' on failure).
+    """
+    from src.tools import slack_tools
+
+    payload = action.get("payload") or {}
+    if not payload.get("channel") or not (payload.get("text") or "").strip():
+        return "Error: cannot post — payload missing channel or text."
+    result = slack_tools.slack_post_impl(payload, {})
+    if isinstance(result, str) and result.startswith("Error"):
+        raise RuntimeError(f"slack_post failed: {result}")
+    return result
+
+
 def slack_post_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
     """
     Draft a Slack message. Routes through the gate; the message is only posted
@@ -318,15 +338,6 @@ def slack_post_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
     if (context or {}).get("notify_channel"):
         payload["notify_channel"] = context["notify_channel"]
 
-    def _executor(action: Dict[str, Any]) -> str:
-        # Runs ONLY after approval. Delegate to the existing slack_tools
-        # implementation so the real posting logic lives in one place. The
-        # approved action's payload carries the message fields.
-        from src.tools import slack_tools
-
-        approved_payload = action.get("payload") or payload
-        return slack_tools.slack_post_impl(approved_payload, context)
-
     preview = f"Post to {channel}: {text[:140]}" + ("…" if len(text) > 140 else "")
     return _route_through_gate(
         action_type="slack_post",
@@ -334,7 +345,7 @@ def slack_post_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
         target=channel,
         payload=payload,
         preview=preview,
-        executor=_executor,
+        executor=execute_slack_post,
     )
 
 
@@ -363,3 +374,8 @@ SLACK_POST_SCHEMA = {
     },
     "required": ["channel", "text"],
 }
+
+
+# Register the slack_post executor so an approved slack_post pending_action can
+# be posted from its stored payload (see src/services/action_executors.py).
+register_executor("slack_post", execute_slack_post)

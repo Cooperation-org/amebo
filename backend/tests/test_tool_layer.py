@@ -302,6 +302,26 @@ class TestGatedActuators:
         from src.services.action_executors import get_executor
         assert get_executor("taiga_create_task") is gated_actuators.execute_taiga_create
 
+    def test_slack_post_executor_is_registered(self):
+        from src.services.action_executors import get_executor
+        assert get_executor("slack_post") is gated_actuators.execute_slack_post
+
+    def test_execute_slack_post_raises_on_error(self):
+        import pytest
+        with patch("src.tools.slack_tools.slack_post_impl",
+                   return_value="Error: Slack API returned HTTP 500"):
+            with pytest.raises(RuntimeError, match="slack_post failed"):
+                gated_actuators.execute_slack_post(
+                    {"payload": {"channel": "#x", "text": "hi"}}
+                )
+
+    def test_execute_slack_post_success(self):
+        with patch("src.tools.slack_tools.slack_post_impl", return_value="Posted to #x"):
+            out = gated_actuators.execute_slack_post(
+                {"payload": {"channel": "#x", "text": "hi"}}
+            )
+        assert out == "Posted to #x"
+
     def test_taiga_create_requires_subject(self):
         out = gated_actuators.taiga_create_task_impl({}, {"org_id": 1})
         assert "subject is required" in out
