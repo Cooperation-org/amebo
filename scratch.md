@@ -139,3 +139,27 @@ Deadlines REQUIRED; mcp-taiga needs `--due` added (Taiga has due_date). All outb
   (create/readback/update round-trip, test story deleted). Roadmap item #1 done; today's stories can carry real deadlines.
 - Same commit snapshotted prior live-but-unversioned mcp-taiga work (users/tasks cmds, REST-API lookups) per Golda.
 - Next: walking Golda's 5-6 intake items onto the board manually (this session as orchestrator). Follow-up tracked in `~/work`.
+
+## MAKE-TASKS-FROM-SLACK SHIPPED + LIVE (2026-06-07, orchestration session)
+Capability: talk to amebo (Slack mention/thread or web chat) -> it uses tools intelligently -> drafts a Taiga
+task (gated) -> on approval the task is really created, as amebo, with a deadline. Two front doors, one
+encapsulated capability (the `/task` slash command is the only remaining front door, not yet built).
+- **amebo Taiga service account** (user id 434) created; `mcp-taiga` made self-refreshing
+  (`Cooperation-org/mcp-taiga` `00d87aa`: auto-login from TAIGA_USERNAME/PASSWORD on missing/expired 24h JWT).
+  Creds in live `backend/.env` (amebo ACL-reads). See memory `project_amebo_taiga_account`.
+- **amebo `main` `76a7753`, deployed + restarted on the live primary.** Pieces:
+  - Executor registry (`src/services/action_executors.py`): approve now actually executes via the registered
+    executor rebuilt from payload. `taiga_create_task` extended with due_date (REQUIRED), assignee, cash.
+  - approve endpoint runs the executor (approved -> executed/failed). Executor raises on CLI failure so a silent
+    failure is never logged as executed (found + fixed in live e2e; root cause was mcp-taiga not on the service
+    PATH -> added `/opt/shared/tools` to `backend/.env` PATH).
+  - Slack NL handlers resolve org+instance from team_id (`_resolve_org_and_instance`, `InstanceRepo.get_by_org`)
+    so the loop offers the tools and the gate has org context.
+  - `whatscookin` instance: `org_id` set to 1 (was NULL), `allowed_tools` = taiga_create_task, taiga_list,
+    list_projects, abra_search, odoo_search, crm_read_latest_email.
+- **Verified live e2e**: web chat -> AI calls taiga_create_task -> gated pending_action (with due) -> approve via
+  API -> task on board as owner 434 with due date. 434 tests pass (1 pre-existing chromadb failure).
+- **REMAINING for the flow**: (1) `/task` slash command (deterministic, human-issued, no gate). (2) amebo is a
+  member of project 77 only — add it to other boards before tasks target them (`mcp-taiga add-member`, which the
+  mcp-taiga session just added). (3) wire notify-people (slack_post_gated) for the full intake->done loop.
+- Note: mcp-taiga is now being co-edited by another session (add-member etc.) — coordinate, don't clobber.
