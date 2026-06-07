@@ -36,6 +36,21 @@ class InstanceRepo:
         finally:
             DatabaseConnection.return_connection(conn)
 
+    def get_by_org(self, org_id: int) -> Optional[Dict]:
+        """Return the instance for an org (lowest id wins if more than one).
+        Used to resolve which instance a Slack workspace's org talks through."""
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                cur.execute(
+                    "SELECT * FROM instances WHERE org_id = %s ORDER BY id LIMIT 1",
+                    (org_id,),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+        finally:
+            DatabaseConnection.return_connection(conn)
+
     def create(
         self,
         name: str,

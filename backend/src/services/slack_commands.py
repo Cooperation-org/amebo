@@ -20,6 +20,37 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+def _resolve_org_and_instance(workspace_id: str):
+    """Map a Slack workspace (team_id) to its (org_id, instance_slug).
+
+    The conversation loop needs both: org_id so gated actions (e.g. creating a
+    Taiga task) have a team identity to attribute the draft to, and the instance
+    slug so the model is offered that instance's allowed_tools. Returns
+    (None, None) if the workspace isn't connected to an org yet.
+    """
+    org_id = None
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT org_id FROM org_workspaces WHERE workspace_id = %s LIMIT 1",
+                (workspace_id,),
+            )
+            row = cur.fetchone()
+            if row:
+                org_id = row[0]
+    finally:
+        DatabaseConnection.return_connection(conn)
+
+    instance_slug = None
+    if org_id is not None:
+        from src.db.repositories.instance_repo import InstanceRepo
+        inst = InstanceRepo().get_by_org(org_id)
+        if inst:
+            instance_slug = inst["slug"]
+    return org_id, instance_slug
+
+
 def _log_slack_query_usage(workspace_id: str, question: str):
     """Log Slack query for usage tracking and analytics"""
     conn = DatabaseConnection.get_connection()
@@ -317,14 +348,18 @@ async def handle_app_mention(team_id, channel, text, user, ts):
             )
             return
 
-        # Get answer from Q&A service (with thread context for conversation memory)
-        qa_service = QAService(workspace_id=team_id)
+        # Get answer from Q&A service (with thread context for conversation memory).
+        # Resolve org + instance so the loop can use this team's tools and
+        # attribute gated actions (e.g. creating a Taiga task) to the org.
+        org_id, instance_slug = _resolve_org_and_instance(team_id)
+        qa_service = QAService(workspace_id=team_id, org_id=org_id)
         result = qa_service.answer_question(
             question=question,
             n_context_messages=10,
             thread_ref=ts,
             source_type="slack",
-            author_info=f"slack:{user}"
+            author_info=f"slack:{user}",
+            instance_slug=instance_slug,
         )
 
         response_text = f"*Q:* {question}\n\n{result['answer']}"
@@ -425,13 +460,15 @@ async def handle_thread_reply(team_id, channel, text, user, ts, thread_ts):
 
         web_client = AsyncWebClient(token=BOT_TOKEN)
 
-        qa_service = QAService(workspace_id=team_id)
+        org_id, instance_slug = _resolve_org_and_instance(team_id)
+        qa_service = QAService(workspace_id=team_id, org_id=org_id)
         result = qa_service.answer_question(
             question=question,
             n_context_messages=10,
             thread_ref=thread_ts,
             source_type="slack",
             author_info=f"slack:{user}",
+            instance_slug=instance_slug,
         )
 
         response_text = result.get("answer", "(no response)")
