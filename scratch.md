@@ -132,3 +132,10 @@ wiring — if a hook needs a dispatcher seam I'll propose it here first.
 ## HANDOFF (2026-06-07)
 Full intention + remaining roadmap + today (5-6 stories) + deadline fix: `~/work/6-07-2026-amebo-intake-handoff.md`.
 Deadlines REQUIRED; mcp-taiga needs `--due` added (Taiga has due_date). All outbound gated. This session owns all amebo.
+
+## DEADLINE BLOCKER RESOLVED (2026-06-07, orchestration session)
+- **mcp-taiga `--due` shipped** (`Cooperation-org/mcp-taiga` `ce6ae05`, pushed). `--due YYYY-MM-DD` on
+  `create` + `update`, validated by `parse_due_date()`; `show` prints due. Verified e2e on the live board
+  (create/readback/update round-trip, test story deleted). Roadmap item #1 done; today's stories can carry real deadlines.
+- Same commit snapshotted prior live-but-unversioned mcp-taiga work (users/tasks cmds, REST-API lookups) per Golda.
+- Next: walking Golda's 5-6 intake items onto the board manually (this session as orchestrator). Follow-up tracked in `~/work`.
