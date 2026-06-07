@@ -93,11 +93,21 @@
       amebo-ask .sources { margin-top: 6px; font-size: 12px; opacity: 0.7; }
       amebo-goal .status { font-size: 12px; opacity: 0.7; }
       amebo-goal .actions { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
-      amebo-goal ul.events { list-style: none; padding-left: 0; margin: 8px 0 0; font-size: 12px; }
-      amebo-goal ul.events li { padding: 2px 0; border-top: 1px solid rgba(0,0,0,0.06); }
+      amebo-goal ul.events { list-style: none; padding-left: 0; margin: 4px 0 0; font-size: 12px; }
+      amebo-goal ul.events li { padding: 3px 0; border-top: 1px solid rgba(0,0,0,0.06); }
       amebo-goal ul.events .when { opacity: 0.6; margin-right: 6px; }
       amebo-goal ul.events .action { font-family: ui-monospace, monospace; }
       amebo-goal ul.events .summary { opacity: 0.8; }
+      amebo-goal .events-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.55; margin-top: 8px; }
+      .amebo .muted, amebo-goal .muted, amebo-claws .muted { opacity: 0.55; }
+      amebo-claws ul.dispatch-steps { list-style: none; padding-left: 0; margin: 4px 0 0; font-size: 12px; }
+      amebo-claws ul.dispatch-steps .step { padding: 2px 0; display: flex; gap: 6px; align-items: baseline; }
+      amebo-claws ul.dispatch-steps .step .mark { width: 1em; flex: none; }
+      amebo-claws ul.dispatch-steps .step code { font-family: ui-monospace, monospace; }
+      amebo-claws ul.dispatch-steps .step.ok .mark { color: #1a7f37; }
+      amebo-claws ul.dispatch-steps .step.err .mark { color: #cf222e; }
+      amebo-claws ul.dispatch-steps .step.held .mark { color: #9a6700; }
+      amebo-claws .dispatch-summary { margin-top: 6px; white-space: pre-wrap; font-size: 12px; }
       /* Visual style mirrors abra's Recent feed: soft-bordered card per
          item with collapsible details. Uses currentColor so host palette
          drives the tone. */
@@ -365,19 +375,25 @@
 
     _render(g, events) {
       const goalId = g.goal_id || g.id || this._goalId;
-      const recent = (Array.isArray(events) ? events : []).slice(0, 3);
+      // Show the recent trail (last 12 events, chronological) with enough text
+      // to actually read what the claw did — not 3 events truncated to 80 chars.
+      const all = (Array.isArray(events) ? events : []);
+      const recent = all.slice(-12);
+      const moreNote = all.length > recent.length
+        ? `<li class="more muted">…${all.length - recent.length} earlier event(s)</li>`
+        : '';
       const eventsHtml = recent.length
-        ? `<ul class="events">${recent.map((e) => `
+        ? `<div class="events-label">recent activity</div><ul class="events">${moreNote}${recent.map((e) => `
             <li>
               <span class="when">${esc(relTime(e.created_at))}</span>
               <span class="action">${esc(e.action || '')}</span>${
                 e.result_summary
-                  ? `<span class="summary"> — ${esc(trunc(e.result_summary, 80))}</span>`
+                  ? `<span class="summary"> — ${esc(trunc(e.result_summary, 240))}</span>`
                   : ''
               }
             </li>
           `).join('')}</ul>`
-        : '';
+        : '<div class="events-label muted">no recorded activity yet</div>';
       this.innerHTML = `
         <div><strong>${esc(g.title)}</strong></div>
         <div class="status">status: ${esc(g.status || 'unknown')} · id: ${esc(goalId)}</div>
@@ -444,6 +460,40 @@
     const allowed = ['pending', 'active', 'completed', 'failed', 'paused'];
     const cls = allowed.includes(status) ? status : '';
     return `<span class="pill ${cls}">${esc(status || '?')}</span>`;
+  }
+
+  // Render a /dispatch-now response into a readable play-by-play. Surfaces the
+  // tool calls the claw made (the per-step trail) so a manual run is never
+  // blank — even when the final summary is thin/empty. A held-for-approval step
+  // is a successful tool call whose summary says "[held for approval]".
+  function _renderDispatchResult(r) {
+    r = r || {};
+    const head = `<div class="head">dispatched · status: ${esc(r.status || '?')}`
+      + `${typeof r.tool_rounds === 'number' ? ' · ' + r.tool_rounds + ' round' + (r.tool_rounds === 1 ? '' : 's') : ''}`
+      + `${r.notification_sent ? ' · notified' : ''}</div>`;
+
+    const calls = Array.isArray(r.tool_calls) ? r.tool_calls : [];
+    const stepsHtml = calls.length
+      ? `<ul class="dispatch-steps">${calls.map((tc) => {
+          const held = /\[held for approval\]/i.test(tc.summary || '');
+          const mark = held ? '⏸' : (tc.ok ? '✓' : '✗');
+          const cls = held ? 'held' : (tc.ok ? 'ok' : 'err');
+          const sum = tc.summary ? ` — ${esc(trunc(tc.summary, 200))}` : '';
+          return `<li class="step ${cls}"><span class="mark">${mark}</span>`
+            + `<code>${esc(tc.name || '?')}</code>${sum}</li>`;
+        }).join('')}</ul>`
+      : '';
+
+    const summaryHtml = r.summary
+      ? `<div class="dispatch-summary">${esc(r.summary)}</div>`
+      : '';
+    const errHtml = r.error ? `<div class="amebo-error">error: ${esc(r.error)}</div>` : '';
+
+    // Never blank: if there were no steps, no summary and no error, say so.
+    const fallback = (stepsHtml || summaryHtml || errHtml)
+      ? ''
+      : '<div class="dispatch-summary muted">claw ran; no tool calls and no summary.</div>';
+    return head + stepsHtml + summaryHtml + errHtml + fallback;
   }
 
   class AmeboClaws extends HTMLElement {
@@ -567,12 +617,7 @@
         const r = await jpost(`${this._base}/api/goals/${encodeURIComponent(id)}/dispatch-now`);
         if (status) { status.textContent = ''; status.className = 'control-status'; }
         if (result) {
-          const lines = [
-            `<div class="head">dispatched · status: ${esc(r.status || '?')}${r.notification_sent ? ' · notified' : ''}</div>`,
-            r.summary ? esc(r.summary) : '(no summary)',
-            r.error ? `\n\nerror: ${esc(r.error)}` : '',
-          ].join('');
-          result.innerHTML = lines;
+          result.innerHTML = _renderDispatchResult(r);
           result.hidden = false;
         }
       } catch (err) {

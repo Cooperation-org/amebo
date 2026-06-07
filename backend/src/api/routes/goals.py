@@ -79,12 +79,25 @@ class GoalEventResponse(BaseModel):
     created_at: datetime
 
 
+class ToolCallSummary(BaseModel):
+    """One tool call the claw made during a dispatch — the play-by-play a human
+    needs to see what the claw actually did, including held-for-approval steps."""
+
+    name: str
+    ok: bool
+    summary: Optional[str] = None
+
+
 class DispatchResultResponse(BaseModel):
     goal_id: str
     status: str
     summary: Optional[str] = None
     error: Optional[str] = None
     notification_sent: bool
+    # The per-step trail the dispatcher already builds. Surfaced so a manual run
+    # shows what happened even when the final summary is thin/empty.
+    tool_rounds: int = 0
+    tool_calls: List[ToolCallSummary] = Field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +262,15 @@ async def dispatch_goal_now(
         summary=result.summary,
         error=result.error,
         notification_sent=result.notification_sent,
+        tool_rounds=result.tool_rounds,
+        tool_calls=[
+            ToolCallSummary(
+                name=tc.get("name", "?"),
+                ok=bool(tc.get("ok", False)),
+                summary=tc.get("summary"),
+            )
+            for tc in (result.tool_calls or [])
+        ],
     )
 
 
