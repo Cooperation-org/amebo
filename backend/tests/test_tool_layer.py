@@ -190,7 +190,8 @@ class TestGatedActuators:
             side_effect=AssertionError("side effect must NOT run for a gated action"),
         ):
             out = gated_actuators.taiga_create_task_impl(
-                {"subject": "Ship tool layer", "project": "amebo"},
+                {"subject": "Ship tool layer", "project": "amebo",
+                 "due_date": "2026-06-20"},
                 {"org_id": 7, "draft_gate": gate},
             )
 
@@ -201,6 +202,7 @@ class TestGatedActuators:
         assert rec["org_id"] == 7
         assert rec["action_type"] == "taiga_create_task"
         assert rec["payload"]["subject"] == "Ship tool layer"
+        assert rec["payload"]["due_date"] == "2026-06-20"
         assert rec["acting_identity"] == "amebo:7"
 
     def test_slack_post_gated_routes_through_gate_no_side_effect(self):
@@ -225,17 +227,65 @@ class TestGatedActuators:
     def test_actuator_requires_org_context(self):
         _, gate = _gate_with_fake_repo()
         out = gated_actuators.taiga_create_task_impl(
-            {"subject": "x", "project": "amebo"}, {"draft_gate": gate}
+            {"subject": "x", "project": "amebo", "due_date": "2026-06-20"},
+            {"draft_gate": gate},
         )
         assert "no org context" in out
 
     def test_actuator_delegated_identity_stamp(self):
         repo, gate = _gate_with_fake_repo()
         gated_actuators.taiga_create_task_impl(
-            {"subject": "x", "project": "amebo"},
+            {"subject": "x", "project": "amebo", "due_date": "2026-06-20"},
             {"org_id": 9, "principal": "golda", "draft_gate": gate},
         )
         assert repo.created[0]["acting_identity"] == "urn:amebo:user:golda"
+
+    def test_taiga_create_requires_due_date(self):
+        # Deadlines are required on every task.
+        _, gate = _gate_with_fake_repo()
+        out = gated_actuators.taiga_create_task_impl(
+            {"subject": "x", "project": "amebo"},
+            {"org_id": 1, "draft_gate": gate},
+        )
+        assert "due_date is required" in out
+
+    def test_taiga_create_rejects_bad_due_date(self):
+        _, gate = _gate_with_fake_repo()
+        out = gated_actuators.taiga_create_task_impl(
+            {"subject": "x", "project": "amebo", "due_date": "June 20"},
+            {"org_id": 1, "draft_gate": gate},
+        )
+        assert "not a valid date" in out
+
+    def test_taiga_create_payload_carries_assignee_and_cash(self):
+        repo, gate = _gate_with_fake_repo()
+        gated_actuators.taiga_create_task_impl(
+            {"subject": "x", "project": "amebo", "due_date": "2026-06-20",
+             "assignee": "golda", "cash": 50},
+            {"org_id": 1, "draft_gate": gate},
+        )
+        payload = repo.created[0]["payload"]
+        assert payload["assignee"] == "golda"
+        assert payload["cash"] == 50
+
+    def test_execute_taiga_create_builds_argv(self):
+        # The post-approval executor builds the right mcp-taiga argv from payload.
+        captured = {}
+        with patch.object(gated_actuators, "run_cli",
+                          side_effect=lambda argv: captured.setdefault("argv", argv) or "ok"):
+            gated_actuators.execute_taiga_create({"payload": {
+                "project": "amebo", "subject": "Ship X", "description": "ctx",
+                "due_date": "2026-06-20", "assignee": "golda", "cash": 50,
+            }})
+        assert captured["argv"] == [
+            "mcp-taiga", "create", "amebo", "Ship X",
+            "--description", "ctx", "--due", "2026-06-20",
+            "--assign", "golda", "--cash", "50",
+        ]
+
+    def test_taiga_create_executor_is_registered(self):
+        from src.services.action_executors import get_executor
+        assert get_executor("taiga_create_task") is gated_actuators.execute_taiga_create
 
     def test_taiga_create_requires_subject(self):
         out = gated_actuators.taiga_create_task_impl({}, {"org_id": 1})
