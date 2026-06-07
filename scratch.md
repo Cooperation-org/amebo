@@ -94,3 +94,26 @@ Also (Golda's reprioritized roadmap, this session is on it now): claw OUTPUT VIS
 (a manual claw run shows no output today) and an EVALUATE-ASK-FOR-HELP hook (claws get stuck / act uselessly).
 These are additive + gated like everything else; I'll branch them off main. Will not touch your dispatcher/live
 wiring — if a hook needs a dispatcher seam I'll propose it here first.
+
+---
+
+## AMEBO STATE — 2026-06-07 (orchestration session, now sole amebo owner)
+
+### Done since ownership handoff
+- `deploy/foundation` folded into `main` (security + router + 3 hooks now on canonical main). 426 tests pass
+  (1 pre-existing chromadb env-data failure, unrelated).
+- **Claw output visibility SHIPPED to `main`** (`7b13c03`): `/dispatch-now` now returns `tool_rounds` +
+  `tool_calls` (the per-step trail the dispatcher already builds but used to drop); `embed/amebo.js` renders the
+  steps (✓/✗/⏸ held-for-approval) so a manual Run-now is NEVER blank, and the `<amebo-goal>` detail view shows
+  the last 12 events at 240 chars (was 3 at 80). This fixes "the one small claw, no output."
+
+### ⚠️ DEPLOY BLOCKER (needs Golda's decision — NOT worked around)
+- **No usable isolated test instance.** `tmp-amebo2-backend` (:8001) is crash-looping: `[Errno 98] address
+  already in use` on 8001 (pre-existing; something holds the port). Did NOT kill by port on a shared VM.
+- **Test and primary share one code dir** `/opt/shared/repos/amebo/backend` (both units run from it). So
+  "deploy to test first" isn't actually isolated — updating that checkout affects the LIVE primary (:8000).
+- Live primary checkout is on branch `deploy/foundation` (`0b8060c`), behind `main`.
+- ⇒ To let Golda SEE the new output live, someone must deploy `main` to `/opt/shared/repos/amebo` + restart
+  `amebo-backend` (a LIVE action). Holding for Golda's go per "never break live".
+
+### Next (this session): EVALUATE-ASK-FOR-HELP hook (task 7) — claws get stuck / act uselessly.
