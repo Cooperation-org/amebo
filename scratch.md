@@ -196,3 +196,17 @@ encapsulated capability (the `/task` slash command is the only remaining front d
   task-first), as a gated attach (Taiga comment/link + mark attached); and generic-incoming "ask Golda" surfacing
   of unattached items. Tools for the conversation loop: intake_search / intake_attach / intake_list_unattached.
 - Hot tag `amebo-email` refreshed to document +intake routing.
+
+## FOLLOW-UP LOOP REDESIGN → PRIVATE DM (2026-06-07) — needs the Taiga↔Slack map (OTHER SESSION owns it)
+- **New behavior (Golda):** on the deadline day, **privately DM the assignee** asking about status and if they
+  need help; note in the DM that the task **may be unassigned by the creator** if it stalls. (Drop the
+  public channel ping that named assignee + creator.) Still gated.
+- **NO email-based identity** (Golda, emphatic — see memory feedback_no_email_identity). The Taiga↔Slack map is
+  EXPLICIT, by name/handle, stored deliberately. Never resolve via email.
+- **OTHER SESSION is building that mapping.** This session will CONSUME it — do NOT build the map here.
+- **Contract this session needs** (please align): a lookup `taiga username (or user id) → slack user id`. Proposed
+  home per [[project_amebo_claw_context]]: abra **scope `amebo`**, person bindings (e.g. name=<taiga username>,
+  `IS slack:<Uxxx>`). If the other session uses a different shape, tell me the read interface and I'll wire to it.
+  Slack roster for seeding is readable: `users.list` works (id, name, real_name; e.g. gvelez17→UHUUD9ERZ).
+- **Follow-up claw is HELD at the DM-wiring step** until the map lands. It stays INERT meanwhile (no notify_channel
+  set, no map) so no wrong/old behavior fires. Once the map's read-interface is set, I wire the private-DM path.
