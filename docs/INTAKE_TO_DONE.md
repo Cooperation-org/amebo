@@ -28,12 +28,19 @@ A single path that takes an intake and drives it to completion:
    pulled from abra / the CRM. Not a thin one-liner. **Every task has a deadline.**
 4. **Notify.** It tells the right people in Slack.
 5. **Fund (sometimes).** Some items get funds assigned (Taiga cash tag).
-6. **Drive it forward.** It checks whether the task is being worked on. If it is
-   not done by the deadline, a claw picks it up and asks the assignee directly:
-   "you gonna do this?" If there is no answer, it unassigns and gives it to someone
-   else. The escalation (deadline -> ask -> no answer -> reassign) is mostly fixed
-   logic; the **asking the person** is the part that needs intelligence (read the
-   context, phrase it like a person, judge the reply).
+6. **Drive it forward (make sure it gets done).** The requester feeds the info and
+   says what is needed; from there the system is accountable for getting it done. It
+   checks whether the task is being worked on. If it is not done by the deadline, a
+   claw picks it up and asks the assignee directly: "you gonna do this?" If there is
+   no answer, it unassigns and gives it to someone else. **If no one picks it up, it
+   tells whoever created the task** so they can add more funds or otherwise
+   intervene. The escalation (deadline -> ask -> no answer -> reassign -> nobody
+   takes it -> tell the creator) is mostly fixed logic; the **asking the person** is
+   the part that needs intelligence (read the context, phrase it like a person,
+   judge the reply).
+
+   The escalation target is **the task's creator**, read from the task itself, never
+   hardcoded. Whoever made the task is who hears about it when it stalls.
 
 Every outbound step (board write, Slack post, assignment, funding) is a gated
 draft for Golda's approval until trusted. Nothing is sent blind.
@@ -72,7 +79,12 @@ draft for Golda's approval until trusted. Nothing is sent blind.
      silence).
    - no answer within a window -> **unassign and reassign** to someone else (fixed
      logic), then notify. Repeat the watch.
-   Fold the "ask for help when stuck" behavior in here (same family).
+   - nobody picks it up -> **tell the task's creator** (gated message) so they can
+     add more funds or intervene. Target is read from the task's creator field,
+     never hardcoded. The funds lever is theirs; the system surfaces the decision.
+   Fold the "ask for help when stuck" behavior in here (same family). The imperative
+   is accountability: once the creator has fed the info and said what is needed, the
+   loop owns getting it done or escalating back to them, not dropping it.
 
 ## Status
 
