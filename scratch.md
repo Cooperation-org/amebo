@@ -128,3 +128,7 @@ wiring — if a hook needs a dispatcher seam I'll propose it here first.
   `due-diligence` Django runserver (different user/project, up 19d) — NOT amebo. Left amos's process alone; the
   amebo test unit was simply misconfigured onto a taken port. No isolated test instance exists; we work live for now.
 - Live checkout `/opt/shared/repos/amebo` is on `main` (group-writable golda:devteam per the SSO session's fix).
+
+## HANDOFF (2026-06-07)
+Full intention + remaining roadmap + today (5-6 stories) + deadline fix: `~/work/6-07-2026-amebo-intake-handoff.md`.
+Deadlines REQUIRED; mcp-taiga needs `--due` added (Taiga has due_date). All outbound gated. This session owns all amebo.
