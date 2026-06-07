@@ -169,3 +169,17 @@ encapsulated capability (the `/task` slash command is the only remaining front d
 - **STILL REMAINING for the full flow**: wire notify-people (slack_post_gated) after task creation;
   then the intake bucket + follow-up loop (roadmap #2,#5). Board cleanup is Golda's (separate session).
 - Note: mcp-taiga is being co-edited by another session (add-member etc.) — coordinate, don't clobber.
+
+## NOTIFY + FOLLOW-UP LOOP SHIPPED (2026-06-07, orchestration session)
+- **Notify-people LIVE** (`8c9b6b7`): registered execute_slack_post in the executor registry; enabled
+  `slack_post_gated` on whatscookin. `@amebo` can now draft a task AND a Slack notify, both gated; approve posts.
+- **Deadline follow-up claw SHIPPED** (`244f85c`, simplified per Golda: deadline-DAY ping only, no auto-reassign).
+  `src/services/followup_claw.py`: finds open Taiga stories due == today across amebo's boards, drafts ONE gated
+  slack_post per task naming assignee + creator ("you two figure it out"). Creator = task owner (not hardcoded).
+  Dedup via pending_actions (payload.followup_task + same day). Channel = `instances.config.notify_channel`
+  (injected; runner no-ops if unset). 6 tests, 451 pass.
+- **Daily timer**: `amebo-followup.timer` (09:00 UTC) → `amebo-followup.service` (oneshot, runs the claw). Enabled
+  + test-fired (exit 0). Safe unattended — only creates gated drafts.
+- **TO TURN ON**: set `notify_channel` in the whatscookin instance config to the Slack channel for deadline pings
+  (Golda to choose). Until then the claw is inert. @-mentions are by-name in text for now (Taiga→Slack id map = future).
+- Daily worklog convention added to abra (`abra store --date`, commit abra 15f931a); see memory feedback_daily_worklog_in_abra.
