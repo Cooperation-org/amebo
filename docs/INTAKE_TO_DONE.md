@@ -17,11 +17,16 @@ this flow right now.
 
 A single path that takes an intake and drives it to completion:
 
-1. **Intake.** Give it source material: a forwarded email, or links/files dropped
-   in Slack or email.
+1. **Intake lands in a bucket.** Everything you send (forwarded email, links, files,
+   Slack drops) lands in an intake **bucket**: a keyword/text-searchable staging
+   area of items waiting to be connected to a task. "Finding the intake" = searching
+   the bucket by keyword.
 2. **Tell it, with keywords.** Say what to do about it (voice or text), and say
-   keywords so it can **find** the right intake. Binding is by keyword search
-   (CRM / abra / Slack), not by replying in a specific thread.
+   keywords so it can **find** the matching bucket item(s) and connect them. Binding
+   is by keyword search over the bucket, not by replying in a specific thread.
+   **Either order works:** send data first then make the task, OR make the task
+   first then send data that connects to it by keyword. The task is the stable
+   anchor; bucket items attach to it whenever they arrive.
 3. **Make the work.** It creates **one task** on the Taiga board (a story with
    subtasks is not required; one task is fine). The task carries enough context to
    be doable on its own: the source material, the instruction, and relevant context
@@ -57,10 +62,15 @@ draft for Golda's approval until trusted. Nothing is sent blind.
 
 ## What is missing (the build path to drive toward the goal)
 
-1. **Keyword find.** Take the spoken/typed keywords and find the matching intake
-   across the CRM, abra, and recent Slack. This is the binding mechanism (no thread
-   reply needed). Built on the existing read tools (`crm_read_latest_email`,
-   `abra_search`, `odoo_search`, Slack history search).
+1. **The intake bucket + keyword connect.** A keyword/text-searchable staging store
+   of intake items (email/links/files/Slack drops), each with status
+   unattached/attached and the task it connects to. "Find the intake" = keyword
+   search over the bucket. Connect works **both directions** (data-first or
+   task-first); a strong keyword match proposes a connection (gated draft, or auto
+   when confident). abra is already a pgvector keyword store, so the bucket can be an
+   abra scope rather than a brand-new store. The mail poller already lands emails;
+   the bucket generalizes that to links/files/Slack. Reuse the existing read tools
+   (`crm_read_latest_email`, `abra_search`, `odoo_search`, Slack history) for search.
 2. **Instruction capture.** Accept the "what to do about it" instruction (voice
    transcript or text) alongside the keywords. Voice transcription is the new input;
    once it is text, the rest is the same.
