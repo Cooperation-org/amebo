@@ -160,7 +160,15 @@ def execute_taiga_create(action: Dict[str, Any]) -> str:
         argv += ["--assign", payload["assignee"]]
     if payload.get("cash") is not None:
         argv += ["--cash", str(payload["cash"])]
-    return run_cli(argv)
+    out = run_cli(argv)
+    # run_cli degrades gracefully (returns an error string, never raises) so the
+    # read-tool loop keeps going. But this is a WRITE: a silent failure must NOT
+    # be recorded as 'executed'. mcp-taiga prints "Created #<ref>: ..." on
+    # success; anything else means the task was not created — raise so
+    # execute_approved marks the action failed and stores the reason.
+    if "Created #" not in out:
+        raise RuntimeError(f"taiga_create_task failed: {out.strip()}")
+    return out
 
 
 def _valid_due_date(value: str) -> bool:

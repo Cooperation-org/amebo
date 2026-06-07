@@ -42,7 +42,7 @@ class FakeService:
     def execute_approved(self, action_id, org_id, executor):
         # Prove the route handed us a real executor by running it.
         self.ran_executor = executor
-        with patch("src.tools.gated_actuators.run_cli", return_value="created #99"):
+        with patch("src.tools.gated_actuators.run_cli", return_value="Created #99: x"):
             self.result = executor(_action("approved"))
         return _action("executed", executed_at=datetime.now(timezone.utc))
 
@@ -56,7 +56,7 @@ def test_approve_runs_registered_executor_and_marks_executed():
     # The route executed the action via the registered taiga_create_task executor.
     from src.tools.gated_actuators import execute_taiga_create
     assert fake.ran_executor is execute_taiga_create
-    assert fake.result == "created #99"
+    assert fake.result == "Created #99: x"
     assert resp.status == "executed"
     assert resp.executed_at is not None
 

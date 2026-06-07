@@ -271,8 +271,12 @@ class TestGatedActuators:
     def test_execute_taiga_create_builds_argv(self):
         # The post-approval executor builds the right mcp-taiga argv from payload.
         captured = {}
-        with patch.object(gated_actuators, "run_cli",
-                          side_effect=lambda argv: captured.setdefault("argv", argv) or "ok"):
+
+        def fake_run_cli(argv):
+            captured["argv"] = argv
+            return "Created #5: Ship X"
+
+        with patch.object(gated_actuators, "run_cli", side_effect=fake_run_cli):
             gated_actuators.execute_taiga_create({"payload": {
                 "project": "amebo", "subject": "Ship X", "description": "ctx",
                 "due_date": "2026-06-20", "assignee": "golda", "cash": 50,
@@ -282,6 +286,17 @@ class TestGatedActuators:
             "--description", "ctx", "--due", "2026-06-20",
             "--assign", "golda", "--cash", "50",
         ]
+
+    def test_execute_taiga_create_raises_on_failure(self):
+        # A failed CLI (run_cli returns an error string, never raises) must
+        # surface as an exception so the action is marked failed, not executed.
+        import pytest
+        with patch.object(gated_actuators, "run_cli",
+                          return_value="Error: command not found: mcp-taiga"):
+            with pytest.raises(RuntimeError, match="taiga_create_task failed"):
+                gated_actuators.execute_taiga_create({"payload": {
+                    "project": "amebo", "subject": "x", "due_date": "2026-06-20",
+                }})
 
     def test_taiga_create_executor_is_registered(self):
         from src.services.action_executors import get_executor
