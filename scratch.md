@@ -183,3 +183,16 @@ encapsulated capability (the `/task` slash command is the only remaining front d
 - **TO TURN ON**: set `notify_channel` in the whatscookin instance config to the Slack channel for deadline pings
   (Golda to choose). Until then the claw is inert. @-mentions are by-name in text for now (Taiga→Slack id map = future).
 - Daily worklog convention added to abra (`abra store --date`, commit abra 15f931a); see memory feedback_daily_worklog_in_abra.
+
+## INTAKE BUCKET — CAPTURE SHIPPED (2026-06-07, orchestration session)
+- **`+intake` now captured to abra** (`11ffd79`, poller live/restarted). `amebo2019+intake@gmail.com` -> poller
+  `_deposit_intake` -> `abra store` into scope **amebo**, catcode **amebo/intake/YYYY/MM** (own namespace, no
+  pollution). Item = subject + sender + extracted links + body, ≤100-char summary, dated. Sink failure
+  dead-letters (never silent). Registered the `amebo` catcode root in abra (a002). 4 tests; 455 pass.
+- **Convention** (memory project_amebo_claw_context): amebo abra data under scope+catcode `amebo`; shared
+  context -> abra as a VIEW, per-claw state -> amebo DB; Slack↔Taiga map = abra person bindings, derived-on-miss.
+- **Golda can test**: forward an email to `amebo2019+intake@gmail.com`; it lands in the bucket (abra scope amebo).
+- **REMAINING (next chunk)**: CONNECT — keyword-match an intake item to a Taiga task, BOTH directions (data-first /
+  task-first), as a gated attach (Taiga comment/link + mark attached); and generic-incoming "ask Golda" surfacing
+  of unattached items. Tools for the conversation loop: intake_search / intake_attach / intake_list_unattached.
+- Hot tag `amebo-email` refreshed to document +intake routing.
