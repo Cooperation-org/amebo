@@ -130,6 +130,7 @@ async def process_slash_command(client: SocketModeClient, req: SocketModeRequest
             text = req.payload.get("text", "").strip()
             user_id = req.payload["user_id"]
             channel_id = req.payload["channel_id"]
+            team_id = req.payload.get("team_id")
 
             logger.info(f"Command: {command} from {user_id}: {text}")
 
@@ -140,6 +141,8 @@ async def process_slash_command(client: SocketModeClient, req: SocketModeRequest
                 await handle_ask(web_client, user_id, channel_id, text, private=True)
             elif command == "/askall":
                 await handle_ask(web_client, user_id, channel_id, text, private=False)
+            elif command == "/task":
+                await handle_task(web_client, user_id, channel_id, text, team_id)
 
         except Exception as e:
             logger.error(f"Error processing slash command: {e}", exc_info=True)
@@ -152,6 +155,82 @@ async def process_slash_command(client: SocketModeClient, req: SocketModeRequest
                 )
             except:
                 pass
+
+
+_TASK_USAGE = (
+    "Usage: `/task <project> <subject…> due:YYYY-MM-DD [assign:username] [cash:N]`\n"
+    "Example: `/task amebo Ship the badge embed due:2026-06-20 assign:golda cash:50`\n"
+    "A deadline (`due:`) is required. The task is created immediately as amebo."
+)
+
+
+def parse_task_command(text):
+    """Parse a `/task` command body into a create payload.
+
+    Format: ``<project> <subject words…> due:YYYY-MM-DD [assign:user] [cash:N]``.
+    The first token is the project; key:value tokens (due:/assign:/cash:) may
+    appear anywhere after it; everything else is the subject. Returns
+    (payload, error_message) — exactly one is None.
+    """
+    tokens = (text or "").split()
+    if len(tokens) < 2:
+        return None, _TASK_USAGE
+    project = tokens[0]
+    due = assignee = cash = None
+    subject_words = []
+    for t in tokens[1:]:
+        low = t.lower()
+        if low.startswith("due:"):
+            due = t[4:]
+        elif low.startswith("assign:"):
+            assignee = t[7:]
+        elif low.startswith("cash:"):
+            cash = t[5:]
+        else:
+            subject_words.append(t)
+    subject = " ".join(subject_words).strip()
+    if not subject:
+        return None, "Missing task subject.\n\n" + _TASK_USAGE
+    if not due:
+        return None, "A deadline is required.\n\n" + _TASK_USAGE
+    from src.tools.gated_actuators import _valid_due_date
+    if not _valid_due_date(due):
+        return None, f"`{due}` is not a valid date — use YYYY-MM-DD.\n\n" + _TASK_USAGE
+    payload = {"project": project, "subject": subject, "due_date": due}
+    if assignee:
+        payload["assignee"] = assignee
+    if cash is not None:
+        if not cash.isdigit():
+            return None, f"`cash:{cash}` must be a number.\n\n" + _TASK_USAGE
+        payload["cash"] = int(cash)
+    return payload, None
+
+
+async def handle_task(web_client, user_id, channel_id, text, team_id=None):
+    """Handle /task — create a Taiga task immediately, as amebo.
+
+    This is the deterministic front door: the human typed exactly what they
+    want, so it is NOT routed through the AI loop or the approval gate (the
+    person issuing the command is the approval). The natural-language path
+    (@amebo) is the gated, AI-assisted one.
+    """
+    payload, err = parse_task_command(text)
+    if err:
+        await web_client.chat_postEphemeral(channel=channel_id, user=user_id, text=err)
+        return
+    try:
+        from src.tools.gated_actuators import execute_taiga_create
+        result = execute_taiga_create({"payload": payload})
+        await web_client.chat_postEphemeral(
+            channel=channel_id, user=user_id,
+            text=f"✅ {result.strip()}  (due {payload['due_date']})",
+        )
+    except Exception as e:
+        logger.error(f"/task failed: {e}", exc_info=True)
+        await web_client.chat_postEphemeral(
+            channel=channel_id, user=user_id,
+            text=f"❌ Could not create the task: {str(e)}",
+        )
 
 
 async def handle_ask(web_client, user_id, channel_id, question, private=True):
