@@ -57,3 +57,15 @@ Amebo needs to switch between **models and API keys**, for cost and for access r
 - Soon we'll run a model on **our own hardware** — so self-hosted will be another target to route to.
 
 **But don't switch mid-thread.** Conversation threads benefit from server-side (prompt) caching, so when there's a live conversation/thread going, prefer to keep it on the same model/key. Switch at natural boundaries, not mid-conversation.
+
+## 7. Per-user, per-session credential management
+
+We already have credential encapsulation (see `docs/CREDENTIAL_HELPER.md`) — build on it, don't reinvent.
+
+- **Each user uses their own API key.** Team members enter their own keys for using the Claude Code SDK *through* Amebo; Amebo manages credentials per user.
+- **Sometimes a team key applies instead** — especially for an open-source / self-hosted model we run.
+- **Credential selection should be smart.** When a user wants some intelligence, Amebo decides *which* key to use (the user's own, a team key, the self-hosted model) rather than always asking.
+- **Load at session start, extend as needed.** When a user starts a session they pick the credentials they need; the session's credential bundle can be added to during the session as new needs arise. Don't make the user decide constantly — **prompt only when actually needed**.
+- **Shared-service credentials** (Taiga, CRM, etc.) some users will want to share — be careful how those are stored. (Believed already encapsulated; verify against the credential helper.)
+
+**Sessions are first-class.** During a session Amebo holds that session's credential bundle **in memory, cached for that specific session**. This needs a strong, explicit concept of *sessions* in the architecture. Amebo is Python — concurrency via threading / event loop is fine — but the design should clearly support concurrent per-session bundles held in memory. (Hopefully the session model is already there; confirm.)
