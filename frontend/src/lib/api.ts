@@ -175,6 +175,22 @@ class ApiClient {
     });
   }
 
+  // Chat (conversational agentic loop — POST /api/chat/message, no auth required)
+  async sendChatMessage(params: {
+    message: string;
+    session_id?: string;
+    instance_slug?: string;
+  }): Promise<ChatMessageResponse> {
+    return this.request('/api/chat/message', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  }
+
+  async getInstanceInfo(slug: string): Promise<{ name: string; slug: string }> {
+    return this.request(`/api/chat/instances/${encodeURIComponent(slug)}`);
+  }
+
   // Workspace endpoints
   async getWorkspaces() {
     return this.request('/api/workspaces/');
@@ -363,6 +379,13 @@ class ApiClient {
       method: 'DELETE',
     });
   }
+}
+
+export interface ChatMessageResponse {
+  reply: string;
+  session_id: string;
+  confidence: number;
+  tool_rounds: number;
 }
 
 export interface ConnectionSummary {
