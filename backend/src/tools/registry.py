@@ -289,10 +289,12 @@ def _exec_mcp_taiga(tool_input: Dict, context: Dict) -> str:
 register_tool(Tool(
     name="search_knowledge_base",
     description=(
-        "Search the team's knowledge base — project docs, plans, meeting notes, "
-        "reference docs, ideas, outreach materials. Use this when the user asks "
-        "about projects, plans, strategy, team activities, or anything that might "
-        "be documented. Returns the most relevant documents."
+        "Semantic search over the team's knowledge base (abra): project docs, "
+        "plans, meeting notes, reference docs, ideas, outreach materials. Use "
+        "when the user asks about projects, plans, strategy, or team activities. "
+        "For everything known about ONE named person/project, prefer "
+        "lookup_contact or the 'abra' tool's about. Returns the most relevant "
+        "documents."
     ),
     input_schema={
         "type": "object",
@@ -376,7 +378,8 @@ register_tool(Tool(
     description=(
         "Query the abra knowledge base CLI. Supports: search <query>, "
         "about <name>, who <topic>, related <name>, hot (priority items), "
-        "refs (reference docs). Use for structured knowledge lookups."
+        "refs (reference docs). Use for structured lookups (who/related/hot/"
+        "refs) that plain document search does not cover."
     ),
     input_schema={
         "type": "object",
@@ -400,9 +403,10 @@ register_tool(Tool(
 register_tool(Tool(
     name="odoo_cli",
     description=(
-        "Access the CRM (Odoo). Search contacts, check follow-ups, manage tags. "
-        "Commands: search contacts <query>, search leads <query>, "
-        "show contact <id>, list tags."
+        "General CRM (Odoo) CLI access (can write, so gated). Search contacts, "
+        "check follow-ups, manage tags. Commands: search contacts <query>, "
+        "search leads <query>, show contact <id>, list tags. For a plain read "
+        "prefer odoo_search."
     ),
     input_schema={
         "type": "object",
@@ -454,9 +458,11 @@ register_tool(Tool(
 register_tool(Tool(
     name="list_goals",
     description=(
-        "List goals for the current org. Use when the user asks about active "
-        "goals, what the team is working on, or to enumerate pursuits. "
-        "Optional status filter: pending, active, completed, failed, paused."
+        "List the current org's amebo claws. NOTE: a 'goal' here means an "
+        "amebo background pursuit (a claw) in amebo's own goals table, NOT a "
+        "project goal narrative in abra or the projects repo. Use when asked "
+        "what claws/pursuits are running. Optional status filter: pending, "
+        "active, completed, failed, paused."
     ),
     input_schema=LIST_GOALS_SCHEMA,
     execute=list_goals,
@@ -468,9 +474,10 @@ register_tool(Tool(
 register_tool(Tool(
     name="get_goal_events",
     description=(
-        "Get the full audit trail for a specific goal: every state change "
-        "and tool call recorded. Use when the user asks 'what has the claw "
-        "done on X' or 'show me the history of goal Y'."
+        "Get the full audit trail (every state change and tool call) for one "
+        "amebo claw. Here 'goal' = an amebo claw/pursuit (amebo's goal_events "
+        "table), not an abra goal narrative. Use for 'what has the claw done "
+        "on X' or 'show the history of claw/goal Y'."
     ),
     input_schema=GET_GOAL_EVENTS_SCHEMA,
     execute=get_goal_events,
@@ -496,9 +503,10 @@ register_tool(Tool(
 register_tool(Tool(
     name="mcp_taiga",
     description=(
-        "Access Taiga project management. List tasks, check status, "
-        "find assigned work. Use when asked about task status, sprints, "
-        "or project management."
+        "General Taiga CLI access (can write, so gated). List tasks, check "
+        "status, find assigned work. For a plain read prefer taiga_list; to "
+        "create a task use taiga_create_task (which routes through approval). "
+        "Use this for other Taiga commands."
     ),
     input_schema={
         "type": "object",
@@ -569,10 +577,11 @@ register_tool(Tool(
     name="edit_main_md",
     description=(
         "Edit a project's MAIN.md via exact-substring replacement. "
-        "old_string must be present in the file and unique. The change "
-        "lands on disk uncommitted — a human reviews via git diff before "
-        "committing. Use this ONLY when you have a clearly sourced update "
-        "(e.g. a recent Slack decision) and have already read the file."
+        "old_string must be present in the file and unique. This writes the "
+        "file directly (ungated, not a draft); the change lands on disk "
+        "uncommitted, and a human reviews via git diff before committing. Use "
+        "this ONLY when you have a clearly sourced update (e.g. a recent Slack "
+        "decision) and have already read the file."
     ),
     input_schema=EDIT_MAIN_MD_SCHEMA,
     execute=edit_main_md_impl,
@@ -584,11 +593,12 @@ register_tool(Tool(
 register_tool(Tool(
     name="slack_post",
     description=(
-        "Post a message to Slack. To actually NOTIFY a person, you MUST "
-        "pass mention_user_id with their Slack user id (e.g. UHUUD9ERZ). "
-        "Posts without an @-mention don't generate a notification — they "
-        "are just channel chatter. Use thread_ts to reply inside an "
-        "existing thread."
+        "Post a message to Slack directly (ungated). To actually NOTIFY a "
+        "person, you MUST pass mention_user_id with their Slack user id "
+        "(e.g. UHUUD9ERZ); a post without an @-mention generates no "
+        "notification (it is just channel noise). Use thread_ts to reply "
+        "inside an existing thread. In gated instances use slack_post_gated, "
+        "which requires human approval before sending."
     ),
     input_schema=SLACK_POST_SCHEMA,
     execute=slack_post_impl,
@@ -638,9 +648,10 @@ register_tool(Tool(
 register_tool(Tool(
     name="crm_read_latest_email",
     description=(
-        "Read the latest forwarded email / chatter logged in the CRM for a "
-        "given sender (email address or contact). Read only. Use to see the "
-        "most recent message from someone before drafting a reply."
+        "Read the latest forwarded email logged in the CRM for a given sender "
+        "(email address or contact). 'Chatter' here means the Odoo CRM message "
+        "log on a contact (via odoo-cli comms), not Slack chatter. Read only. "
+        "Use to see someone's most recent message before drafting a reply."
     ),
     input_schema=CRM_READ_LATEST_EMAIL_SCHEMA,
     execute=crm_read_latest_email_impl,
@@ -651,8 +662,9 @@ register_tool(Tool(
 register_tool(Tool(
     name="abra_search",
     description=(
-        "Search the team knowledge base (abra). mode='search' for full-text, "
-        "mode='about' for everything known about a name. Read only."
+        "Search the team knowledge base (abra), read only: mode='search' for "
+        "full-text, mode='about' for everything known about a name. Thin "
+        "wrapper; for who/related/hot/refs use the 'abra' tool."
     ),
     input_schema=ABRA_SEARCH_SCHEMA,
     execute=abra_search_impl,
@@ -663,8 +675,9 @@ register_tool(Tool(
 register_tool(Tool(
     name="taiga_list",
     description=(
-        "List tasks in Taiga (optionally scoped to a project). Read only. "
-        "Use to check current tasks/status before drafting a new task."
+        "List tasks in a Taiga project. A project slug/name is REQUIRED "
+        "(use mcp_taiga 'projects' to find slugs). Read only. Use to check "
+        "current tasks/status before drafting a new task."
     ),
     input_schema=TAIGA_LIST_SCHEMA,
     execute=taiga_list_impl,
