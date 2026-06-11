@@ -1,5 +1,9 @@
 # Amebo — Next Steps
 
+> **Scope:** current feature priorities. The older rearchitect-branch roadmap is
+> [`docs/NEXT_STEPS.md`](docs/NEXT_STEPS.md) — kept for reference; the two should be
+> reconciled when this work is picked up.
+
 ## 1. Per-Instance Tool Permissions
 
 The `instances` table has a `config JSONB` column. Convention:

@@ -4,6 +4,10 @@ Status: proposal, not yet built. Reviewers please comment / edit.
 Last updated 2026-06-05 (v2: folds in the view-session review + Golda's decisions).
 The original review is preserved verbatim at the bottom.
 
+> **See also:** this is the email-intake piece of [`INTAKE_TO_DONE.md`](INTAKE_TO_DONE.md);
+> once an email is in the CRM, [`EMAIL_TO_TASK_FLOW.md`](EMAIL_TO_TASK_FLOW.md) turns it
+> into a task.
+
 ## Context
 
 We want to file emails into the right place by sending or BCC'ing them to one

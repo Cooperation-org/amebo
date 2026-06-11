@@ -4,6 +4,12 @@ The biggest practical gap between amebo and frameworks like OpenClaw is **tool i
 
 This doc plans how to add them without bloating the codebase or locking into a heavy framework.
 
+> **See also:** [`CREDENTIAL_HELPER.md`](CREDENTIAL_HELPER.md) is the authoritative
+> contract for OAuth/SSO token flow; the credential-management detail below restates it
+> for context and can be condensed to a pointer when this doc is next revised. The email
+> tools here (`email_draft` / `email_send` / `email_read`) are the primitives a
+> drip/comms sequence composes — see [`MARKETING_COMMS_CAPABILITY.md`](MARKETING_COMMS_CAPABILITY.md).
+
 ## Principles
 
 1. **Lightweight preferred.** Native Python tools (~30 lines each) for anything we use a lot, where the implementation is small.

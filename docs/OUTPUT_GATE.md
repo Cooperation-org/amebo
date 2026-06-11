@@ -3,6 +3,9 @@
 A guard that sits **before Amebo speaks to a human** and keeps the claw from
 being a firehose. It is the message-side sibling of the draft-approval gate.
 
+> **See also:** [`DRAFT_APPROVAL_GATE.md`](DRAFT_APPROVAL_GATE.md) (the action-side
+> gate) and [`CRYSTALLIZE.md`](CRYSTALLIZE.md) (the distillation principle this gate applies).
+
 ## Why
 
 Amebo is "so noisy" in Slack. A useful colleague does not post constantly, does

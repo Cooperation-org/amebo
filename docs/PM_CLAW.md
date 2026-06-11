@@ -5,6 +5,10 @@ it, and reports **ONE** concise stand-up covering **all** goals — through the
 existing noise gate. It is additive: all-new files, no edits to the registry,
 scheduler, or app entrypoints.
 
+> **See also:** [`ORGS_GOALS_CLAW.md`](ORGS_GOALS_CLAW.md) for the org/goal/claw
+> design this implements; output routes through [`DRAFT_APPROVAL_GATE.md`](DRAFT_APPROVAL_GATE.md)
+> and [`OUTPUT_GATE.md`](OUTPUT_GATE.md).
+
 ## Why
 
 `docs/BOUNDARIES.md` says Amebo "leans on the task tracker as the heartbeat":

@@ -1,5 +1,10 @@
 # Next Steps — Rearchitect Branch
 
+> **Note:** this is the older rearchitect-branch roadmap. For current feature
+> priorities see [`../next-steps.md`](../next-steps.md); reconcile the two (which steps
+> here have shipped) when picking this up. Branch/merge status not asserted here —
+> verify before relying on the "pull the rearchitect branch" instruction below.
+
 Work continues on the Ubuntu server. All design docs and code are on the
 `rearchitect` branch. Pull before starting.
 
