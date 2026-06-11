@@ -13,6 +13,12 @@ The flagship amebo flow Golda needs. Stated 2026-06-07, in her words.
 This is recurring real work, not a demo. Golda has ~6 items waiting to go through
 this flow right now.
 
+> **Related docs:** [`EMAIL_TO_TASK_FLOW.md`](EMAIL_TO_TASK_FLOW.md) implements the
+> "make the task" step; [`email-poller-architecture.md`](email-poller-architecture.md)
+> is the email-intake piece; output is distilled per [`CRYSTALLIZE.md`](CRYSTALLIZE.md);
+> the whole flow is an expression of the Self → Friends → Home model in
+> [`SELF_FRIENDS_HOME.md`](SELF_FRIENDS_HOME.md).
+
 ## What "done" means for this goal
 
 A single path that takes an intake and drives it to completion:

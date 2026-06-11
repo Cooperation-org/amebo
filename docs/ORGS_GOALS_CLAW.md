@@ -2,6 +2,11 @@
 
 Design notes for the Org / Goal / Claw subsystem in amebo.
 
+> **Related:** gate design in [`DRAFT_APPROVAL_GATE.md`](DRAFT_APPROVAL_GATE.md) +
+> [`OUTPUT_GATE.md`](OUTPUT_GATE.md); concrete claws in [`PM_CLAW.md`](PM_CLAW.md) and
+> [`REFERENCE_INTEGRITY_CLAW.md`](REFERENCE_INTEGRITY_CLAW.md). A scheduled outbound
+> sequence (drip) is just a claw — see [`MARKETING_COMMS_CAPABILITY.md`](MARKETING_COMMS_CAPABILITY.md).
+
 ## What We Are Trying To Do
 
 Amebo today is a knowledge-cooperation tool for a group — it answers questions, holds conversation state, and routes through tools. It is reactive: a user asks, amebo answers.

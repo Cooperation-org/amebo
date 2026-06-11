@@ -4,6 +4,10 @@ Human-in-the-loop approval for the claw. This is the implementation of open
 question #4 in `ORGS_GOALS_CLAW.md` ("claw drafts a message, human approves
 before send").
 
+> **See also:** [`OUTPUT_GATE.md`](OUTPUT_GATE.md) — the message-side sibling. The
+> two gates compose on the same notifier path (action gate decides *whether*; output
+> gate decides *whether/how to say it*).
+
 ## Why
 
 A background claw runs unsupervised. It must never take an irreversible

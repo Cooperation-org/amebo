@@ -5,6 +5,10 @@ The flagship near-term claw use case, in Golda's own words:
 > "We got an email, I copied it to the CRM. Make the task and tell people in
 > Slack."
 
+> **See also:** this implements the "make the work" step of
+> [`INTAKE_TO_DONE.md`](INTAKE_TO_DONE.md); distillation per [`CRYSTALLIZE.md`](CRYSTALLIZE.md);
+> gates in [`DRAFT_APPROVAL_GATE.md`](DRAFT_APPROVAL_GATE.md) + [`OUTPUT_GATE.md`](OUTPUT_GATE.md).
+
 A human forwards an email into the CRM. The claw reads the latest forwarded
 email from a given sender, crystallizes it into a Taiga task, and notifies the
 right Slack channel. **Neither the task-create nor the Slack post is sent blind**
