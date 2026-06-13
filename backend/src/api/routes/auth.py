@@ -2,12 +2,15 @@
 Authentication routes - signup, login, token refresh, password management
 """
 
-from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi import APIRouter, HTTPException, status, Depends, Request
+from fastapi.responses import RedirectResponse
 from psycopg2 import extras
 import logging
+import os
 import re
 import secrets
 import hashlib
+from datetime import timedelta
 
 from src.api.models import (
     UserSignupRequest,
@@ -729,3 +732,138 @@ async def google_login(request: GoogleLoginRequest):
         )
     finally:
         DatabaseConnection.return_connection(conn)
+
+
+# ---------------------------------------------------------------------------
+# LinkedTrust IdP (OIDC) login — gives Google | Bluesky | LinkedTrust via the
+# team identity provider. amebo is a confidential OIDC client; see
+# src/auth_oauth/oidc_login.py. PKCE/state/nonce are carried in a short-lived
+# signed cookie (no extra table). Unknown emails are created INACTIVE (pending
+# approval); only is_active accounts receive a session.
+# ---------------------------------------------------------------------------
+
+from src.auth_oauth.oidc_login import (
+    OidcConfig, OidcError, build_authorize_url, exchange_code,
+    verify_id_token, new_pkce, new_state_nonce,
+)
+
+OIDC_TX_COOKIE = "amebo_oidc_tx"
+FRONTEND_URL = os.getenv("FRONTEND_URL", "https://amebo.linkedtrust.us").rstrip("/")
+
+
+def _front(path: str) -> str:
+    return f"{FRONTEND_URL}{path}"
+
+
+@router.get("/oidc/login")
+async def oidc_login():
+    """Begin LinkedTrust OIDC login: redirect the browser to the IdP."""
+    cfg = OidcConfig.from_env()
+    state, nonce = new_state_nonce()
+    verifier, challenge = new_pkce()
+    url = build_authorize_url(cfg, state=state, nonce=nonce, code_challenge=challenge)
+    tx = create_access_token(
+        {"oidc_state": state, "oidc_nonce": nonce, "oidc_verifier": verifier},
+        expires_delta=timedelta(minutes=10),
+    )
+    resp = RedirectResponse(url, status_code=302)
+    resp.set_cookie(
+        OIDC_TX_COOKIE, tx, max_age=600, httponly=True, secure=True,
+        samesite="lax", path="/api/auth/oidc",
+    )
+    return resp
+
+
+@router.get("/oidc/callback")
+async def oidc_callback(request: Request, code: str = None, state: str = None, error: str = None):
+    """IdP redirects here: verify, upsert (active-only), mint amebo session."""
+    if error:
+        return RedirectResponse(_front(f"/login?error={error}"), status_code=302)
+    tx = request.cookies.get(OIDC_TX_COOKIE)
+    if not tx or not code or not state:
+        return RedirectResponse(_front("/login?error=invalid_request"), status_code=302)
+    try:
+        payload = decode_token(tx)
+    except Exception:
+        return RedirectResponse(_front("/login?error=expired"), status_code=302)
+    if payload.get("oidc_state") != state:
+        return RedirectResponse(_front("/login?error=state_mismatch"), status_code=302)
+
+    cfg = OidcConfig.from_env()
+    try:
+        tokens = exchange_code(cfg, code=code, code_verifier=payload["oidc_verifier"])
+        ident = verify_id_token(cfg, tokens["id_token"], nonce=payload["oidc_nonce"])
+    except (OidcError, KeyError) as exc:
+        logger.warning("OIDC callback failed: %s", exc)
+        return RedirectResponse(_front("/login?error=auth_failed"), status_code=302)
+    if not ident.email:
+        return RedirectResponse(_front("/login?error=no_email"), status_code=302)
+
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+            cur.execute(
+                "SELECT user_id, org_id, email, role, is_active FROM platform_users WHERE email = %s",
+                (ident.email,),
+            )
+            user = cur.fetchone()
+
+            if user is None:
+                # First time we've seen this identity: create a personal org and
+                # a PENDING (inactive) user. An admin flips is_active to admit them.
+                base = _slug_from_email(ident.email)
+                slug = base
+                n = 0
+                while True:
+                    cur.execute("SELECT 1 FROM organizations WHERE org_slug = %s", (slug,))
+                    if cur.fetchone() is None:
+                        break
+                    n += 1
+                    slug = f"{base}-{n}"
+                org_name = (ident.name or ident.email.split("@", 1)[0]) + "'s workspace"
+                cur.execute(
+                    "INSERT INTO organizations (org_name, org_slug, subscription_plan, subscription_status) "
+                    "VALUES (%s, %s, 'free', 'active') RETURNING org_id",
+                    (org_name, slug),
+                )
+                org_id = cur.fetchone()["org_id"]
+                cur.execute(
+                    "INSERT INTO platform_users "
+                    "(org_id, email, full_name, role, is_active, email_verified, auth_provider, auth_provider_id) "
+                    "VALUES (%s, %s, %s, 'owner', false, true, 'linkedtrust', %s)",
+                    (org_id, ident.email, ident.name, ident.sub),
+                )
+                conn.commit()
+                logger.info("OIDC: created PENDING (inactive) user %s", ident.email)
+                return RedirectResponse(_front("/login?error=pending_approval"), status_code=302)
+
+            if not user["is_active"]:
+                logger.info("OIDC: inactive user %s denied", ident.email)
+                return RedirectResponse(_front("/login?error=pending_approval"), status_code=302)
+
+            cur.execute(
+                "UPDATE platform_users SET auth_provider = 'linkedtrust', auth_provider_id = %s, "
+                "last_login_at = NOW(), updated_at = NOW() WHERE user_id = %s",
+                (ident.sub, user["user_id"]),
+            )
+            conn.commit()
+
+            access_token = create_access_token({
+                "user_id": user["user_id"], "org_id": user["org_id"],
+                "email": user["email"], "role": user["role"],
+            })
+            refresh_token = create_refresh_token({"user_id": user["user_id"]})
+    except Exception as exc:
+        conn.rollback()
+        logger.error("OIDC callback DB error: %s", exc, exc_info=True)
+        return RedirectResponse(_front("/login?error=server_error"), status_code=302)
+    finally:
+        DatabaseConnection.return_connection(conn)
+
+    # Hand tokens to the SPA via URL fragment (kept out of server logs).
+    resp = RedirectResponse(
+        _front(f"/auth/callback#access_token={access_token}&refresh_token={refresh_token}"),
+        status_code=302,
+    )
+    resp.delete_cookie(OIDC_TX_COOKIE, path="/api/auth/oidc")
+    return resp

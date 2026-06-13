@@ -15,6 +15,7 @@ import time
 
 from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces, dev_auth, team, bindings, chat, embeddings, goals, connections, digest, intentions, pending_actions
 from src.api.middleware.rate_limit import RateLimitMiddleware
+from src.api.middleware.auth_gate import AuthGateMiddleware
 from src.db.connection import DatabaseConnection
 
 # Configure logging
@@ -43,6 +44,11 @@ app = FastAPI(
 # Example: CORS_ORIGINS=http://localhost:3000,https://myapp.vercel.app
 cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001,https://demos.linkedtrust.us")
 cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+
+# Global auth gate: external (nginx-edge) callers must authenticate; internal
+# loopback callers (Claude Code on the box) are trusted. Added BEFORE CORS so
+# CORS wraps it and 401 responses still carry CORS headers for the browser.
+app.add_middleware(AuthGateMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
