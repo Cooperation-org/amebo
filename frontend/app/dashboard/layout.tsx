@@ -27,6 +27,7 @@ export default function DashboardLayout({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navigation = [
+    { name: 'Chat', href: '/chat', icon: MessageSquare },
     { name: 'Dashboard', href: '/dashboard', icon: MessageSquare },
     { name: 'Q&A', href: '/dashboard/qa', icon: MessageSquare },
     { name: 'Workspaces', href: '/dashboard/workspaces', icon: Building2 },
