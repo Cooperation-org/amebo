@@ -10,6 +10,17 @@ import {
   speechSynthesisSupported,
 } from '@/src/hooks/useVoice';
 import { apiClient } from '@/src/lib/api';
+import { useRouter } from 'next/navigation';
+import { useAuthStore } from '@/src/store/useAuthStore';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { User, LogOut, LayoutDashboard } from 'lucide-react';
 
 // Default instance comes from env; a ?instance=<slug> query param overrides it.
 // Empty string means "no instance" -> backend uses its web-default.
@@ -23,6 +34,13 @@ export default function ChatPage() {
 
   const { turns, send, sending, error, reset } = useChat(instance);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
+  const { user, logout } = useAuthStore();
+
+  const handleLogout = async () => {
+    await logout();
+    router.push('/login');
+  };
 
   // Read ?instance= once on mount (avoids useSearchParams' Suspense requirement).
   useEffect(() => {
@@ -132,6 +150,31 @@ export default function ChatPage() {
           >
             New
           </button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="sm" className="rounded-full" title={user?.email || 'Account'}>
+                <User className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {user?.email && (
+                <div className="max-w-[220px] truncate px-2 py-1.5 text-xs text-muted-foreground">
+                  {user.email}
+                </div>
+              )}
+              <DropdownMenuItem asChild>
+                <a href="/dashboard" className="flex items-center">
+                  <LayoutDashboard className="mr-2 h-4 w-4" />
+                  Dashboard
+                </a>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleLogout} className="flex items-center">
+                <LogOut className="mr-2 h-4 w-4" />
+                Logout
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
