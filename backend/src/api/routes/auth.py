@@ -796,22 +796,37 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
     except (OidcError, KeyError) as exc:
         logger.warning("OIDC callback failed: %s", exc)
         return RedirectResponse(_front("/login?error=auth_failed"), status_code=302)
-    if not ident.email:
-        return RedirectResponse(_front("/login?error=no_email"), status_code=302)
+    # No-email identities (e.g. Bluesky) are fine — we key on the stable subject.
+    email = ident.email or f"lt-{ident.sub}@users.amebo.local"
 
     conn = DatabaseConnection.get_connection()
     try:
         with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+            # Match by stable provider subject first (works without a real email);
+            # fall back to email and link this identity onto that account.
             cur.execute(
-                "SELECT user_id, org_id, email, role, is_active FROM platform_users WHERE email = %s",
-                (ident.email,),
+                "SELECT user_id, org_id, email, role, is_active FROM platform_users "
+                "WHERE auth_provider = 'linkedtrust' AND auth_provider_id = %s",
+                (ident.sub,),
             )
             user = cur.fetchone()
 
+            if user is None and ident.email:
+                cur.execute(
+                    "SELECT user_id, org_id, email, role, is_active FROM platform_users WHERE email = %s",
+                    (ident.email,),
+                )
+                user = cur.fetchone()
+                if user is not None:
+                    cur.execute(
+                        "UPDATE platform_users SET auth_provider = 'linkedtrust', auth_provider_id = %s WHERE user_id = %s",
+                        (ident.sub, user["user_id"]),
+                    )
+
             if user is None:
-                # First time we've seen this identity: create a personal org and
-                # a PENDING (inactive) user. An admin flips is_active to admit them.
-                base = _slug_from_email(ident.email)
+                # First login for this identity: create a personal org and a
+                # PENDING (inactive) user. Approval (is_active) is required.
+                base = _slug_from_email(email)
                 slug = base
                 n = 0
                 while True:
@@ -820,7 +835,7 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
                         break
                     n += 1
                     slug = f"{base}-{n}"
-                org_name = (ident.name or ident.email.split("@", 1)[0]) + "'s workspace"
+                org_name = (ident.name or email.split("@", 1)[0]) + "'s workspace"
                 cur.execute(
                     "INSERT INTO organizations (org_name, org_slug, subscription_plan, subscription_status) "
                     "VALUES (%s, %s, 'free', 'active') RETURNING org_id",
@@ -831,10 +846,10 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
                     "INSERT INTO platform_users "
                     "(org_id, email, full_name, role, is_active, email_verified, auth_provider, auth_provider_id) "
                     "VALUES (%s, %s, %s, 'owner', false, true, 'linkedtrust', %s)",
-                    (org_id, ident.email, ident.name, ident.sub),
+                    (org_id, email, ident.name, ident.sub),
                 )
                 conn.commit()
-                logger.info("OIDC: created PENDING (inactive) user %s", ident.email)
+                logger.info("OIDC: created PENDING (inactive) user %s (sub=%s)", email, ident.sub)
                 return RedirectResponse(_front("/login?error=pending_approval"), status_code=302)
 
             if not user["is_active"]:
