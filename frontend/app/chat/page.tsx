@@ -47,7 +47,8 @@ export default function ChatPage() {
     if (typeof window === 'undefined') return;
     const q = new URLSearchParams(window.location.search).get('instance');
     if (q) setInstance(q);
-    setSpeakReplies(localStorage.getItem('amebo-chat-speak') === '1');
+    // Voice replies are OFF by default every load — amebo listens and outputs
+    // text; it does not speak unless the user explicitly toggles it on.
   }, []);
 
   // Resolve the instance's display name for the header.
