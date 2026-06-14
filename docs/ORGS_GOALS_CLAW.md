@@ -175,9 +175,9 @@ This keeps amebo's role clear: **amebo holds the goal, the context, and the audi
 
 Out of scope for v1, but tracked here so the dispatcher's tool integration point (`_run_agentic_loop`) doesn't get prematurely shaped in a way that makes this harder later.
 
-## Comparison to OpenClaw
+## Relationship to OpenClaw
 
-OpenClaw is a self-hosted autonomous-agent framework with a documented 5-component architecture (Gateway / Brain / Memory / Skills / Heartbeat). Useful to compare so we know what we already match, what we deliberately do differently, and what we should consider adopting.
+OpenClaw is a self-hosted autonomous-agent framework with a documented 5-component architecture (Gateway / Brain / Memory / Skills / Heartbeat). We are in the decentralized-web space: the aim is to align and interoperate with peer projects and learn from their work, not to compete. This comparison is for orientation only — what we already match, what we shape differently because we serve orgs, and what we can adopt.
 
 | Component | OpenClaw | Amebo equivalent | Notes |
 |---|---|---|---|
@@ -187,14 +187,16 @@ OpenClaw is a self-hosted autonomous-agent framework with a documented 5-compone
 | Skills | 25+ built-in tools, JSON Schema | `tools/registry.py` + `prompts/skills/*.md`, ~3 tools | **Real gap.** Amebo's tool inventory is thin. |
 | Heartbeat | 30-min scheduler checks pending tasks | `GoalScheduler` 60s tick | Same idea, similar cadence. |
 
-### Where amebo is ahead
+### Where amebo's shape differs (because it serves orgs)
+
+Not "better" — different by design, for a different audience.
 
 - **Org as a first-class entity.** OpenClaw is single-user / self-hosted. Amebo is multi-tenant by design.
 - **Vision/Values/Goals as primitives** — OpenClaw has tasks (action-oriented); amebo has explicit goal tracking with alignment to org context.
 - **Structured audit trail** — `goal_events` is queryable; Markdown logs are human-readable but harder to aggregate or analyze.
 - **pgvector RAG** integrated through abra; OpenClaw relies on file scanning.
 
-### Where amebo has gaps (vs OpenClaw)
+### What amebo can adopt from OpenClaw
 
 1. **Tool inventory.** OpenClaw ships 25+ skills; we have abra, odoo-cli, mcp-taiga, and not much else. The tool registry is the right shape — it just needs more entries. Web search, file fetch, basic HTTP, calendar, email composition, etc., would unlock most "useful agent" scenarios.
 2. **Channel breadth.** Slack-first plus web; OpenClaw connects to Slack + WhatsApp + others. Email primary (per amebo-summary, for nontechnical orgs) is documented but not yet implemented.
