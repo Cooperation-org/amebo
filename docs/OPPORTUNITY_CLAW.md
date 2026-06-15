@@ -74,7 +74,13 @@ binding from the org row to an abra name.
 Additive and **not wired to the scheduler** — same state as `pm_claw`. To go
 live it needs the same seam both claws share:
 
-1. A real `TaskReader` adapter over `mcp_taiga` (shared with `pm_claw`).
+1. The real `TaskReader` adapter is built: `TaigaCliTaskReader`
+   (`src/services/taiga_task_reader.py`), shared with `pm_claw`. Taiga has no
+   org object — an org IS the set of projects its login sees — so the adapter
+   resolves **org → Taiga login token**, enumerates that login's projects, and
+   aggregates stories. **Prerequisite:** `org_credentials` has no `taiga` kind
+   yet, so per-org Taiga tokens have nowhere to live; add that kind before
+   `resolve` can read a real token.
 2. A `resolve` for `AbraRubricReader` (the open decision above).
 3. `AnthropicScorer` is ready (haiku, mock fallback when no key).
 4. A scheduler branch / trigger, and the gated Slack-send executor on approval.
