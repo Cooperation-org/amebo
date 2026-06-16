@@ -6,11 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Users, UserPlus, MoreHorizontal, Mail, Shield, Eye, Loader2, Trash2, UserX, UserCheck } from 'lucide-react';
+import { Users, UserPlus, MoreHorizontal, Mail, Shield, Eye, Loader2, Trash2, UserX, UserCheck, Link2, Copy } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { InviteUserModal } from '@/src/components/team/InviteUserModal';
 import { useTeamMembers, useUpdateUserRole, useDeactivateUser, useDeleteUser, useActivateUser } from '@/src/hooks/useTeam';
 import { usePermissions } from '@/src/hooks/usePermissions';
+import { apiClient } from '@/src/lib/api';
 import { toast } from 'sonner';
 
 interface TeamMember {
@@ -25,7 +26,27 @@ interface TeamMember {
 
 export default function TeamPage() {
   const [showInviteModal, setShowInviteModal] = useState(false);
+  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [creatingLink, setCreatingLink] = useState(false);
   const { canInviteUsers, canChangeRoles, canDeactivateUsers, canDeleteUsers, canAssignOwnerRole } = usePermissions();
+
+  const handleCreateInviteLink = async () => {
+    setCreatingLink(true);
+    try {
+      const res = await apiClient.createInviteLink('member', 7);
+      setInviteLink(res.invite_url);
+      try {
+        await navigator.clipboard.writeText(res.invite_url);
+        toast.success('Invite link copied — one-time, expires in 7 days');
+      } catch {
+        toast.success('Invite link created — copy it below');
+      }
+    } catch (error) {
+      toast.error('Failed to create invite link');
+    } finally {
+      setCreatingLink(false);
+    }
+  };
 
   const { data: teamData, isLoading } = useTeamMembers();
   const updateRoleMutation = useUpdateUserRole();
@@ -135,12 +156,38 @@ export default function TeamPage() {
           <p className="text-gray-600 text-sm sm:text-base">Manage users and permissions for your organization</p>
         </div>
         {canInviteUsers && (
-          <Button onClick={() => setShowInviteModal(true)} className="w-full sm:w-auto">
-            <UserPlus className="h-4 w-4 mr-2" />
-            Invite User
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+            <Button variant="outline" onClick={handleCreateInviteLink} disabled={creatingLink} className="w-full sm:w-auto">
+              <Link2 className="h-4 w-4 mr-2" />
+              {creatingLink ? 'Creating…' : 'Create invite link'}
+            </Button>
+            <Button onClick={() => setShowInviteModal(true)} className="w-full sm:w-auto">
+              <UserPlus className="h-4 w-4 mr-2" />
+              Invite User
+            </Button>
+          </div>
         )}
       </div>
+
+      {/* Most-recent SSO invite link — shareable, one-time, admits into this org */}
+      {inviteLink && (
+        <div className="flex items-center gap-2 rounded-md border border-border bg-muted/40 p-3">
+          <Link2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <input
+            readOnly
+            value={inviteLink}
+            onFocus={(e) => e.currentTarget.select()}
+            className="flex-1 bg-transparent text-sm text-muted-foreground outline-none"
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { navigator.clipboard.writeText(inviteLink).then(() => toast.success('Copied')); }}
+          >
+            <Copy className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
 
       {/* Role Descriptions */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
