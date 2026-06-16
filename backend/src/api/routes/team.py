@@ -6,9 +6,11 @@ from fastapi import APIRouter, HTTPException, status, Depends
 from psycopg2 import extras
 import logging
 import bcrypt
+import hashlib
+import os
 import secrets
 import string
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from pydantic import BaseModel
 from src.api.models import TeamMember, InviteUserRequest, InviteUserResponse
@@ -435,3 +437,73 @@ async def delete_user(
         )
     finally:
         DatabaseConnection.return_connection(conn)
+
+
+# ---------------------------------------------------------------------------
+# SSO invite links
+# ---------------------------------------------------------------------------
+
+
+class InviteLinkRequest(BaseModel):
+    role: str = "member"
+    expires_in_days: int = 7
+
+
+class InviteLinkResponse(BaseModel):
+    invite_url: str
+    role: str
+    expires_at: str
+
+
+@router.post("/invite-link", response_model=InviteLinkResponse)
+async def create_invite_link(
+    request: InviteLinkRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """
+    Mint a one-time SSO invite link for this org. Owner/admin only.
+
+    The link is just the LinkedTrust OIDC login carrying an invite token; when
+    the invitee clicks it and signs in, the callback admits them into this org
+    (active, with the given role) and consumes the invite. No temp passwords.
+    """
+    if current_user.get("role") not in ("owner", "admin"):
+        raise HTTPException(status_code=403, detail="Only owners/admins can create invite links.")
+
+    token = secrets.token_urlsafe(32)
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    days = max(1, min(int(request.expires_in_days or 7), 30))
+    expires_at = datetime.now(timezone.utc) + timedelta(days=days)
+
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO org_invites (token_hash, org_id, role, created_by_user_id, expires_at) "
+                "VALUES (%s, %s, %s, %s, %s)",
+                (token_hash, current_user["org_id"], request.role,
+                 current_user.get("user_id"), expires_at),
+            )
+            conn.commit()
+    except Exception as exc:
+        conn.rollback()
+        logger.error("create_invite_link failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Could not create invite link.")
+    finally:
+        DatabaseConnection.return_connection(conn)
+
+    # The invite link IS the OIDC login URL with the token. Derive the login
+    # endpoint from OIDC_REDIRECT_URI (.../oidc/callback -> .../oidc/login).
+    redirect_uri = os.getenv("OIDC_REDIRECT_URI", "")
+    login_url = (
+        redirect_uri.rsplit("/callback", 1)[0] + "/login"
+        if redirect_uri.endswith("/callback")
+        else "/api/auth/oidc/login"
+    )
+    logger.info("invite link minted: org=%s role=%s by user=%s",
+                current_user["org_id"], request.role, current_user.get("user_id"))
+    return InviteLinkResponse(
+        invite_url=f"{login_url}?invite={token}",
+        role=request.role,
+        expires_at=expires_at.isoformat(),
+    )
