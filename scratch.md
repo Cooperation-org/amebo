@@ -210,3 +210,41 @@ encapsulated capability (the `/task` slash command is the only remaining front d
   Slack roster for seeding is readable: `users.list` works (id, name, real_name; e.g. gvelez17→UHUUD9ERZ).
 - **Follow-up claw is HELD at the DM-wiring step** until the map lands. It stays INERT meanwhile (no notify_channel
   set, no map) so no wrong/old behavior fires. Once the map's read-interface is set, I wire the private-DM path.
+
+## SHAPE REVIEW + OPPORTUNITY CLAW + TAIGA-FROM-SLACK (2026-06-13..16, Golda session)
+Full review doc: `~golda/work/6-14-2026-amebo-architecture-review.md`. Abra (scope `claude`, cat `claude/amebo`):
+`amebo-shape-review-status` (index), `amebo-spine-and-gaps`, `amebo-opportunity-as-unassigned-task`,
+`amebo-taiga-org-model`, `amebo-taiga-tool-live`, `amebo-orientation-collaborative`.
+
+**The spine (general backbone, surfaced via per-audience "doorways"):** values/vision (org, in abra) → relationships
+→ intentions/goals (team) → threads (grow-or-starve experiments, organic) → opportunities/tasks (individual).
+Growth is tree-shaped but the feedback loop is EXTERNAL to amebo. Orientation = collaborative/decentralized-web,
+NOT competitive.
+
+**SHIPPED (pushed to main):**
+- `@8b613a4` **Opportunity (prioritization) claw + skill + doc.** `backend/src/services/opportunity_claw.py`
+  (pure `select_candidates`[unassigned+open]+`rank`, `run_opportunity_claw`, Protocol seams `RubricReader`/`Scorer`
+  reusing pm_claw `Task`/`TaskReader`/both gates; concrete `AbraRubricReader` + `AnthropicScorer`[haiku, mock
+  fallback]); `prompts/skills/rank-opportunities.md`; `docs/OPPORTUNITY_CLAW.md`. Opportunities = unassigned/open
+  tracker tasks (NOT a new table); cheap model scores vs an abra rubric → preliminary order → existing gates →
+  steering committee finalizes order+budget. Additive, **not wired to scheduler**.
+- `@66bf49d` / `@ea8b445` **Shared `TaigaCliTaskReader`** (`backend/src/services/taiga_task_reader.py`). Taiga has
+  NO org object — an org IS the set of projects a login sees — so it resolves **org → Taiga login TOKEN** (injected;
+  `TAIGA_TOKEN` per call, no god-token), enumerates `mcp-taiga projects` as that login, aggregates stories. Used by
+  BOTH pm_claw and opportunity_claw. `assigned_to:null` = unassigned. 16 tests.
+- `@66bf49d` Reframed `ORGS_GOALS_CLAW.md` OpenClaw comparison: competitive → collaborative.
+
+**VERIFIED (no change needed):** amebo can already use the **Taiga tool from Slack**. Long-lived creds =
+`TAIGA_USERNAME`/`TAIGA_PASSWORD` in `backend/.env` (gitignored; mcp-taiga `resolve_token` auto-refreshes the JWT);
+running `amebo-backend` has them; WhatsCookin instance (`instances.id=1`) `allowed_tools` already has `taiga_list`
++ `taiga_create_task`. Verified end-to-end via `taiga_list_impl({project:'amebo'})` as the amebo user. (Minor: stray
+`bgpq` on `.env` line 51 — errors only on manual shell `source`, harmless to systemd.)
+
+**REMAINING for the opportunity claw to go LIVE (both need a Golda decision, not invented):**
+1. **org_credentials has no `taiga` kind** — per-org Taiga login tokens have nowhere to live. Add it before the
+   reader's `resolve()` can fetch a real per-org token. (Our own org works today via the `.env` env creds.)
+2. **Rubric location convention** — which abra `(scope,name)` holds an org's rubric (`AbraRubricReader.resolve`),
+   then author the first rubric = org values/vision as weighted-criteria JSON `{criteria:[{name,weight,description}]}`.
+3. Scheduler trigger + gated Slack-send executor on approval (same seam pm_claw also awaits).
+
+**DROPPED (decided):** team scope (org+individual only); experiment branches as a data model (organic/external).
