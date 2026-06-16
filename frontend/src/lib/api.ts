@@ -159,6 +159,14 @@ class ApiClient {
     });
   }
 
+  // Mint a one-time SSO invite link (owner/admin). Returns { invite_url, role, expires_at }.
+  async createInviteLink(role: string = 'member', expiresInDays: number = 7) {
+    return this.request<{ invite_url: string; role: string; expires_at: string }>(
+      '/api/team/invite-link',
+      { method: 'POST', body: JSON.stringify({ role, expires_in_days: expiresInDays }) },
+    );
+  }
+
   // Q&A endpoints
   async askQuestion(params: {
     question: string;
