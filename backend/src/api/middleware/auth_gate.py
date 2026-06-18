@@ -53,6 +53,9 @@ PUBLIC_PREFIXES = (
     "/api/auth/",     # password login, refresh, forgot/reset, google, oidc login+callback
     "/connect/",      # connect-link OAuth (self-gated by single-use short_code)
     "/.well-known/",  # acme-challenge, etc.
+    "/slack/",        # Slack webhooks (/slack/events, /slack/commands) — Slack signs
+                      # these with the signing secret, verified in the handler; they
+                      # carry no platform JWT, so they must skip this gate.
 )
 PUBLIC_EXACT = frozenset({"/", "/health"})
 
