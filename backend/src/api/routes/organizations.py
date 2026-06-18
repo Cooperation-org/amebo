@@ -15,9 +15,21 @@ from src.api.models import (
 )
 from src.api.auth_utils import get_current_user, require_admin
 from src.db.connection import DatabaseConnection
+from pydantic import BaseModel
+from typing import List
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+class OrgLink(BaseModel):
+    """One key link shown on the org's dashboard — a plain link to a real site."""
+    label: str
+    url: str
+
+
+class OrgLinksRequest(BaseModel):
+    links: List[OrgLink]
 
 
 @router.get("/me", response_model=OrganizationResponse)
@@ -322,5 +334,82 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
                 most_queried_topic=None  # TODO: Implement topic tracking
             )
 
+    finally:
+        DatabaseConnection.return_connection(conn)
+
+
+# ---------------------------------------------------------------------------
+# Key links — a per-org set of plain links to the real sites (CRM, Marten,
+# Slack, ...), shown on the dashboard. Configurable per org (stored in
+# instances.config.links), never hardcoded.
+#
+# NOTE (single-tenant, 2026-06-18): direction is ONE INSTANCE PER ORG, so the
+# "ORDER BY id LIMIT 1" below is fine — an org has exactly one instance for now.
+# If/when we truly multi-tenant (multiple instances per org), revisit which
+# instance's links the dashboard shows. See docs/CREDENTIALS_CURRENT_STATE.md.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/links")
+async def get_org_links(current_user: dict = Depends(get_current_user)):
+    """Return the org's dashboard key links (empty list if none configured)."""
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT config->'links' AS links
+                FROM instances
+                WHERE org_id = %s
+                ORDER BY id
+                LIMIT 1
+                """,
+                (current_user['org_id'],)
+            )
+            row = cur.fetchone()
+            return {"links": (row['links'] if row and row['links'] else [])}
+    finally:
+        DatabaseConnection.return_connection(conn)
+
+
+@router.put("/links")
+async def set_org_links(
+    request: OrgLinksRequest,
+    current_user: dict = Depends(require_admin)
+):
+    """Set the org's dashboard key links (admin only). Configurable, not hardcoded."""
+    payload = [link.dict() for link in request.links]
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                UPDATE instances
+                SET config = jsonb_set(COALESCE(config, '{}'::jsonb), '{links}', %s::jsonb, true),
+                    updated_at = NOW()
+                WHERE id = (
+                    SELECT id FROM instances WHERE org_id = %s ORDER BY id LIMIT 1
+                )
+                RETURNING config->'links' AS links
+                """,
+                (extras.Json(payload), current_user['org_id'])
+            )
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="No instance configured for this organization"
+                )
+            conn.commit()
+            return {"links": row['links']}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Set org links error: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to set links"
+        )
     finally:
         DatabaseConnection.return_connection(conn)

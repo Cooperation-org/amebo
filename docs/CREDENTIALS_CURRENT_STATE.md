@@ -10,6 +10,16 @@ Short version: **mostly global in `.env`**, with a well-built per-org framework
 Slack/Google, designed-but-not-adopted for everything else, and entirely global
 for Taiga/Anthropic.
 
+> **DIRECTION (decided 2026-06-18, Golda) — single-tenant per instance, for now.**
+> We got too fancy chasing multi-tenant-in-one-process. New plan: **one amebo
+> instance per org.** Other orgs are supported by giving them their **own
+> instance** (own deployment + own `.env`), not by multiplexing one process across
+> orgs. So global `.env` creds are *fine* — within a single-org instance they ARE
+> that org's creds. The per-org `CredentialResolver` / `org_credentials` work
+> below is **deferred**: keep it (it's good and additive) but do not block on
+> wiring the consumer side. Revisit "are we really able to multi-tenant" later.
+> Everything below describing the per-org gap is the *future* path, not the now.
+
 ## What is per-org today (actually working)
 
 - **Slack** — genuinely per-workspace. `slack_bot_service` loads
