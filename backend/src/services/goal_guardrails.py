@@ -25,9 +25,9 @@ from typing import Any, Dict, Optional, Set
 # updated rates; these are conservative ballparks. Per-million-tokens USD.
 DEFAULT_PRICING_USD_PER_MTOK: Dict[str, Dict[str, float]] = {
     # Claude Sonnet 4 family
-    "claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00},
+    "claude-sonnet-4-6": {"input": 3.00, "output": 15.00},
     # Claude Opus 4 family
-    "claude-opus-4-20250514":   {"input": 15.00, "output": 75.00},
+    "claude-opus-4-8":   {"input": 15.00, "output": 75.00},
     # Claude Haiku 4 family (lightweight default for the claw)
     "claude-haiku-4-5-20251001":{"input": 1.00, "output": 5.00},
     # Fallback used when the model is unknown

@@ -629,7 +629,7 @@ Answer the question based on this context. Be comprehensive and include all rele
 
         try:
             response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=1000,
                 system=system_prompt,
                 messages=[
@@ -741,7 +741,7 @@ Answer the question based on this context. Be comprehensive and include all rele
             tool_round = 0
 
             response = self.client.messages.create(
-                model="claude-sonnet-4-20250514",
+                model="claude-sonnet-4-6",
                 max_tokens=2000,
                 system=system_blocks,
                 messages=cached_messages,
@@ -795,7 +795,7 @@ Answer the question based on this context. Be comprehensive and include all rele
 
                 # Call Claude again with full history including tool results
                 response = self.client.messages.create(
-                    model="claude-sonnet-4-20250514",
+                    model="claude-sonnet-4-6",
                     max_tokens=2000,
                     system=system_blocks,
                     messages=cached_messages,

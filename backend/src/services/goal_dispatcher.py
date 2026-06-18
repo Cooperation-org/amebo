@@ -410,7 +410,7 @@ class GoalDispatcher:
             get_all_tools, get_tool, _tool_to_schema,
         )
 
-        model = "claude-sonnet-4-20250514"
+        model = "claude-sonnet-4-6"
         if goal.get("config") and goal["config"].get("model"):
             model = goal["config"]["model"]
 
