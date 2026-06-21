@@ -16,7 +16,7 @@ from typing import Any, Dict, Optional
 
 from src.services.qa_service import QAService
 from src.db.repositories.instance_repo import InstanceRepo
-from src.api.middleware.auth import get_service_client
+from src.api.middleware.auth import get_service_client, get_current_user
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -36,13 +36,14 @@ class ChatResponse(BaseModel):
 
 
 @router.post("/message", response_model=ChatResponse)
-async def chat_message(req: ChatRequest):
+async def chat_message(req: ChatRequest, current_user: dict = Depends(get_current_user)):
     """
-    Send a message to an amebo instance and get a response.
+    Send a message to amebo and get a response.
 
-    - message: the user's message
-    - session_id: reuse to maintain conversation context (like a Slack thread)
-    - instance_slug: which instance to talk to (determines identity, tools, knowledge)
+    The instance (identity, tools, knowledge, and — once wired — the org's CRM/
+    Taiga credentials) is resolved from the AUTHENTICATED user's org, never from a
+    client-supplied value. So a logged-in (SSO) user always talks to their own
+    org's amebo with their org's tools. One instance per org (get_by_org).
     """
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
@@ -50,29 +51,32 @@ async def chat_message(req: ChatRequest):
     # Generate session_id if not provided (first message in a conversation)
     session_id = req.session_id or str(uuid.uuid4())
 
-    # Resolve instance
-    instance = None
+    # Resolve the instance from the verified SSO org — secure, not client-supplied.
     instance_repo = InstanceRepo()
-    if req.instance_slug:
-        instance = instance_repo.get_by_slug(req.instance_slug)
-        if not instance:
-            raise HTTPException(status_code=404, detail=f"Instance '{req.instance_slug}' not found")
+    instance = instance_repo.get_by_org(current_user['org_id'])
+    if not instance:
+        raise HTTPException(
+            status_code=404,
+            detail="No amebo instance is configured for your organization yet."
+        )
 
-    # Get workspace_id from instance org, or use a synthetic one for web
-    workspace_id = f"web-{instance['slug']}" if instance else "web-default"
+    workspace_id = f"web-{instance['slug']}"
 
     # Use QA service with thread context (agentic path)
     qa_service = QAService(
         workspace_id=workspace_id,
-        org_id=instance.get('org_id') if instance else None
+        org_id=instance.get('org_id')
     )
 
     result = qa_service.answer_question(
         question=req.message,
         thread_ref=session_id,
         source_type="web",
-        author_info=None,
-        instance_slug=req.instance_slug
+        author_info={
+            "user_id": current_user.get("user_id"),
+            "email": current_user.get("email"),
+        },
+        instance_slug=instance['slug']
     )
 
     return ChatResponse(
