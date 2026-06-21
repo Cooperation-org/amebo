@@ -621,6 +621,9 @@ register_tool(Tool(
 from src.tools.cli_read_tools import (
     odoo_search_impl, ODOO_SEARCH_SCHEMA,
     crm_read_latest_email_impl, CRM_READ_LATEST_EMAIL_SCHEMA,
+    crm_recent_activity_impl, CRM_RECENT_ACTIVITY_SCHEMA,
+    crm_list_leads_impl, CRM_LIST_LEADS_SCHEMA,
+    crm_list_contacts_impl, CRM_LIST_CONTACTS_SCHEMA,
     abra_search_impl, ABRA_SEARCH_SCHEMA,
     taiga_list_impl, TAIGA_LIST_SCHEMA,
 )
@@ -655,6 +658,47 @@ register_tool(Tool(
     ),
     input_schema=CRM_READ_LATEST_EMAIL_SCHEMA,
     execute=crm_read_latest_email_impl,
+    is_read_only=True,
+    category="crm",
+))
+
+register_tool(Tool(
+    name="crm_recent_activity",
+    description=(
+        "Show the most recent chatter (emails/notes) across the WHOLE CRM, "
+        "newest first — NOT scoped to one contact. Read only. Use this for "
+        "'what's been happening in the CRM lately', 'recent chatter', or a "
+        "general activity briefing. Optional 'limit' (default 15)."
+    ),
+    input_schema=CRM_RECENT_ACTIVITY_SCHEMA,
+    execute=crm_recent_activity_impl,
+    is_read_only=True,
+    category="crm",
+))
+
+register_tool(Tool(
+    name="crm_list_leads",
+    description=(
+        "List CRM leads/opportunities (the pipeline), most-recently-updated "
+        "first, with stage, owner, and expected revenue. Optional 'stage' name "
+        "filter. Read only. Use for 'where does the pipeline stand', 'what's in "
+        "the proposal stage', etc."
+    ),
+    input_schema=CRM_LIST_LEADS_SCHEMA,
+    execute=crm_list_leads_impl,
+    is_read_only=True,
+    category="crm",
+))
+
+register_tool(Tool(
+    name="crm_list_contacts",
+    description=(
+        "Browse/list CRM contacts. Optional 'query' (name/email/company/"
+        "catcode); omit it to list recent contacts. Read only. Use for 'list "
+        "our contacts', browsing by company, etc. — broader than odoo_search."
+    ),
+    input_schema=CRM_LIST_CONTACTS_SCHEMA,
+    execute=crm_list_contacts_impl,
     is_read_only=True,
     category="crm",
 ))

@@ -737,16 +737,22 @@ Answer the question based on this context. Be comprehensive and include all rele
             system_blocks, cached_messages = apply_cache_control(system_prompt, conv_messages)
 
             # --- Agentic loop (Claude Code pattern) ---
-            MAX_TOOL_ROUNDS = 5
+            # Model is config-by-instance, never a hardcoded id (a stale hardcoded
+            # model id once 404'd the whole QA path). Set AMEBO_QA_MODEL to use a
+            # smarter model on an instance.
+            qa_model = os.getenv("AMEBO_QA_MODEL", "claude-sonnet-4-6")
+            MAX_TOOL_ROUNDS = 8
             tool_round = 0
+            logger.info(f"[qa] model={qa_model} tools={[t['name'] for t in tools]}")
 
             response = self.client.messages.create(
-                model="claude-sonnet-4-6",
+                model=qa_model,
                 max_tokens=2000,
                 system=system_blocks,
                 messages=cached_messages,
                 tools=tools
             )
+            logger.info(f"[qa] round 0 stop_reason={response.stop_reason}")
 
             while response.stop_reason == "tool_use" and tool_round < MAX_TOOL_ROUNDS:
                 tool_round += 1
@@ -795,12 +801,13 @@ Answer the question based on this context. Be comprehensive and include all rele
 
                 # Call Claude again with full history including tool results
                 response = self.client.messages.create(
-                    model="claude-sonnet-4-6",
+                    model=qa_model,
                     max_tokens=2000,
                     system=system_blocks,
                     messages=cached_messages,
                     tools=tools
                 )
+                logger.info(f"[qa] round {tool_round} stop_reason={response.stop_reason}")
 
             # Extract final text response
             answer_text = ""
@@ -809,7 +816,17 @@ Answer the question based on this context. Be comprehensive and include all rele
                     answer_text += block.text
 
             if not answer_text:
-                answer_text = "I wasn't able to generate an answer. Try rephrasing your question."
+                # Log WHY we gave up so it's debuggable — not a silent canned reply.
+                block_types = [getattr(b, 'type', '?') for b in response.content]
+                logger.warning(
+                    "[qa] empty answer: stop_reason=%s rounds=%s/%s blocks=%s",
+                    response.stop_reason, tool_round, MAX_TOOL_ROUNDS, block_types,
+                )
+                if response.stop_reason == "tool_use":
+                    answer_text = ("I ran out of tool-use steps before I could finish. "
+                                   "Try narrowing the question.")
+                else:
+                    answer_text = "I wasn't able to generate an answer. Try rephrasing your question."
 
             # Clean up for Slack formatting
             answer_text = re.sub(r':?\w*:?\s*\*?\*?Confidence:\s*\d+%\s*\*?\*?\s*[-–]\s*.+?(?:\n|$)',
