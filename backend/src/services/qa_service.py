@@ -61,6 +61,7 @@ def _load_skills() -> List[Dict]:
                     body = parts[2].strip()
                     _SKILLS.append({
                         'name': frontmatter.get('name', skill_path.stem),
+                        'description': frontmatter.get('description', ''),
                         'triggers': frontmatter.get('triggers', []),
                         'body': body,
                         'path': str(skill_path)
@@ -90,6 +91,26 @@ def _match_skill(question: str) -> Optional[str]:
                 pass
 
     return None
+
+
+def _skill_catalog() -> str:
+    """Short catalog (name: description) of available skills for the model to
+    choose from. Full instructions are loaded on demand via the load_skill tool
+    — Claude-Code-style progressive disclosure (selection + chaining for free
+    via the agentic loop), instead of a single first-keyword match."""
+    skills = _load_skills()
+    if not skills:
+        return ""
+    lines = [
+        "**Available skills.** When one fits the request, call "
+        "`load_skill(name)` to load its full instructions before answering. "
+        "You may load more than one and combine them with other tools:"
+    ]
+    for s in skills:
+        name = s.get("name", "")
+        if name:
+            lines.append(f"- {name}: {s.get('description', '')}")
+    return "\n".join(lines)
 
 
 class QAService:
@@ -724,10 +745,11 @@ Answer the question based on this context. Be comprehensive and include all rele
                 author_info=author_info
             )
 
-            # Add skill instructions
-            skill_instructions = _match_skill(question)
-            if skill_instructions:
-                system_prompt += f"\n\n**Skill-specific instructions:**\n{skill_instructions}"
+            # Model-driven skill selection: show the catalog; the model loads the
+            # full skill(s) it wants via the load_skill tool during the loop.
+            catalog = _skill_catalog()
+            if catalog:
+                system_prompt += f"\n\n{catalog}"
 
             # Get tools for this instance
             tools = get_tools_for_instance(mgr._instance)

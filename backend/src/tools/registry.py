@@ -624,6 +624,7 @@ from src.tools.cli_read_tools import (
     crm_recent_activity_impl, CRM_RECENT_ACTIVITY_SCHEMA,
     crm_list_leads_impl, CRM_LIST_LEADS_SCHEMA,
     crm_list_contacts_impl, CRM_LIST_CONTACTS_SCHEMA,
+    load_skill_impl, LOAD_SKILL_SCHEMA,
     abra_search_impl, ABRA_SEARCH_SCHEMA,
     taiga_list_impl, TAIGA_LIST_SCHEMA,
 )
@@ -701,6 +702,19 @@ register_tool(Tool(
     execute=crm_list_contacts_impl,
     is_read_only=True,
     category="crm",
+))
+
+register_tool(Tool(
+    name="load_skill",
+    description=(
+        "Load the full instructions for a named skill. Your system prompt lists "
+        "the available skills (name: description); call this to pull a skill's "
+        "detailed steps before answering. You may load more than one. Read only."
+    ),
+    input_schema=LOAD_SKILL_SCHEMA,
+    execute=load_skill_impl,
+    is_read_only=True,
+    category="skills",
 ))
 
 register_tool(Tool(

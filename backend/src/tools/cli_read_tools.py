@@ -305,6 +305,45 @@ CRM_LIST_CONTACTS_SCHEMA = {
 
 
 # ---------------------------------------------------------------------------
+# load_skill — model-driven skill selection (Claude-Code-style progressive
+# disclosure). The system prompt lists the skill catalog (name: description);
+# the model calls this to pull the full instructions for the skill(s) it wants.
+# Read only — just reads a markdown file under prompts/skills/.
+# ---------------------------------------------------------------------------
+
+
+def load_skill_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """Load a skill's full instructions by name. Read only. Valid names are the
+    ones listed in the 'Available skills' catalog in your system prompt."""
+    from pathlib import Path
+    name = (tool_input.get("name") or "").strip()
+    if not name:
+        return "Error: name is required."
+    skills_dir = Path(__file__).resolve().parent.parent.parent / "prompts" / "skills"
+    path = skills_dir / f"{name}.md"
+    if not path.exists():
+        avail = (", ".join(sorted(p.stem for p in skills_dir.glob("*.md")))
+                 if skills_dir.exists() else "")
+        return f"No skill named '{name}'. Available: {avail or '(none)'}"
+    content = path.read_text()
+    if content.startswith("---"):
+        parts = content.split("---", 2)
+        if len(parts) >= 3:
+            content = parts[2].strip()
+    return content or "(skill has no body)"
+
+
+LOAD_SKILL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string",
+                 "description": "Skill name to load (from the Available skills catalog)."},
+    },
+    "required": ["name"],
+}
+
+
+# ---------------------------------------------------------------------------
 # abra_search — knowledge-base search / about (READ)
 # ---------------------------------------------------------------------------
 
