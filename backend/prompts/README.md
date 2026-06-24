@@ -81,17 +81,21 @@ flowchart LR
 
 ## 4. Skills (task-specific, keyword-triggered)
 
-Amebo's skill system is **much simpler than Claude Code's**: no model-driven
-selection, no progressive disclosure — it's a literal/regex trigger match that
-injects the **first** matching skill's body into the system prompt.
+Amebo now uses **model-driven selection** (Claude-Code-style progressive
+disclosure): the system prompt lists the skill **catalog** (name + description),
+and the model calls the **`load_skill(name)`** tool during the agentic loop to
+pull full instructions for the skill(s) it picks — so it can choose and **chain**
+several. (The old keyword/regex first-match, `_match_skill`, remains only for the
+legacy non-agentic fallback path.)
 
 ```mermaid
 flowchart TD
-    Q[question, lowercased] --> M["_match_skill()"]
-    M --> L["_load_skills(): parse prompts/skills/*.md frontmatter"]
-    L --> T{"any trigger substring\nor regex matches?"}
-    T -->|first match wins| INJ["append skill body to system prompt"]
-    T -->|no match| NONE[no skill added]
+    CAT["system prompt lists skill catalog\n(name: description) via _skill_catalog()"] --> MODEL[model reasons in the agentic loop]
+    MODEL -->|needs a skill| LS["calls load_skill(name) tool"]
+    LS --> BODY["returns prompts/skills/name.md body\n(as a tool result)"]
+    BODY --> MODEL
+    MODEL -->|may load more / use other tools| MODEL
+    MODEL -->|done| ANS[answer]
 ```
 
 Skill file format ([`skills/who-knows.md`](skills/who-knows.md) is a good example):
@@ -112,9 +116,10 @@ Current skills: [`goals`](skills/goals.md) · [`rank-opportunities`](skills/rank
 · [`relationship-map`](skills/relationship-map.md) · [`status-update`](skills/status-update.md)
 · [`who-knows`](skills/who-knows.md). Add a skill = drop a new `.md` here.
 
-> ⚠️ **Only ONE skill is applied** (first trigger hit, file order). No combining,
-> no "best match." If you want Claude-Code-style selection (load descriptions,
-> let the model pick / chain several), that's a code change in `_match_skill`.
+> ✅ **Model-driven now:** the model can load **multiple** skills (and combine
+> them with other tools) via `load_skill`. Add a skill = drop a new `.md` here
+> with a clear `description` (that's what the model sees in the catalog) — no
+> code change needed.
 
 ---
 
@@ -138,5 +143,6 @@ Current skills: [`goals`](skills/goals.md) · [`rank-opportunities`](skills/rank
    (today the legacy fallback path ignores it).
 2. **Move Rules out of code into a file** (e.g. `rules.md`) so they're editable
    here like everything else.
-3. **Richer skill selection** if you want Claude-Code-style behavior (descriptions
-   always visible, model picks/chains, optional scripts) — currently first-match-only.
+3. ~~Richer skill selection~~ ✅ **Done** — model-driven selection + chaining via
+   `load_skill` (catalog in the system prompt, full skill loaded on demand).
+   Optional skill *scripts*/sandboxing remain unimplemented (not needed for now).
