@@ -322,7 +322,8 @@ def load_skill_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
     skills_dir = Path(__file__).resolve().parent.parent.parent / "prompts" / "skills"
     path = skills_dir / f"{name}.md"
     if not path.exists():
-        avail = (", ".join(sorted(p.stem for p in skills_dir.glob("*.md")))
+        avail = (", ".join(sorted(p.stem for p in skills_dir.glob("*.md")
+                                  if not p.stem.startswith("_")))
                  if skills_dir.exists() else "")
         return f"No skill named '{name}'. Available: {avail or '(none)'}"
     content = path.read_text()

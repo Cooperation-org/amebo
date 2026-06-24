@@ -51,6 +51,8 @@ def _load_skills() -> List[Dict]:
     import yaml
 
     for skill_path in sorted(skills_dir.glob("*.md")):
+        if skill_path.stem.startswith("_"):
+            continue  # _template.md and other _-prefixed files are not skills
         try:
             content = skill_path.read_text()
             # Parse YAML frontmatter between --- markers
