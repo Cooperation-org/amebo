@@ -124,6 +124,23 @@ class CredentialResolver:
             raise CredentialMissing(self.org_id, self.kind, self.label)
         return self._resolve(record)
 
+    def get_payload(self) -> Dict[str, Any]:
+        """
+        Return the full decrypted credential payload as a dict — for STATIC
+        (non-OAuth) credentials whose shape isn't a single bearer token, e.g.
+        Taiga (``{"TAIGA_USERNAME":…, "TAIGA_PASSWORD":…, "TAIGA_URL":…}``) or
+        git (``{"repo_url":…, "token":…}``). Static creds don't expire/refresh,
+        so this does no refresh — it just decrypts the active row.
+
+        Raises CredentialMissing if there's no active row for this
+        (org_id, kind, label). Strictly per-org: it only ever reads this
+        resolver's own org_id.
+        """
+        record = self._fetch_active_row()
+        if record is None:
+            raise CredentialMissing(self.org_id, self.kind, self.label)
+        return encryption.decrypt_json(bytes(record["encrypted_value"]))
+
     def force_refresh(self) -> StoredCredential:
         """
         Refresh the credential even if it's not yet expired. Used by the
@@ -403,3 +420,48 @@ class CredentialResolver:
                 return [dict(r) for r in cur.fetchall()]
         finally:
             DatabaseConnection.return_connection(conn)
+
+
+# ---------------------------------------------------------------------------
+# Static credential storage (non-OAuth: Taiga user/pass, git token, etc.)
+# ---------------------------------------------------------------------------
+
+
+def store_static(
+    org_id: int,
+    kind: str,
+    payload: Dict[str, Any],
+    *,
+    label: str = "default",
+    granted_scopes: Optional[list] = None,
+    connected_by_user_id: Optional[int] = None,
+) -> None:
+    """
+    Store (or replace) a STATIC per-org credential: an encrypted field map for
+    systems that don't use OAuth bearer tokens (Taiga, git, API keys). Read back
+    with ``CredentialResolver(org_id, kind, label).get_payload()``.
+
+    Replaces any existing active cred for (org_id, kind, label) by revoking it
+    and inserting fresh — preserves history via ``revoked_at``, and needs no
+    unique constraint. The secret is encrypted at rest (Fernet) and never logged.
+    """
+    enc = encryption.encrypt_json(payload)
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE org_credentials SET revoked_at = NOW() "
+                "WHERE org_id = %s AND kind = %s AND label = %s AND revoked_at IS NULL",
+                (org_id, kind, label),
+            )
+            cur.execute(
+                """
+                INSERT INTO org_credentials
+                    (org_id, kind, label, encrypted_value, granted_scopes, connected_by_user_id)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                """,
+                (org_id, kind, label, enc, granted_scopes or [], connected_by_user_id),
+            )
+            conn.commit()
+    finally:
+        DatabaseConnection.return_connection(conn)
