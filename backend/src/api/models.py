@@ -208,6 +208,7 @@ class QAResponse(BaseModel):
     sources: List[QASource]
     question: str
     processing_time_ms: Optional[float] = None
+    intent: Optional[str] = None
 
 
 # ============================================================================
