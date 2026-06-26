@@ -248,3 +248,38 @@ running `amebo-backend` has them; WhatsCookin instance (`instances.id=1`) `allow
 3. Scheduler trigger + gated Slack-send executor on approval (same seam pm_claw also awaits).
 
 **DROPPED (decided):** team scope (org+individual only); experiment branches as a data model (organic/external).
+
+## SALES-COACH SKILL SUITE + PIPELINE-STATUS CLAW (2026-06-26, Golda session) — WRITTEN, NOT YET DEPLOYED
+Golda wants amebo to COACH the team through our (non-standard, relationship-first) sales + product GTM — no AI-generated
+content; the agent coaches humans, all outbound stays gated. Research first (saved to abra scope claude):
+`odoo-marketing-modules-landscape` (Email Marketing=Community; Marketing Automation/drip + Social Marketing/calendar =
+Enterprise-only/uninstallable here) and `odoo-crm-vs-hubspot-salesforce-pipeline` (Odoo Community covers pipeline
+structure + predictive scoring + forecasting; HubSpot/SF add sequences/cadences/conversation-intel/AI — mostly things
+we don't want; our real gap = discipline/methodology, i.e. a human-coaching skill).
+
+**7 new skills in `backend/prompts/skills/`** (additive, load on next backend restart; reference only already-gated
+tools; all verified to parse via qa_service._load_skills → 13 skills total):
+- `sales-coach` (spine: read pipeline → qualify BANT/MEDDIC/CHAMP → next move → gated Taiga task w/ due+cash; encodes our
+  4 target types: sell-to / partner-with / find-GTM-partner / client-GTM)
+- `ecosystem-research` (meet them where they are: Discord/Slack/Signal/ATProto/their tech; needs http_fetch [now enabled
+  on instance 1] + a gated CRM-note writer [odoo_cli, NOT yet enabled — held pending the "where do channel facts live"
+  decision])
+- `demo-opener` (tiny demo in their ecosystem as opener; honest no when it doesn't fit)
+- `find-partner` (reverse-prospecting: we/clients hold an opportunity, find the driver/funder — Alonovo, IntegralMass, etc.)
+- `content-from-interview` (interview teammate → their OWN words → article → LinkedIn+Bluesky plan; NO publish channel
+  wired yet → drafts+plan only)
+- `product-gtm` (multi-step: archetype → fits → messaging → channel [sequence vs reviewer] → feedback loop until someone
+  really TRIES it; reads experiment MINI/MAIN doc Target Audience/Results)
+- `find-reviewer` (credible reviewer/writer/influencer to actually try+review honestly; higher-yield than cold drip)
+
+**`pipeline_status_claw.py` + test_pipeline_status_claw.py (11 tests pass).** Reads Odoo `crm.lead` directly (active,
+not-won) and flags two hygiene buckets: NO next step (empty `activity_date_deadline` — the Activity signal we set via
+odoo-cli schedule) and STALE (>14d by write_date). ONE gated Slack digest/day, dedup via pending_actions
+(payload.pipeline_digest), inert until an instance has notify_channel. Same discipline as followup_claw. NOT wired to any
+timer; nothing posts. Live smoke (read-only): all 157 open deals currently have NO next step (all "Identified",
+unassigned) — real hygiene finding.
+
+**Config change (live):** added `http_fetch` to WhatsCookin (instance 1) allowed_tools.
+**HELD for Golda's go:** (1) restart amebo-backend to load the 7 skills; (2) enable odoo_cli on instance 1 (broad gated
+write) — held pending decision on where contact channel/ecosystem facts live (CRM custom field vs abra bindings);
+(3) wire pipeline_status_claw to a daily timer + set notify_channel; (4) no Bluesky/LinkedIn publish channel exists.
