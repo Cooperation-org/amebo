@@ -863,6 +863,23 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
                 )
                 conn.commit()
                 logger.info("OIDC: invite consumed — %s admitted to org %s as %s", email, user["org_id"], user["role"])
+
+                # Every invite also grants the member their OWN direct logins to
+                # CRM (Odoo) + Marten (Taiga) — independent of amebo. Runs in a
+                # daemon thread so the ~dozen Taiga calls don't delay the redirect;
+                # provision_member is idempotent and best-effort (never raises).
+                # Admin creds it uses live ONLY in PROVISION_* env, never in
+                # org_credentials, so the agent/LLM path cannot reach them.
+                try:
+                    import threading
+                    from src.auth_oauth.team_provisioning import provision_member
+                    threading.Thread(
+                        target=provision_member,
+                        args=(user["email"], ident.name, ident.sub),
+                        daemon=True,
+                    ).start()
+                except Exception as exc:  # noqa: BLE001
+                    logger.error("OIDC: could not start tool provisioning for %s: %s", email, exc)
             else:
                 # No invite: the standard gate (approval required for new identities).
                 if user is not None:
