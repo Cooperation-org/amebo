@@ -771,10 +771,14 @@ async def oidc_login(invite: str = None):
     tx_claims = {"oidc_state": state, "oidc_nonce": nonce, "oidc_verifier": verifier}
     if invite:
         tx_claims["oidc_invite"] = invite
-    tx = create_access_token(tx_claims, expires_delta=timedelta(minutes=10))
+    # Window must cover a real first-time login at the IdP: account chooser,
+    # provider consent, and possibly a couple of method retries (Google/Bluesky/
+    # GitHub). 10 min was too short — a slow first login dropped the invite and
+    # the user fell through to the no-invite "pending approval" gate.
+    tx = create_access_token(tx_claims, expires_delta=timedelta(minutes=60))
     resp = RedirectResponse(url, status_code=302)
     resp.set_cookie(
-        OIDC_TX_COOKIE, tx, max_age=600, httponly=True, secure=True,
+        OIDC_TX_COOKIE, tx, max_age=3600, httponly=True, secure=True,
         samesite="lax", path="/api/auth/oidc",
     )
     return resp
