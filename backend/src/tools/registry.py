@@ -540,6 +540,8 @@ from src.tools.main_md_tools import (
     READ_MAIN_MD_SCHEMA,
     edit_main_md_impl,
     EDIT_MAIN_MD_SCHEMA,
+    create_main_md_impl,
+    CREATE_MAIN_MD_SCHEMA,
 )
 from src.tools.slack_tools import slack_post_impl, SLACK_POST_SCHEMA
 
@@ -585,6 +587,25 @@ register_tool(Tool(
     ),
     input_schema=EDIT_MAIN_MD_SCHEMA,
     execute=edit_main_md_impl,
+    is_read_only=False,
+    category="projects",
+))
+
+
+register_tool(Tool(
+    name="create_main_md",
+    description=(
+        "Create a NEW MAIN.md for a project that does not have one yet. "
+        "Refuses to overwrite an existing MAIN.md (use edit_main_md for those). "
+        "Creates the project directory under /opt/shared/projects/Active/ if "
+        "needed. ALWAYS read an existing project's MAIN.md first with "
+        "read_main_md so the new one follows the exact pattern. Use the team's "
+        "own words and do not invent facts — ask the person for anything you "
+        "don't have. The file lands on disk uncommitted; a human reviews via "
+        "git diff before committing."
+    ),
+    input_schema=CREATE_MAIN_MD_SCHEMA,
+    execute=create_main_md_impl,
     is_read_only=False,
     category="projects",
 ))

@@ -230,3 +230,88 @@ EDIT_MAIN_MD_SCHEMA = {
     },
     "required": ["project_slug", "old_string", "new_string"],
 }
+
+
+# ---------------------------------------------------------------------------
+# create_main_md
+# ---------------------------------------------------------------------------
+
+MAX_CREATE_BYTES = 32 * 1024   # a MAIN.md should be well under this
+MIN_CREATE_BYTES = 40          # refuse near-empty stubs
+
+
+def create_main_md_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """
+    Create a NEW MAIN.md for a project under the active-projects root.
+
+    Refuses to overwrite an existing MAIN.md (use edit_main_md for changes to
+    one that already exists). Creates the project directory if it does not yet
+    exist. Same path guard as read/edit: the slug must resolve inside
+    ACTIVE_PROJECTS_ROOT. The file lands on disk uncommitted; a human reviews
+    via git diff before committing.
+    """
+    slug_raw = tool_input.get("project_slug")
+    content = tool_input.get("content")
+
+    if not isinstance(content, str):
+        return "Error: content is required and must be a string."
+    content = content.strip("\n") + "\n"
+    body_len = len(content.encode("utf-8"))
+    if body_len < MIN_CREATE_BYTES:
+        return (
+            f"Error: content is too short ({body_len} bytes). Write a real "
+            "MAIN.md following the pattern of an existing project (read one "
+            "first with read_main_md)."
+        )
+    if body_len > MAX_CREATE_BYTES:
+        return f"Error: content must be <= {MAX_CREATE_BYTES} bytes; got {body_len}."
+
+    try:
+        directory = _project_dir(slug_raw or "")
+    except (ValueError, PermissionError) as exc:
+        return f"Error: {exc}"
+
+    path = directory / MAIN_MD_FILENAME
+    if path.exists():
+        return (
+            f"Error: {path} already exists — refusing to overwrite. Use "
+            "edit_main_md to change an existing MAIN.md."
+        )
+
+    try:
+        directory.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    except OSError as exc:
+        return f"Error creating {path}: {exc}"
+
+    logger.info("create_main_md wrote %s (%d bytes)", path, body_len)
+    return (
+        f"Created {path} ({body_len} bytes). The file is on disk (uncommitted "
+        "in git) — a human reviews via git diff before it is committed."
+    )
+
+
+CREATE_MAIN_MD_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "project_slug": {
+            "type": "string",
+            "description": (
+                "Slug for the project — the directory name under "
+                "/opt/shared/projects/Active/. Lowercase, no spaces. The "
+                "directory is created if it does not exist."
+            ),
+        },
+        "content": {
+            "type": "string",
+            "description": (
+                "Full Markdown body of the new MAIN.md. Follow the exact "
+                "pattern of an existing project's MAIN.md (read one first with "
+                "read_main_md): title, one-line description, Team Lead / Slack "
+                "Channel, key links, and background. Use the team's own words; "
+                "do not invent facts."
+            ),
+        },
+    },
+    "required": ["project_slug", "content"],
+}
