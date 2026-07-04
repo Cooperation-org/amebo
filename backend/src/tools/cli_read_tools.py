@@ -378,26 +378,151 @@ CRM_LIST_CONTACTS_SCHEMA = {
 # ---------------------------------------------------------------------------
 
 
-def load_skill_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
-    """Load a skill's full instructions by name. Read only. Valid names are the
-    ones listed in the 'Available skills' catalog in your system prompt."""
-    from pathlib import Path
-    name = (tool_input.get("name") or "").strip()
-    if not name:
-        return "Error: name is required."
-    skills_dir = Path(__file__).resolve().parent.parent.parent / "prompts" / "skills"
-    path = skills_dir / f"{name}.md"
-    if not path.exists():
-        avail = (", ".join(sorted(p.stem for p in skills_dir.glob("*.md")
-                                  if not p.stem.startswith("_")))
-                 if skills_dir.exists() else "")
-        return f"No skill named '{name}'. Available: {avail or '(none)'}"
+from pathlib import Path as _Path
+
+
+def _packaged_skills_dir() -> _Path:
+    """Core/universal skills packaged with amebo (backend/prompts/skills)."""
+    return _Path(__file__).resolve().parent.parent.parent / "prompts" / "skills"
+
+
+def _org_skills_dir(context: Any) -> Optional[_Path]:
+    """The acting org's skills overlay dir (arch §7): `<context repo>/skills`.
+    Org-specific skills live in the org's context repo (decided 2026-07-04:
+    durable text in repos, not abra). None if there's no org / no context repo."""
+    org_id = _org_id_from_context(context)
+    if org_id is None:
+        return None
+    try:
+        from src.credentials.connections import _org_context_repo
+        repo = _org_context_repo(org_id)
+        if repo:
+            return _Path(repo) / "skills"
+    except Exception:
+        logger.exception("org skills dir resolve failed")
+    return None
+
+
+def _skill_slug(name: str) -> str:
+    s = _re.sub(r"[^a-z0-9]+", "-", (name or "").strip().lower()).strip("-")
+    return s or "skill"
+
+
+def _read_skill_body(path: _Path) -> str:
     content = path.read_text()
     if content.startswith("---"):
         parts = content.split("---", 2)
         if len(parts) >= 3:
-            content = parts[2].strip()
-    return content or "(skill has no body)"
+            return parts[2].strip()
+    return content.strip()
+
+
+def load_skill_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """Load a skill's full instructions by name. Read only. Checks the acting
+    org's skills overlay first, then the packaged core catalog."""
+    name = (tool_input.get("name") or "").strip()
+    if not name:
+        return "Error: name is required."
+    slug = _skill_slug(name)
+    # org overlay wins over a packaged skill of the same name
+    for d in (_org_skills_dir(context), _packaged_skills_dir()):
+        if d is None:
+            continue
+        for candidate in (d / f"{name}.md", d / f"{slug}.md"):
+            if candidate.exists():
+                return _read_skill_body(candidate) or "(skill has no body)"
+    avail = _list_skill_names(context)
+    return f"No skill named '{name}'. Available: {avail or '(none)'}"
+
+
+def _list_skill_names(context: Any) -> str:
+    names = set()
+    for d in (_packaged_skills_dir(), _org_skills_dir(context)):
+        if d and d.exists():
+            names.update(p.stem for p in d.glob("*.md") if not p.stem.startswith("_"))
+    return ", ".join(sorted(names))
+
+
+def list_skills_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """List available skills (name — description — status) for the acting org:
+    the packaged core catalog plus the org's own overlay. Read only."""
+    import yaml as _yaml
+    rows = []
+    seen = set()
+    # org overlay first so an org skill shadows a core one of the same name
+    for src_label, d in (("org", _org_skills_dir(context)), ("core", _packaged_skills_dir())):
+        if not d or not d.exists():
+            continue
+        for p in sorted(d.glob("*.md")):
+            if p.stem.startswith("_") or p.stem in seen:
+                continue
+            seen.add(p.stem)
+            desc, status = "", ""
+            try:
+                content = p.read_text()
+                if content.startswith("---"):
+                    fm = _yaml.safe_load(content.split("---", 2)[1]) or {}
+                    desc = fm.get("description", "")
+                    status = fm.get("status", "")
+            except Exception:
+                pass
+            tag = f" [{status}]" if status else ""
+            rows.append(f"  - {p.stem} ({src_label}){tag}: {desc}")
+    return "Available skills:\n" + "\n".join(rows) if rows else "No skills available."
+
+
+def file_skill_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """File a skill into the acting org's context repo, verbatim (arch §7, §9).
+
+    Stores the person's words UNCHANGED as the body plus a clearly separated
+    one-line summary in the frontmatter (I9 — never replace the original). The
+    org is the RESOLVED org (so 'file this under raise the voices' from any
+    channel lands in RTV's repo). Lightly gated: it is a write-class tool, so the
+    trust gate already blocks an unknown (T0) user; the write itself is to the
+    org's own knowledge, so no full draft gate."""
+    name = (tool_input.get("name") or "").strip()
+    content = tool_input.get("content") or ""
+    status = (tool_input.get("status") or "idea").strip()
+    summary = (tool_input.get("summary") or "").strip()
+    if not name or not content.strip():
+        return "Error: name and content are required."
+    if status not in ("idea", "draft", "active"):
+        return "Error: status must be idea | draft | active."
+    skills_dir = _org_skills_dir(context)
+    if skills_dir is None:
+        return ("Error: I don't have an org to file this under. Say which org "
+                "(e.g. 'file this under raise the voices').")
+    if not summary:
+        summary = content.strip().splitlines()[0][:100]
+    slug = _skill_slug(name)
+    try:
+        skills_dir.mkdir(parents=True, exist_ok=True)
+        # frontmatter (summary + status) then the VERBATIM body, separated.
+        fm = (f"---\nname: {name}\ndescription: {summary}\nstatus: {status}\n"
+              f"source: filed-by-member\n---\n\n")
+        path = skills_dir / f"{slug}.md"
+        path.write_text(fm + content.rstrip() + "\n")
+    except OSError as exc:
+        return f"Error: could not file skill: {exc}"
+    return (f"Filed skill '{name}' ({status}) in this org's skills at {path}. "
+            f"Summary: {summary}")
+
+
+FILE_SKILL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string", "description": "Short skill name."},
+        "content": {"type": "string",
+                    "description": "The skill instructions IN THE PERSON'S OWN WORDS — stored verbatim."},
+        "summary": {"type": "string",
+                    "description": "Optional one-line summary (separate from the verbatim body)."},
+        "status": {"type": "string", "enum": ["idea", "draft", "active"],
+                   "description": "idea | draft | active (default idea)."},
+    },
+    "required": ["name", "content"],
+}
+
+LIST_SKILLS_SCHEMA = {"type": "object", "properties": {}, "required": []}
 
 
 LOAD_SKILL_SCHEMA = {

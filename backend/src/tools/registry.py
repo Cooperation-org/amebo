@@ -722,6 +722,8 @@ from src.tools.cli_read_tools import (
     crm_list_leads_impl, CRM_LIST_LEADS_SCHEMA,
     crm_list_contacts_impl, CRM_LIST_CONTACTS_SCHEMA,
     load_skill_impl, LOAD_SKILL_SCHEMA,
+    list_skills_impl, LIST_SKILLS_SCHEMA,
+    file_skill_impl, FILE_SKILL_SCHEMA,
     abra_search_impl, ABRA_SEARCH_SCHEMA,
     taiga_list_impl, TAIGA_LIST_SCHEMA,
 )
@@ -814,6 +816,33 @@ register_tool(Tool(
     input_schema=LOAD_SKILL_SCHEMA,
     execute=load_skill_impl,
     is_read_only=True,
+    category="skills",
+))
+
+register_tool(Tool(
+    name="list_skills",
+    description=(
+        "List the skills available for the current org (core + this org's own). "
+        "Read only. Use to discover what skills exist before load_skill."
+    ),
+    input_schema=LIST_SKILLS_SCHEMA,
+    execute=list_skills_impl,
+    is_read_only=True,
+    category="skills",
+))
+
+register_tool(Tool(
+    name="file_skill",
+    description=(
+        "File a new skill (a reusable way to handle a kind of request) into the "
+        "CURRENT ORG's space, in the person's own words, verbatim. Use when "
+        "someone says 'file this as a skill' / 'remember to always…'. The org is "
+        "resolved from the conversation (e.g. 'file this under raise the voices'). "
+        "Provide name + content (their words); status defaults to 'idea'."
+    ),
+    input_schema=FILE_SKILL_SCHEMA,
+    execute=file_skill_impl,
+    is_read_only=False,
     category="skills",
 ))
 
