@@ -15,6 +15,8 @@ Guidance for any coding agent working in this repository ([AGENTS.md](AGENTS.md)
 
 Standing rules (details in the architecture doc): amebo is a **participant, not owner** (I1); core code is **semantic, vendor names only in leaves** (I11); **all outbound gated** (I6); **never `git stash`**; commit as you go; **never use the AskUserQuestion tool** — write questions to the board in plain language.
 
+**Starting with no instructions?** Read the CURRENT STATE header at the top of [scratch.md](scratch.md) — it tells you what's done, what's next, and the operative rules. Announce what you pick up there before you start.
+
 ## What Amebo Is
 
 Amebo is a **knowledge cooperation tool** — not a chatbot, not an engineering tool. It helps teams, nonprofits, organizers, activists, and small businesses leverage their collective knowledge to grow and collaborate effectively.

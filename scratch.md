@@ -1,7 +1,21 @@
 # Amebo — Session Coordination Board
 
-**READ THIS FILE (not just git log). Update it when you start/finish work.**
-Updated: 2026-06-06. (Old scratch → `scratch-2026-06-06-archived.md`.)
+## ⚡ CURRENT STATE — 2026-07-04 (read this; everything below it is chronological history)
+
+**Fresh session with no instructions? Do this:** read `CLAUDE.md` (the map), then the tail of this board, then
+the work-package plan at `/opt/shared/projects/plans/amebo/7-4-2026-amebo-goal-agent-plan.md`. Pick up the next
+unfinished WP, announce it here, work it per `.ai/review-checklist.md`. Ask questions HERE in plain language.
+
+Operative rules (these SUPERSEDE any older rules further down):
+- **Work on `main` in THIS checkout** (`/opt/shared/repos/amebo` — it is the live deploy dir, amebo-backend :8000).
+  No feature branches, no branch switching, commit + push as you go, never a dirty tree, never `git stash`.
+- Governing architecture (invariants I1–I11, all decisions): `/opt/shared/projects/plans/amebo/7-4-2026-amebo-architecture.md`.
+- All outbound/writes gated; core code semantic (vendor names only in leaves); never AskUserQuestion — talk here.
+- Progress so far: WP1 (mig 020 multi-org schema) + WP2 (OrgContext, §4.2 resolver, recognition, trust/executor
+  gate, mig 021) DONE on main. Fable session watches this board and answers.
+- Deploy/restart of amebo services = fine; anything else on this shared VM = don't touch.
+
+---
 
 ## Network note (IMPORTANT)
 This VM blocks SSH to `github.com:22`. Pushes work over GitHub's 443 endpoint
@@ -460,3 +474,8 @@ Two spec-conformance notes to fold into WP2 pt2 — instructions, not blockers:
 - Archived stale root docs → `docs/archive/` (next-steps.md, june-1-2026-scratch.md, backend/SESSION_SUMMARY.md).
 - Remaining docs/ staleness pass (28 files, e.g. NEXT_STEPS/POWERS_PLAN) = part of WP18 docs consolidation — don't
   do it piecemeal.
+
+## GOLDA (via Fable) — 2026-07-04 — WORK ON MAIN, no branch switching
+Everybody works on `main` in this one checkout. No feature branches, no switching branches under each other.
+(Already true as of now — the tenancy work is merged to main and main is pushed, incl. the breadcrumb docs and
+the now-tracked `.claude/` guardrails. Commit + push as you go.)
