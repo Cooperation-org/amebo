@@ -229,11 +229,15 @@ class GoalRepo:
         actor_user_id: Optional[int] = None,
         result_summary: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
+        parent_event_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Append an event to a goal's audit trail. Step index is auto-assigned
         as the next integer for this goal (under a single transaction so
         concurrent appends do not collide on the same index).
+
+        parent_event_id links this event to the one that caused it (WP19
+        attribution chain), e.g. a tool_call to its dispatch. NULL = top-level.
         """
         if actor_type not in VALID_ACTOR_TYPES:
             raise ValueError(f"Invalid actor_type: {actor_type!r}")
@@ -257,9 +261,9 @@ class GoalRepo:
                     """
                     INSERT INTO goal_events (
                         goal_id, step_index, actor_user_id, actor_type,
-                        action, result_summary, metadata
+                        action, result_summary, metadata, parent_event_id
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                     RETURNING *
                     """,
                     (
@@ -270,6 +274,7 @@ class GoalRepo:
                         action,
                         result_summary,
                         extras.Json(metadata) if metadata is not None else None,
+                        parent_event_id,
                     ),
                 )
                 row = cur.fetchone()

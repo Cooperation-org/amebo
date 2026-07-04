@@ -205,3 +205,14 @@ class TestGoalEvents:
             DatabaseConnection.return_connection(conn)
 
         assert repo.list_events(g["id"]) == []
+
+
+class TestParentEventChain:
+    def test_parent_event_id_roundtrips(self, repo, test_org_id):
+        g = repo.create(org_id=test_org_id, title="chain")
+        parent = repo.append_event(goal_id=g["id"], actor_type="claw", action="dispatch_summary")
+        child = repo.append_event(goal_id=g["id"], actor_type="claw",
+                                  action="tool_call:x", parent_event_id=parent["id"])
+        assert child["parent_event_id"] == parent["id"]
+        top = repo.append_event(goal_id=g["id"], actor_type="claw", action="note")
+        assert top["parent_event_id"] is None
