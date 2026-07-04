@@ -180,7 +180,8 @@ class QAService:
         thread_ref: Optional[str] = None,
         source_type: str = "slack",
         author_info: Optional[str] = None,
-        instance_slug: Optional[str] = None
+        instance_slug: Optional[str] = None,
+        allow_tools: bool = True,
     ) -> Dict:
         """
         Answer a question based on Slack history.
@@ -764,8 +765,11 @@ Answer the question based on this context. Be comprehensive and include all rele
             if catalog:
                 system_prompt += f"\n\n{catalog}"
 
-            # Get tools for this instance
-            tools = get_tools_for_instance(mgr._instance)
+            # Get tools for this instance. allow_tools=False (public/unknown-user
+            # path) offers ZERO tools, so the model structurally cannot execute
+            # anything — a read-only answer from assembled knowledge only. The
+            # trust gate is a second, independent guard when a principal is set.
+            tools = get_tools_for_instance(mgr._instance) if allow_tools else []
             logger.info(f"Available tools: {[t['name'] for t in tools]}")
 
             # Apply prompt caching
@@ -780,13 +784,15 @@ Answer the question based on this context. Be comprehensive and include all rele
             tool_round = 0
             logger.info(f"[qa] model={qa_model} tools={[t['name'] for t in tools]}")
 
-            response = self.client.messages.create(
+            create_kwargs = dict(
                 model=qa_model,
                 max_tokens=2000,
                 system=system_blocks,
                 messages=cached_messages,
-                tools=tools
             )
+            if tools:  # omit the param entirely when read-only (no tools offered)
+                create_kwargs["tools"] = tools
+            response = self.client.messages.create(**create_kwargs)
             logger.info(f"[qa] round 0 stop_reason={response.stop_reason}")
 
             while response.stop_reason == "tool_use" and tool_round < MAX_TOOL_ROUNDS:

@@ -320,3 +320,57 @@ class TestChatInstanceInfo:
             IR.return_value.get_by_slug.return_value = None
             resp = client.get("/api/chat/instances/missing")
         assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# /api/chat/public — unauthenticated, read-only embed (unknown user, T0)
+# ---------------------------------------------------------------------------
+
+
+class TestPublicChat:
+    """The embeddable public chat: no SSO, treated as the unknown user (T0),
+    answers from the instance's knowledge but NEVER executes anything."""
+
+    def test_answers_without_auth_and_read_only(self, client):
+        with patch("src.api.routes.chat.QAService") as QA, \
+             patch("src.api.routes.chat.InstanceRepo") as IR:
+            IR.return_value.get_by_slug.return_value = {"id": 1, "slug": "demo", "org_id": 7}
+            QA.return_value.answer_question.return_value = {"answer": "Public answer.", "confidence": 60}
+            resp = client.post(
+                "/api/chat/public",
+                json={"message": "what is this project?", "instance_slug": "demo"},
+            )
+        assert resp.status_code == 200          # no auth required
+        assert resp.json()["reply"] == "Public answer."
+        # structurally read-only: the QA is invoked with tools disabled
+        _, kwargs = QA.return_value.answer_question.call_args
+        assert kwargs.get("allow_tools") is False
+
+    def test_caller_is_treated_as_t0_unknown_user(self, client):
+        with patch("src.api.routes.chat.QAService") as QA, \
+             patch("src.api.routes.chat.InstanceRepo") as IR:
+            IR.return_value.get_by_slug.return_value = {"id": 1, "slug": "demo", "org_id": 7}
+            QA.return_value.answer_question.return_value = {"answer": "ok"}
+            client.post("/api/chat/public", json={"message": "hi", "instance_slug": "demo"})
+        _, ctor_kwargs = QA.call_args
+        principal = ctor_kwargs.get("principal")
+        from src.services.trust import evaluate, TrustLevel
+        assert principal is not None and evaluate(principal) == TrustLevel.T0
+
+    def test_unknown_instance_returns_404(self, client):
+        with patch("src.api.routes.chat.InstanceRepo") as IR:
+            IR.return_value.get_by_slug.return_value = None
+            resp = client.post(
+                "/api/chat/public", json={"message": "hi", "instance_slug": "nope"}
+            )
+        assert resp.status_code == 404
+
+    def test_empty_message_returns_400(self, client):
+        resp = client.post(
+            "/api/chat/public", json={"message": "   ", "instance_slug": "demo"}
+        )
+        assert resp.status_code == 400
+
+    def test_missing_instance_slug_is_422(self, client):
+        resp = client.post("/api/chat/public", json={"message": "hi"})
+        assert resp.status_code == 422

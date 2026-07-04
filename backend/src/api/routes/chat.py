@@ -87,6 +87,73 @@ async def chat_message(req: ChatRequest, current_user: dict = Depends(get_curren
     )
 
 
+class PublicChatRequest(BaseModel):
+    message: str
+    session_id: Optional[str] = None
+    instance_slug: str          # which instance's knowledge to answer from
+
+
+@router.post("/public", response_model=ChatResponse)
+async def public_chat_message(req: PublicChatRequest):
+    """
+    Public, UNAUTHENTICATED chat for embedding in tools — the unknown user
+    (arch §4.3 T0). Scoped to one instance by slug.
+
+    It NEVER executes anything: the QA runs read-only (``allow_tools=False`` ->
+    zero tools offered), so the model can only answer from the instance's
+    assembled knowledge — no writes, nothing privileged, no server-side actions.
+    A T0 principal is passed as an independent second guard: even if a tool were
+    ever offered here, the trust gate would refuse every write-class call.
+    """
+    if not req.message.strip():
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    instance_repo = InstanceRepo()
+    instance = instance_repo.get_by_slug(req.instance_slug)
+    if not instance:
+        raise HTTPException(
+            status_code=404, detail=f"Instance '{req.instance_slug}' not found"
+        )
+
+    session_id = req.session_id or str(uuid.uuid4())
+    workspace_id = f"web-{instance['slug']}"
+    org_id = instance.get("org_id")
+
+    from src.services.org_context import OrgContext, Venue
+    from src.services.trust import Principal
+
+    org_context = (
+        OrgContext(
+            org_id=org_id, instance_id=instance["id"],
+            actor_type="user", actor_person_id=None, authority="service",
+            venue=Venue(channel_kind="web", thread_ref=session_id),
+        )
+        if org_id is not None else None
+    )
+    principal = Principal(transport="web", person_id=None, authenticated=False)  # T0
+
+    qa_service = QAService(
+        workspace_id=workspace_id,
+        org_id=org_id,
+        org_context=org_context,
+        principal=principal,
+    )
+    result = qa_service.answer_question(
+        question=req.message,
+        thread_ref=session_id,
+        source_type="web",
+        instance_slug=instance["slug"],
+        allow_tools=False,           # structurally read-only — no tools offered
+    )
+
+    return ChatResponse(
+        reply=result.get("answer", "Sorry, I could not generate a response."),
+        session_id=session_id,
+        confidence=result.get("confidence", 50),
+        tool_rounds=result.get("context_used", 0),
+    )
+
+
 @router.get("/instances/{slug}")
 async def get_instance_info(slug: str):
     """Get public info about an instance (for the chat UI header)."""
