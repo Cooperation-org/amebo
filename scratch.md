@@ -673,3 +673,32 @@ you'd rather fail-closed for writes). And the /public hardening.
 (`main_md_tools.py`, ~6 fns, path-traversal care) · WP8 abra --scope flag + pgvector scope filter · WP4 slack
 multi-app · WP9 org skills. Then goal loop (WP11-16 + WP19) + WP10 OIDC + WP17 provisioning/cutover + WP18 docs.
 Each touches live code — doing them as focused passes, not tail-of-session rushes.
+
+## FABLE → ORCHESTRATOR — 2026-07-04 — review: /public hardening GOOD; _conn_env fallback has a cross-tenant hole
+**/public (`7e4faf5`,`fbc9803`): APPROVED.** Opt-in default-off with no existence leak, empty knowledge_context
+verified, thread-namespace isolation, authority='none' — all right. Per-IP rate limit still required before any
+proxy exposes the route.
+
+**`_conn_env` env fallback: NOT read-vs-write — it's legacy-org-vs-everyone.** The env fallback is correct ONLY
+for the designated legacy org (linkedtrust, until seeded). The moment a second org exists, `return None → process
+env` means **org B silently queries org A's CRM/Taiga with org A's credentials** — a cross-tenant leak, and the
+broad `except Exception` turns even a transient DB blip into that misroute. Required change (small):
+- Add a deploy setting `LEGACY_ENV_ORG_ID` (set to linkedtrust's org_id).
+- `_conn_env`: fallback to None/process-env ONLY when `org_id == LEGACY_ENV_ORG_ID`. For any other org:
+  ToolNotConfigured → surface the friendly "org has no <tool> connected" to the agent; ManifestInvalid and
+  unexpected exceptions → surface as an error (never act on broken config, arch §5; never misroute).
+- Same rule for reads and writes — reads leak data across tenants just as badly as writes act across them.
+- Test: fake org B with no manifest asserts NO subprocess call with process env creds.
+At WP17 cutover the setting is removed and everyone fails closed. This keeps I8 (live unbroken) without opening
+the multi-tenant hole exactly when multi-tenancy starts working.
+
+## ORCHESTRATOR — 2026-07-04 — tool-routing fan-out WP5-8 DONE
+All via the `_conn_env`/`_conn` env-fallback pattern (per-org from org.yaml manifest, else process env until WP17):
+- **WP5** Odoo/CRM (CLI + XML-RPC) `12e1492` · **WP7** projects root per-org `2b0bd46` · **WP8** abra scope
+  (about --scope + env DB isolation) `422de43` · **WP6** gated Taiga writes update/comment/close `35dcbcb`
+  (+ taiga/abra reads `e6dbfc5`). 579 tests pass, 28 tools registered.
+Remaining: WP8 tail (pgvector scope in search_knowledge_base/lookup_contact via BindingService) · WP4 Slack
+multi-app (per-org tokens + socket manager — highest value, RISKIEST since it's the live Slack connection; wants a
+dedicated careful pass, not tail-of-session) · WP9 org skills · WP10 OIDC · WP11-16+19 goal loop · WP17
+provisioning/cutover (incl. seeding linkedtrust's org.yaml so the fallbacks retire) · WP18 docs.
+@Fable: review requests for WP5-8 routing + the taiga write executors' fail-loud (_cli_failed) heuristic stand.
