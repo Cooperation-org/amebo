@@ -396,3 +396,109 @@ class TestAllowedTools:
         exposed = {t["name"] for t in get_tools_for_instance(instance)}
         assert "taiga_list" in exposed
         assert "slack_post_gated" not in exposed
+
+
+class TestTaigaWriteTools:
+    """WP6: gated Taiga writes — update / comment / close. Each drafts through
+    the gate (no side effect) and its executor builds the right argv + routes the
+    org's Taiga env."""
+
+    def test_all_three_are_gated(self):
+        for a in ("taiga_update_task", "taiga_add_comment", "taiga_close_task"):
+            assert gated_actions.requires_approval(a)
+
+    def test_executors_registered(self):
+        from src.services.action_executors import get_executor
+        assert get_executor("taiga_update_task") is gated_actuators.execute_taiga_update
+        assert get_executor("taiga_add_comment") is gated_actuators.execute_taiga_comment
+        assert get_executor("taiga_close_task") is gated_actuators.execute_taiga_close
+
+    # -- update --
+    def test_update_routes_through_gate_no_side_effect(self):
+        repo, gate = _gate_with_fake_repo()
+        with patch.object(gated_actuators, "run_cli",
+                          side_effect=AssertionError("no side effect for a gated action")):
+            out = gated_actuators.taiga_update_task_impl(
+                {"project": "amebo", "ref": 42, "status": "In progress"},
+                {"org_id": 7, "draft_gate": gate})
+        assert "[held for approval]" in out
+        rec = repo.created[0]
+        assert rec["action_type"] == "taiga_update_task"
+        assert rec["payload"]["ref"] == 42
+        assert rec["payload"]["org_id"] == 7
+        assert rec["payload"]["status"] == "In progress"
+
+    def test_update_requires_a_field(self):
+        _, gate = _gate_with_fake_repo()
+        out = gated_actuators.taiga_update_task_impl(
+            {"project": "amebo", "ref": 42}, {"org_id": 1, "draft_gate": gate})
+        assert "nothing to update" in out
+
+    def test_execute_update_builds_argv_and_passes_org_env(self):
+        seen = {}
+        with patch.object(gated_actuators, "run_cli",
+                          side_effect=lambda a, env=None: seen.update(argv=a, env=env) or "moved #42"), \
+             patch.object(gated_actuators, "_taiga_env", return_value={"TAIGA_URL": "rtv"}):
+            gated_actuators.execute_taiga_update({"payload": {
+                "project": "amebo", "ref": 42, "status": "Done",
+                "assignee": "golda", "due_date": "2026-07-01", "org_id": 7}})
+        assert seen["argv"] == ["mcp-taiga", "update", "amebo", "42",
+                                "--status", "Done", "--assign", "golda", "--due", "2026-07-01"]
+        assert seen["env"] == {"TAIGA_URL": "rtv"}
+
+    def test_execute_update_raises_on_failure(self):
+        import pytest
+        with patch.object(gated_actuators, "run_cli",
+                          side_effect=lambda a, env=None: "Error: mcp-taiga exited 1: nope"), \
+             patch.object(gated_actuators, "_taiga_env", return_value=None):
+            with pytest.raises(RuntimeError, match="taiga_update_task failed"):
+                gated_actuators.execute_taiga_update({"payload": {"project": "a", "ref": 1}})
+
+    # -- comment --
+    def test_comment_routes_through_gate(self):
+        repo, gate = _gate_with_fake_repo()
+        with patch.object(gated_actuators, "run_cli",
+                          side_effect=AssertionError("no side effect")):
+            out = gated_actuators.taiga_add_comment_impl(
+                {"project": "amebo", "ref": 42, "text": "great work"},
+                {"org_id": 3, "draft_gate": gate})
+        assert "[held for approval]" in out
+        assert repo.created[0]["payload"]["text"] == "great work"
+
+    def test_execute_comment_builds_argv(self):
+        seen = {}
+        with patch.object(gated_actuators, "run_cli",
+                          side_effect=lambda a, env=None: seen.update(argv=a) or "ok"), \
+             patch.object(gated_actuators, "_taiga_env", return_value=None):
+            gated_actuators.execute_taiga_comment({"payload": {
+                "project": "amebo", "ref": 42, "text": "nice"}})
+        assert seen["argv"] == ["mcp-taiga", "comment", "amebo", "42", "nice"]
+
+    # -- close --
+    def test_close_routes_through_gate(self):
+        repo, gate = _gate_with_fake_repo()
+        with patch.object(gated_actuators, "run_cli",
+                          side_effect=AssertionError("no side effect")):
+            out = gated_actuators.taiga_close_task_impl(
+                {"project": "amebo", "ref": 42}, {"org_id": 3, "draft_gate": gate})
+        assert "[held for approval]" in out
+        assert repo.created[0]["action_type"] == "taiga_close_task"
+
+    def test_execute_close_builds_move_argv(self):
+        seen = {}
+        with patch.object(gated_actuators, "run_cli",
+                          side_effect=lambda a, env=None: seen.update(argv=a) or "moved"), \
+             patch.object(gated_actuators, "_taiga_env", return_value=None):
+            gated_actuators.execute_taiga_close({"payload": {
+                "project": "amebo", "ref": 42, "status": "Done"}})
+        assert seen["argv"] == ["mcp-taiga", "move", "amebo", "42", "Done"]
+
+    def test_write_tools_require_org_context(self):
+        _, gate = _gate_with_fake_repo()
+        for impl, inp in (
+            (gated_actuators.taiga_update_task_impl, {"project": "a", "ref": 1, "status": "x"}),
+            (gated_actuators.taiga_add_comment_impl, {"project": "a", "ref": 1, "text": "x"}),
+            (gated_actuators.taiga_close_task_impl, {"project": "a", "ref": 1}),
+        ):
+            out = impl(inp, {"draft_gate": gate})
+            assert "no org context" in out

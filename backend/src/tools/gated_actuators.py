@@ -285,6 +285,166 @@ register_executor("taiga_create_task", execute_taiga_create)
 
 
 # ---------------------------------------------------------------------------
+# taiga writes: update / comment / close — all GATED. Same shape as create: an
+# _impl drafts through the gate; a matching executor performs the one side
+# effect (at draft time if free, else on human approval). Per-org routing: the
+# acting org id is carried in the payload so the approve-time executor can build
+# the org's Taiga env even detached from the request context.
+# ---------------------------------------------------------------------------
+
+
+def _ctx_org_id(context: Dict[str, Any]) -> Any:
+    oc = (context or {}).get("org_context")
+    return getattr(oc, "org_id", None) or (context or {}).get("org_id")
+
+
+def _taiga_env(payload: Dict[str, Any]):
+    from src.tools.cli_read_tools import _conn_env
+    return _conn_env({"org_id": payload.get("org_id")}, "tasks")
+
+
+def _cli_failed(out: str) -> bool:
+    """run_cli never raises; a write must not be logged 'executed' on failure.
+    It returns 'Error: …' (no stdout) or appends '[exit N: …]' (stdout+nonzero)."""
+    s = (out or "").strip()
+    return s.startswith("Error") or "[exit " in s
+
+
+def execute_taiga_update(action: Dict[str, Any]) -> str:
+    payload = action.get("payload") or {}
+    project, ref = payload.get("project"), payload.get("ref")
+    if not project or ref in (None, ""):
+        return "Error: cannot update — payload missing project or ref."
+    argv = ["mcp-taiga", "update", str(project), str(ref)]
+    if payload.get("status"):
+        argv += ["--status", str(payload["status"])]
+    if payload.get("assignee"):
+        argv += ["--assign", str(payload["assignee"])]
+    if payload.get("due_date"):
+        argv += ["--due", str(payload["due_date"])]
+    if payload.get("description"):
+        argv += ["--description", str(payload["description"])]
+    out = run_cli(argv, env=_taiga_env(payload))
+    if _cli_failed(out):
+        raise RuntimeError(f"taiga_update_task failed: {out.strip()}")
+    return out
+
+
+def execute_taiga_comment(action: Dict[str, Any]) -> str:
+    payload = action.get("payload") or {}
+    project, ref, text = payload.get("project"), payload.get("ref"), payload.get("text")
+    if not project or ref in (None, "") or not (text or "").strip():
+        return "Error: cannot comment — payload missing project, ref, or text."
+    out = run_cli(["mcp-taiga", "comment", str(project), str(ref), text],
+                  env=_taiga_env(payload))
+    if _cli_failed(out):
+        raise RuntimeError(f"taiga_add_comment failed: {out.strip()}")
+    return out
+
+
+def execute_taiga_close(action: Dict[str, Any]) -> str:
+    payload = action.get("payload") or {}
+    project, ref = payload.get("project"), payload.get("ref")
+    status = (payload.get("status") or "Done")
+    if not project or ref in (None, ""):
+        return "Error: cannot close — payload missing project or ref."
+    out = run_cli(["mcp-taiga", "move", str(project), str(ref), str(status)],
+                  env=_taiga_env(payload))
+    if _cli_failed(out):
+        raise RuntimeError(f"taiga_close_task failed: {out.strip()}")
+    return out
+
+
+def taiga_update_task_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """Draft an update to a Taiga story (status / assignee / due / description).
+    Gated — applied only on human approval."""
+    project = (tool_input.get("project") or "").strip()
+    ref = tool_input.get("ref")
+    if not project or ref in (None, ""):
+        return "Error: project and ref are required."
+    fields = {k: tool_input[k] for k in ("status", "assignee", "due_date", "description")
+              if tool_input.get(k)}
+    if not fields:
+        return "Error: nothing to update (set at least one of status/assignee/due_date/description)."
+    if fields.get("due_date") and not _valid_due_date(fields["due_date"]):
+        return f"Error: due_date {fields['due_date']!r} is not valid. Use YYYY-MM-DD."
+    payload = {"project": project, "ref": ref, "org_id": _ctx_org_id(context), **fields}
+    preview = f"Update Taiga {project}#{ref}: " + ", ".join(f"{k}={v}" for k, v in fields.items())
+    return _route_through_gate(
+        action_type="taiga_update_task", context=context, target=f"{project}#{ref}",
+        payload=payload, preview=preview, executor=execute_taiga_update,
+    )
+
+
+def taiga_add_comment_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """Draft a comment on a Taiga story. Gated."""
+    project = (tool_input.get("project") or "").strip()
+    ref = tool_input.get("ref")
+    text = (tool_input.get("text") or "").strip()
+    if not project or ref in (None, "") or not text:
+        return "Error: project, ref, and text are required."
+    payload = {"project": project, "ref": ref, "text": text, "org_id": _ctx_org_id(context)}
+    return _route_through_gate(
+        action_type="taiga_add_comment", context=context, target=f"{project}#{ref}",
+        payload=payload, preview=f"Comment on Taiga {project}#{ref}: {text[:80]}",
+        executor=execute_taiga_comment,
+    )
+
+
+def taiga_close_task_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """Draft closing (moving to a done status) a Taiga story. Gated."""
+    project = (tool_input.get("project") or "").strip()
+    ref = tool_input.get("ref")
+    status = (tool_input.get("status") or "Done").strip()
+    if not project or ref in (None, ""):
+        return "Error: project and ref are required."
+    payload = {"project": project, "ref": ref, "status": status, "org_id": _ctx_org_id(context)}
+    return _route_through_gate(
+        action_type="taiga_close_task", context=context, target=f"{project}#{ref}",
+        payload=payload, preview=f"Close Taiga {project}#{ref} (move to {status!r})",
+        executor=execute_taiga_close,
+    )
+
+
+TAIGA_UPDATE_TASK_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "project": {"type": "string", "description": "Taiga project slug/name."},
+        "ref": {"type": "integer", "description": "Story reference number (e.g. 42)."},
+        "status": {"type": "string", "description": "New status name (e.g. 'In progress')."},
+        "assignee": {"type": "string", "description": "Taiga username to assign to."},
+        "due_date": {"type": "string", "description": "New due date YYYY-MM-DD."},
+        "description": {"type": "string", "description": "New description."},
+    },
+    "required": ["project", "ref"],
+}
+
+TAIGA_ADD_COMMENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "project": {"type": "string", "description": "Taiga project slug/name."},
+        "ref": {"type": "integer", "description": "Story reference number."},
+        "text": {"type": "string", "description": "Comment body."},
+    },
+    "required": ["project", "ref", "text"],
+}
+
+TAIGA_CLOSE_TASK_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "project": {"type": "string", "description": "Taiga project slug/name."},
+        "ref": {"type": "integer", "description": "Story reference number."},
+        "status": {"type": "string", "description": "Done/closed status name (default 'Done')."},
+    },
+    "required": ["project", "ref"],
+}
+
+register_executor("taiga_update_task", execute_taiga_update)
+register_executor("taiga_add_comment", execute_taiga_comment)
+register_executor("taiga_close_task", execute_taiga_close)
+
+
+# ---------------------------------------------------------------------------
 # slack_post — post a message to Slack (GATED)
 # ---------------------------------------------------------------------------
 

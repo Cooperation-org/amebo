@@ -714,6 +714,9 @@ from src.tools.cli_read_tools import (
 )
 from src.tools.gated_actuators import (
     taiga_create_task_impl, TAIGA_CREATE_TASK_SCHEMA,
+    taiga_update_task_impl, TAIGA_UPDATE_TASK_SCHEMA,
+    taiga_add_comment_impl, TAIGA_ADD_COMMENT_SCHEMA,
+    taiga_close_task_impl, TAIGA_CLOSE_TASK_SCHEMA,
     slack_post_impl as slack_post_gated_impl, SLACK_POST_SCHEMA as SLACK_POST_GATED_SCHEMA,
 )
 
@@ -839,6 +842,45 @@ register_tool(Tool(
     ),
     input_schema=TAIGA_CREATE_TASK_SCHEMA,
     execute=taiga_create_task_impl,
+    is_read_only=False,
+    needs_confirmation=True,
+    category="tasks",
+))
+
+register_tool(Tool(
+    name="taiga_update_task",
+    description=(
+        "Update a Taiga story (status, assignee, due date, description). "
+        "OUTBOUND: drafts a pending action a human must approve before it applies."
+    ),
+    input_schema=TAIGA_UPDATE_TASK_SCHEMA,
+    execute=taiga_update_task_impl,
+    is_read_only=False,
+    needs_confirmation=True,
+    category="tasks",
+))
+
+register_tool(Tool(
+    name="taiga_add_comment",
+    description=(
+        "Add a comment to a Taiga story. OUTBOUND: drafts a pending action a "
+        "human must approve before the comment is posted."
+    ),
+    input_schema=TAIGA_ADD_COMMENT_SCHEMA,
+    execute=taiga_add_comment_impl,
+    is_read_only=False,
+    needs_confirmation=True,
+    category="tasks",
+))
+
+register_tool(Tool(
+    name="taiga_close_task",
+    description=(
+        "Close a Taiga story (move it to a done status). OUTBOUND: drafts a "
+        "pending action a human must approve before it applies."
+    ),
+    input_schema=TAIGA_CLOSE_TASK_SCHEMA,
+    execute=taiga_close_task_impl,
     is_read_only=False,
     needs_confirmation=True,
     category="tasks",

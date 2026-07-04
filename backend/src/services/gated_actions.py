@@ -71,6 +71,9 @@ GATED_ACTIONS: Set[str] = {
     "slack_post",        # sends a message to Slack (outbound)
     "slack_post_gated",  # actuator (gated_actuators.py) — Slack post via the gate
     "taiga_create_task", # actuator (gated_actuators.py) — creates a Taiga task (outbound)
+    "taiga_update_task", # actuator — updates a Taiga story (status/assignee/due)
+    "taiga_add_comment", # actuator — comments on a Taiga story
+    "taiga_close_task",  # actuator — moves a Taiga story to a done status
     "send_email",        # sends email (outbound)
     "odoo_cli",          # writes to the CRM (destructive/outbound side effects)
     "mcp_taiga",         # writes to Taiga task management (destructive/outbound)
