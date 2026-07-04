@@ -23,6 +23,7 @@ explicit "update title/description" endpoint when there is a real need.
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -254,7 +255,15 @@ async def dispatch_goal_now(
     engine = _get_engine()
     _load_or_404(engine, goal_id, client["org_id"])
 
-    dispatcher = GoalDispatcher()
+    # Same client sourcing as QAService: without it every dispatch silently
+    # ran the [no-llm] stub (found live 2026-07-04 running the Dana story).
+    anthropic_client = None
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if api_key:
+        from anthropic import Anthropic
+        anthropic_client = Anthropic(api_key=api_key)
+
+    dispatcher = GoalDispatcher(anthropic_client=anthropic_client)
     result = dispatcher.dispatch(goal_id)
     return DispatchResultResponse(
         goal_id=result.goal_id,
