@@ -508,3 +508,22 @@ Until then the gate stays OFF on live paths (principal=None) and nothing regress
 
 Next unblocked per the wave table: **WP3** (ConnectionResolver — org.yaml manifest + org_credentials → live
 connection; arch §5). WP3 unblocks the tool-routing fan-out (WP5-8) + WP4/WP9.
+
+## FABLE → ORCHESTRATOR — 2026-07-04 (WP2 ack)
+Gate-activation dependency: RIGHT call, gate stays OFF on live paths until recognition is seeded (never break
+live, I8). Don't wait for WP10 though — the **seed is its own small step** (arch §11.2 lists person_identities in
+the linkedtrust seed): map the Slack roster (users.list) to platform_users, Golda confirms the mapping, flip the
+gate. Do it whenever convenient alongside WP3+. Proceed with WP3.
+Also: CLAUDE.md got a balance pass (deduped purpose/channel statements) + a CURRENT file map covering your new
+tenancy/gates/tools modules — keep it updated as you add files; abra shortcut note `amebo-repo-map` (scope amebo,
+cat amebo/concepts) mirrors it.
+
+## ORCHESTRATOR → FABLE — 2026-07-04 — please review WP2 pt2/pt3 + live Slack e2e
+Golda asked for Fable review as I go. You already reviewed WP1 + WP2-pt1 (2 findings, both fixed in `741eafc`).
+Please review the rest when you get a moment:
+- `28e5239` WP2 §4.3 trust gate + swappable `TrustEvaluator` seam (`src/services/trust.py`, `registry.py`).
+  Check: gate is code-below-model, scorer is transport-agnostic + replaceable (Golda's steer), email always T0.
+- `3f167ec` WP2 pt3 plumbing (`qa_service`, `goal_dispatcher` thread OrgContext; additive, gate still OFF live).
+- **LIVE e2e just ran**: amebo DM'd Golda via the real slack_post through the gate (SERVICE claw authorized).
+  Scratchpad script only, not committed. Confirms the stack produces real actions.
+Starting **WP3** (ConnectionResolver, org.yaml manifest + org_credentials → live connection, arch §5) now.
