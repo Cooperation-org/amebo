@@ -33,7 +33,8 @@ logger = logging.getLogger(__name__)
 DEFAULT_TIMEOUT_S = 10
 
 
-def run_cli(argv: List[str], timeout: int = DEFAULT_TIMEOUT_S) -> str:
+def run_cli(argv: List[str], timeout: int = DEFAULT_TIMEOUT_S,
+            env: Optional[Dict[str, str]] = None) -> str:
     """
     Run a CLI tool as a subprocess and return its stdout.
 
@@ -42,12 +43,20 @@ def run_cli(argv: List[str], timeout: int = DEFAULT_TIMEOUT_S) -> str:
     discrete fields — they MUST NOT pre-join a string and split it, because
     that would re-introduce word-splitting on user input.
 
+    ``env`` is an OVERLAY (from ToolConnection.as_subprocess_env(), arch §5):
+    it is layered on top of the current process environment for THIS subprocess
+    only — os.environ is never mutated (I5). This is how per-org credentials +
+    endpoints reach a CLI without touching global state.
+
     On non-zero exit the trimmed stderr is appended so the model can see why a
     lookup failed. A missing executable returns an explicit message rather than
     raising, so the agentic loop degrades gracefully.
     """
     if not argv or not argv[0]:
         return "Error: no command to run."
+    subprocess_env = None
+    if env:
+        subprocess_env = {**_os.environ, **env}
     try:
         result = subprocess.run(
             argv,
@@ -55,6 +64,7 @@ def run_cli(argv: List[str], timeout: int = DEFAULT_TIMEOUT_S) -> str:
             text=True,
             timeout=timeout,
             shell=False,
+            env=subprocess_env,
         )
     except subprocess.TimeoutExpired:
         return f"Error: command timed out after {timeout}s: {argv[0]}"
