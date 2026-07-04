@@ -123,13 +123,20 @@ class QAService:
     3. Generate answer with LLM (Claude)
     """
 
-    def __init__(self, workspace_id: str, org_id: Optional[int] = None):
+    def __init__(self, workspace_id: str, org_id: Optional[int] = None,
+                 org_context=None, principal=None):
         """
         Initialize Q&A service.
 
         Args:
             workspace_id: Workspace ID (REQUIRED for security/isolation)
             org_id: Organization ID (for binding lookups)
+            org_context: resolved OrgContext (arch §4.1) for this conversation,
+                if the caller has run resolution. Threaded into every tool call.
+                None = today's single-org behavior (compat).
+            principal: the caller's Principal (arch §4.3) for the trust gate.
+                None = ungated (legacy/compat path); a Principal turns the gate
+                on for this conversation's tools.
 
         Raises:
             ValueError: If workspace_id is None or empty
@@ -142,6 +149,10 @@ class QAService:
 
         self.workspace_id = workspace_id
         self.org_id = org_id
+        # Resolved tenancy context + principal (both optional; None keeps the
+        # pre-multi-org behavior so wiring routes one at a time can't regress).
+        self.org_context = org_context
+        self.principal = principal
         self.query_service = QueryService(workspace_id)
 
         # Binding service for structured knowledge enrichment (reads from abra DB)
@@ -789,7 +800,9 @@ Answer the question based on this context. Be comprehensive and include all rele
                         result = execute_tool(
                             block.name, block.input,
                             workspace_id=self.workspace_id,
-                            org_id=self.org_id
+                            org_id=self.org_id,
+                            org_context=self.org_context,
+                            principal=self.principal,
                         )
                         logger.info(f"Tool result [{tool_round}]: {len(result)} chars")
                         tool_results.append({

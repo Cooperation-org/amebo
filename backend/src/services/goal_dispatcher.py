@@ -435,6 +435,21 @@ class GoalDispatcher:
 
         last_text = ""
 
+        # Shared tenancy OrgContext for this dispatch (arch §4.1). Goal dispatch
+        # resolves trivially: the goal's org, acting as a claw under the org's
+        # own service authority (arch §4.2, §8). Threaded into every tool ctx so
+        # tools resolve org-scoped connections from it rather than ad-hoc org_id.
+        from src.services.org_context import OrgContext
+        _org_id = goal.get("org_id")
+        _inst = self._load_instance(_org_id) if _org_id is not None else None
+        _inst_id = (_inst or {}).get("id")
+        tenancy_ctx = (
+            OrgContext(org_id=_org_id, instance_id=_inst_id,
+                       actor_type="claw", authority="service")
+            if _inst_id is not None and _org_id is not None
+            else None
+        )
+
         while True:
             guardrails.begin_round()  # may raise GuardrailTripped
 
@@ -535,6 +550,7 @@ class GoalDispatcher:
                         goal.get("org_id")
                     ),
                     "guardrails": guardrails,
+                    "org_context": tenancy_ctx,
                 }
                 try:
                     # Draft-approval gate: FREE (read-only/internal) tools run
