@@ -14,6 +14,8 @@ Operative rules (these SUPERSEDE any older rules further down):
 - Progress so far: WP1 (mig 020 multi-org schema) + WP2 (OrgContext, §4.2 resolver, recognition, trust/executor
   gate, mig 021) DONE on main. Fable session watches this board and answers.
 - Deploy/restart of amebo services = fine; anything else on this shared VM = don't touch.
+- **Not only code**: amebo exists to achieve goals — talking to people, content, marketing. The right
+  contribution is often a skill/pattern/prompt/doc, not Python. Don't default to writing code.
 
 ---
 

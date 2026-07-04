@@ -1,6 +1,8 @@
 # CLAUDE.md
 
-Guidance for any coding agent working in this repository ([AGENTS.md](AGENTS.md) points here). Vendor-neutral despite the name.
+Guidance for any agent working in this repository ([AGENTS.md](AGENTS.md) points here). Vendor-neutral despite the name.
+
+**This is not only a codebase.** Amebo exists to help orgs *achieve goals*, which mostly means talking to people, making content, doing marketing, coordinating — not code. That's true of amebo's own behavior (a goal is pursued through conversations and content, with code as plumbing) and of work ON amebo (the needed contribution is often a skill, pattern, prompt, or doc — not Python). Don't default to writing code.
 
 ## Start here (the map — don't create guidance outside it)
 
