@@ -173,6 +173,17 @@ class GoalDispatcher:
                 return DispatchResult(goal_id=goal_id, status="skipped",
                                       summary="already activated by another worker")
 
+        # Per-goal budget (WP16): if this goal has hit its cap, pause it (never
+        # silently) with exactly one notification instead of spending more.
+        budget_reason = self._budget_exhausted(goal)
+        if budget_reason:
+            try:
+                self._engine.pause(goal_id, reason=budget_reason)
+            except InvalidTransitionError:
+                pass
+            self._notify_alert(goal, f"⏸ Goal paused — {budget_reason}: {goal['title']}")
+            return DispatchResult(goal_id=goal_id, status="paused", summary=budget_reason)
+
         # Build context and pursue.
         try:
             org_context = self._load_org_context(goal["org_id"])
@@ -208,6 +219,8 @@ class GoalDispatcher:
                 self._engine.fail(goal_id, reason=f"guardrail:{exc.which}: {exc.reason}")
             except InvalidTransitionError:
                 pass
+            self._notify_alert(
+                goal, f"⚠ Goal FAILED (guardrail:{exc.which}): {goal['title']}\n{exc.reason}")
             return DispatchResult(
                 goal_id=goal_id, status="failed",
                 error=f"guardrail:{exc.which}",
@@ -219,6 +232,8 @@ class GoalDispatcher:
                 self._engine.fail(goal_id, reason=str(exc))
             except InvalidTransitionError:
                 pass  # goal is already terminal
+            self._notify_alert(
+                goal, f"⚠ Goal FAILED: {goal['title']}\n{str(exc)[:300]}")
             return DispatchResult(goal_id=goal_id, status="failed", error=str(exc))
 
         # Finish the cycle, then notify. Recurring (cron) goals re-arm to
@@ -352,6 +367,13 @@ class GoalDispatcher:
             )
 
         guardrails = GuardrailContext.from_goal_config(goal.get("config") or {})
+        if not guardrails.allowed_tools:
+            # A toolless pursuit invites the model to FABRICATE tool calls and
+            # responses in plain text (seen live 2026-07-04). Default to the
+            # instance's allowed_tools so a goal without its own allowlist gets
+            # the org's normal capabilities instead of an empty room.
+            inst_tools = ((instance or {}).get("config") or {}).get("allowed_tools") or []
+            guardrails.allowed_tools = set(inst_tools)
         return self._run_agentic_loop(
             goal=goal,
             system_prompt=system_prompt,
@@ -389,7 +411,13 @@ class GoalDispatcher:
         return "\n\n".join(parts)
 
     def _build_user_prompt(self, goal: Dict[str, Any]) -> str:
-        lines = [f"# Goal: {goal['title']}"]
+        # The model has no other way to know the date; without it, deadlines
+        # land in the past (seen live 2026-07-04: due_date a year ago).
+        from datetime import date
+        lines = [
+            f"Today's date: {date.today().isoformat()} ({date.today().strftime('%A')})",
+            f"# Goal: {goal['title']}",
+        ]
         if goal.get("description"):
             lines.append(goal["description"])
         criteria = goal.get("target_criteria")
@@ -774,3 +802,48 @@ class GoalDispatcher:
         except Exception as exc:
             logger.warning("Notifier raised for goal %s: %s", goal["id"], exc)
             return False
+
+    def _notify_alert(self, goal: Dict[str, Any], message: str) -> bool:
+        """Failure / budget alerts (WP16). Uses the RAW notifier — an alert must
+        always reach a human, never be batched or suppressed by the noise gate.
+        Exactly one call per event."""
+        channel = goal.get("notify_channel")
+        if not channel:
+            return False
+        try:
+            return bool(self._raw_notify(channel, message))
+        except Exception as exc:
+            logger.warning("Alert notifier raised for goal %s: %s", goal.get("id"), exc)
+            return False
+
+    # ---- per-goal budget (WP16) --------------------------------------------
+
+    def _goal_budget(self, goal: Dict[str, Any]) -> Dict[str, Any]:
+        """The goal's budget, or the instance-config default. {} = no cap."""
+        b = goal.get("budget") or {}
+        if b:
+            return b
+        inst = self._load_instance(goal.get("org_id")) or {}
+        cfg = inst.get("config") or {}
+        if isinstance(cfg, str):
+            import json
+            try:
+                cfg = json.loads(cfg or "{}")
+            except (ValueError, TypeError):
+                cfg = {}
+        return cfg.get("goal_budget") or {}
+
+    def _dispatch_count(self, goal_id: str) -> int:
+        try:
+            events = self._goal_repo.list_events(goal_id)
+        except Exception:
+            return 0
+        return sum(1 for e in (events or []) if e.get("action") == "dispatch_summary")
+
+    def _budget_exhausted(self, goal: Dict[str, Any]) -> Optional[str]:
+        """A reason string if the goal has hit its budget cap, else None."""
+        b = self._goal_budget(goal)
+        md = b.get("max_dispatches")
+        if md and self._dispatch_count(goal["id"]) >= md:
+            return f"dispatch budget exhausted ({md})"
+        return None

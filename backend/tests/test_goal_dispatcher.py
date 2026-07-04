@@ -250,3 +250,51 @@ class TestRecurringGoalReArms:
         )
         dispatcher.dispatch(g2["id"])
         assert engine.get(g2["id"])["status"] == "completed"
+
+
+class TestBudgetAndFailureAlerts:
+    """WP16: failure alerting (exactly one) + per-goal budget (pause on cap)."""
+
+    def test_failure_sends_exactly_one_alert(self, engine, test_org_id):
+        from unittest.mock import MagicMock
+        g = engine.create_goal(test_org_id, "risky", notify_channel="slack:#alerts")
+        client = MagicMock()
+        client.messages.create.side_effect = RuntimeError("model exploded")
+        alerts = []
+        d = GoalDispatcher(anthropic_client=client,
+                           notifier=lambda ch, m: alerts.append((ch, m)) or True)
+        result = d.dispatch(g["id"])
+        assert result.status == "failed"
+        assert len(alerts) == 1
+        assert "FAILED" in alerts[0][1] and alerts[0][0] == "slack:#alerts"
+
+    def test_budget_exhaustion_pauses_with_one_alert(self, engine, test_org_id):
+        from src.db.connection import DatabaseConnection
+        from psycopg2 import extras as pg_extras
+        from src.db.repositories.goal_repo import GoalRepo
+
+        g = engine.create_goal(test_org_id, "budgeted", notify_channel="slack:#alerts")
+        # cap at 1 dispatch, and record that 1 has already happened
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE goals SET budget = %s WHERE id = %s",
+                            (pg_extras.Json({"max_dispatches": 1}), g["id"]))
+                conn.commit()
+        finally:
+            DatabaseConnection.return_connection(conn)
+        GoalRepo().append_event(goal_id=g["id"], actor_type="claw",
+                                action="dispatch_summary", result_summary="prior")
+
+        alerts = []
+        d = GoalDispatcher(anthropic_client=_make_fake_client(),
+                           notifier=lambda ch, m: alerts.append((ch, m)) or True)
+        result = d.dispatch(g["id"])
+        assert result.status == "paused"
+        assert engine.get(g["id"])["status"] == "paused"
+        assert len(alerts) == 1 and "paused" in alerts[0][1].lower()
+
+    def test_no_budget_means_no_pause(self, engine, test_org_id):
+        g = engine.create_goal(test_org_id, "unbudgeted")
+        d = GoalDispatcher(anthropic_client=_make_fake_client())
+        assert d.dispatch(g["id"]).status == "completed"
