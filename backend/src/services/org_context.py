@@ -37,11 +37,13 @@ class OrgContext:
     instance_id: int
     actor_type: str                       # 'user' | 'claw' | 'system'
     actor_person_id: Optional[int] = None
-    authority: str = "service"            # 'service' (v1) | 'delegated' (reserved)
+    authority: str = "service"            # 'none' | 'service' (v1) | 'delegated' (reserved)
     venue: Optional[Venue] = None
 
     def __post_init__(self) -> None:
         if self.actor_type not in ("user", "claw", "system"):
             raise ValueError(f"invalid actor_type {self.actor_type!r}")
-        if self.authority not in ("service", "delegated"):
+        # 'none' = acting under NO credential authority (e.g. the unknown-user
+        # read-only path — nothing it does may touch org credentials).
+        if self.authority not in ("none", "service", "delegated"):
             raise ValueError(f"invalid authority {self.authority!r}")

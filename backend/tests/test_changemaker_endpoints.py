@@ -334,7 +334,8 @@ class TestPublicChat:
     def test_answers_without_auth_and_read_only(self, client):
         with patch("src.api.routes.chat.QAService") as QA, \
              patch("src.api.routes.chat.InstanceRepo") as IR:
-            IR.return_value.get_by_slug.return_value = {"id": 1, "slug": "demo", "org_id": 7}
+            IR.return_value.get_by_slug.return_value = {
+                "id": 1, "slug": "demo", "org_id": 7, "config": {"public_chat": True}}
             QA.return_value.answer_question.return_value = {"answer": "Public answer.", "confidence": 60}
             resp = client.post(
                 "/api/chat/public",
@@ -349,7 +350,8 @@ class TestPublicChat:
     def test_caller_is_treated_as_t0_unknown_user(self, client):
         with patch("src.api.routes.chat.QAService") as QA, \
              patch("src.api.routes.chat.InstanceRepo") as IR:
-            IR.return_value.get_by_slug.return_value = {"id": 1, "slug": "demo", "org_id": 7}
+            IR.return_value.get_by_slug.return_value = {
+                "id": 1, "slug": "demo", "org_id": 7, "config": {"public_chat": True}}
             QA.return_value.answer_question.return_value = {"answer": "ok"}
             client.post("/api/chat/public", json={"message": "hi", "instance_slug": "demo"})
         _, ctor_kwargs = QA.call_args
@@ -365,9 +367,27 @@ class TestPublicChat:
             )
         assert resp.status_code == 404
 
+    def test_instance_not_opted_in_returns_404(self, client):
+        # public chat is OFF by default; an existing instance without
+        # config.public_chat must 404 (same as not-found — no info leak)
+        with patch("src.api.routes.chat.InstanceRepo") as IR:
+            IR.return_value.get_by_slug.return_value = {
+                "id": 1, "slug": "demo", "org_id": 7, "config": {}}
+            resp = client.post(
+                "/api/chat/public", json={"message": "hi", "instance_slug": "demo"}
+            )
+        assert resp.status_code == 404
+
     def test_empty_message_returns_400(self, client):
         resp = client.post(
             "/api/chat/public", json={"message": "   ", "instance_slug": "demo"}
+        )
+        assert resp.status_code == 400
+
+    def test_message_too_long_returns_400(self, client):
+        resp = client.post(
+            "/api/chat/public",
+            json={"message": "x" * 5000, "instance_slug": "demo"},
         )
         assert resp.status_code == 400
 

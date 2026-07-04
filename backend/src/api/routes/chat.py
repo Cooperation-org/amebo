@@ -6,6 +6,7 @@ The agentic loop (tool calls, knowledge search) happens server-side.
 Thread context is maintained by ConversationManager.
 """
 
+import json
 import logging
 import uuid
 from datetime import datetime
@@ -19,6 +20,20 @@ from src.db.repositories.instance_repo import InstanceRepo
 from src.api.middleware.auth import get_service_client, get_current_user
 
 router = APIRouter()
+
+# Public (unauthenticated) chat guards — see /api/chat/public.
+PUBLIC_CHAT_MAX_MESSAGE_LEN = 4000
+
+
+def _public_chat_enabled(instance: dict) -> bool:
+    """Public chat is opt-in per instance (config.public_chat), default OFF."""
+    cfg = instance.get("config") or {}
+    if isinstance(cfg, str):
+        try:
+            cfg = json.loads(cfg or "{}")
+        except (ValueError, TypeError):
+            return False
+    return bool(cfg.get("public_chat"))
 logger = logging.getLogger(__name__)
 
 
@@ -107,10 +122,19 @@ async def public_chat_message(req: PublicChatRequest):
     """
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
+    if len(req.message) > PUBLIC_CHAT_MAX_MESSAGE_LEN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Message too long (max {PUBLIC_CHAT_MAX_MESSAGE_LEN} chars).",
+        )
 
     instance_repo = InstanceRepo()
     instance = instance_repo.get_by_slug(req.instance_slug)
-    if not instance:
+    # Instance opt-in: public chat is OFF unless the instance explicitly enables
+    # it (config.public_chat). A missing instance and a non-opted-in instance
+    # return the SAME 404 — no instance becomes publicly conversational as a
+    # side effect of existing, and we don't leak which instances exist.
+    if not instance or not _public_chat_enabled(instance):
         raise HTTPException(
             status_code=404, detail=f"Instance '{req.instance_slug}' not found"
         )
@@ -125,7 +149,8 @@ async def public_chat_message(req: PublicChatRequest):
     org_context = (
         OrgContext(
             org_id=org_id, instance_id=instance["id"],
-            actor_type="user", actor_person_id=None, authority="service",
+            # unknown user, read-only: NO credential authority (arch §4.3 T0).
+            actor_type="user", actor_person_id=None, authority="none",
             venue=Venue(channel_kind="web", thread_ref=session_id),
         )
         if org_id is not None else None
