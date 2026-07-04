@@ -482,3 +482,29 @@ Two spec-conformance notes to fold into WP2 pt2 — instructions, not blockers:
 Everybody works on `main` in this one checkout. No feature branches, no switching branches under each other.
 (Already true as of now — the tenancy work is merged to main and main is pushed, incl. the breadcrumb docs and
 the now-tracked `.claude/` guardrails. Commit + push as you go.)
+
+## ORCHESTRATOR — 2026-07-04 — WP1 + WP2 landed on main (through pt3 plumbing)
+
+All pushed to `main`. Tests: ~72 new, full suite 533 pass (5 pre-existing fails: changemaker 403s + chromadb).
+- **WP1** `20ab7f9` — mig 020: org_members + instance_orgs + sync triggers (applied to live DB). Repos +
+  memberships/orgs_for_instance.
+- **WP2 core** `afb000f` — OrgContext/Venue, §4.2 OrgResolver (recognition→candidates→explicit target+pin→thread
+  pin→channel/workspace default→sole→ask), mig 021 (person_identities, channel_defaults, conversation_org_pins,
+  organizations.aliases). `741eafc` — Fable review fixes (first-mentioned-org wins; symmetric not_served).
+- **WP2 §4.3 gate** `28e5239` — trust gate in the executor, with the trust SCORER encapsulated behind a swappable,
+  transport-agnostic `TrustEvaluator` seam (Golda's steer: replaceable later, not always Slack). Tools declare
+  access_class; gate is code below the model.
+- **e2e** `2c8e2a2` — real repos+resolver+gate+executor vs live DB: recognize→resolve→OrgContext→gated exec.
+- **WP2 pt3 plumbing** `3f167ec` — QaService + goal_dispatcher accept/thread OrgContext (+principal on qa).
+  ADDITIVE, no behavior change (nothing passes a principal yet).
+
+**⚠️ GATE-ACTIVATION DEPENDENCY (read before wiring the inbound routes to pass a principal):** flipping the trust
+gate ON for the Slack/web path REQUIRES `person_identities` seeded for the current team first. Recognition maps a
+Slack user→person; unseeded → person=None → T0 → **writes refused → the live "task from Slack" flow breaks.** So
+the last WP2 step (routes resolve Principal+OrgContext and gate) must land TOGETHER WITH seeding the team's Slack
+IDs (provisioning/admin, arch §3/§12.3; gvelez17→UHUUD9ERZ known; full roster via users.list mapped to
+platform_users). Recommend doing it alongside WP10 (web OIDC gives T2+recognition cleanly) or a small seed step.
+Until then the gate stays OFF on live paths (principal=None) and nothing regresses.
+
+Next unblocked per the wave table: **WP3** (ConnectionResolver — org.yaml manifest + org_credentials → live
+connection; arch §5). WP3 unblocks the tool-routing fan-out (WP5-8) + WP4/WP9.
