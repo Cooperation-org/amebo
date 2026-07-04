@@ -37,17 +37,55 @@ class InstanceRepo:
             DatabaseConnection.return_connection(conn)
 
     def get_by_org(self, org_id: int) -> Optional[Dict]:
-        """Return the instance for an org (lowest id wins if more than one).
-        Used to resolve which instance a Slack workspace's org talks through."""
+        """Return an instance that serves an org (lowest id wins if more than
+        one). Used to resolve which instance a Slack workspace's org talks
+        through. Reads the new instance_orgs join (falls back to nothing if the
+        org is served by no instance)."""
         conn = DatabaseConnection.get_connection()
         try:
             with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
                 cur.execute(
-                    "SELECT * FROM instances WHERE org_id = %s ORDER BY id LIMIT 1",
+                    """
+                    SELECT i.* FROM instances i
+                    JOIN instance_orgs io ON io.instance_id = i.id
+                    WHERE io.org_id = %s
+                    ORDER BY i.id LIMIT 1
+                    """,
                     (org_id,),
                 )
                 row = cur.fetchone()
                 return dict(row) if row else None
+        finally:
+            DatabaseConnection.return_connection(conn)
+
+    def orgs_for_instance(self, instance_id: int) -> list:
+        """Every org this instance serves, as a list of org_id (ordered).
+        Source of truth is the instance_orgs join (replaces instances.org_id)."""
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT org_id FROM instance_orgs WHERE instance_id = %s ORDER BY org_id",
+                    (instance_id,),
+                )
+                return [r[0] for r in cur.fetchall()]
+        finally:
+            DatabaseConnection.return_connection(conn)
+
+    def add_org(self, instance_id: int, org_id: int) -> None:
+        """Idempotently record that an instance serves an org (instance_orgs)."""
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO instance_orgs (instance_id, org_id)
+                    VALUES (%s, %s)
+                    ON CONFLICT (instance_id, org_id) DO NOTHING
+                    """,
+                    (instance_id, org_id),
+                )
+                conn.commit()
         finally:
             DatabaseConnection.return_connection(conn)
 
@@ -68,6 +106,9 @@ class InstanceRepo:
                     RETURNING *
                 """, (name, slug, identity_prompt, extras.Json(config or {}), org_id))
                 row = cur.fetchone()
+                # instance_orgs (the new source of truth) is kept in sync by a DB
+                # trigger on instances.org_id (migration 020), so a plain insert
+                # is enough — no explicit dual-write here.
                 conn.commit()
                 return dict(row)
         finally:
