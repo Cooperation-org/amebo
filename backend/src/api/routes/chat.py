@@ -140,7 +140,10 @@ async def public_chat_message(req: PublicChatRequest):
         )
 
     session_id = req.session_id or str(uuid.uuid4())
-    workspace_id = f"web-{instance['slug']}"
+    # Distinct thread namespace from the authenticated chat (web-<slug>): an
+    # anonymous caller must never be able to read/resume a logged-in user's
+    # thread by supplying its session id.
+    workspace_id = f"public-{instance['slug']}"
     org_id = instance.get("org_id")
 
     from src.services.org_context import OrgContext, Venue

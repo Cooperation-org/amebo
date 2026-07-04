@@ -762,9 +762,13 @@ Answer the question based on this context. Be comprehensive and include all rele
 
             # Model-driven skill selection: show the catalog; the model loads the
             # full skill(s) it wants via the load_skill tool during the loop.
-            catalog = _skill_catalog()
-            if catalog:
-                system_prompt += f"\n\n{catalog}"
+            # Skipped on the read-only path (allow_tools=False): skills are org
+            # data (arch §7) and must not leak to an unknown user, and without
+            # the load_skill tool the catalog is useless anyway.
+            if allow_tools:
+                catalog = _skill_catalog()
+                if catalog:
+                    system_prompt += f"\n\n{catalog}"
 
             # Get tools for this instance. allow_tools=False (public/unknown-user
             # path) offers ZERO tools, so the model structurally cannot execute

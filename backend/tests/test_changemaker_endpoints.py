@@ -359,6 +359,17 @@ class TestPublicChat:
         from src.services.trust import evaluate, TrustLevel
         assert principal is not None and evaluate(principal) == TrustLevel.T0
 
+    def test_uses_isolated_public_thread_namespace(self, client):
+        # public sessions must not share the authenticated web-<slug> namespace
+        with patch("src.api.routes.chat.QAService") as QA, \
+             patch("src.api.routes.chat.InstanceRepo") as IR:
+            IR.return_value.get_by_slug.return_value = {
+                "id": 1, "slug": "demo", "org_id": 7, "config": {"public_chat": True}}
+            QA.return_value.answer_question.return_value = {"answer": "ok"}
+            client.post("/api/chat/public", json={"message": "hi", "instance_slug": "demo"})
+        _, ctor_kwargs = QA.call_args
+        assert ctor_kwargs.get("workspace_id") == "public-demo"
+
     def test_unknown_instance_returns_404(self, client):
         with patch("src.api.routes.chat.InstanceRepo") as IR:
             IR.return_value.get_by_slug.return_value = None
