@@ -151,6 +151,22 @@ class TestResolutionChain:
         res = r.resolve(instance_id=99, person_id=10, utterance="hi", venue=v)
         assert res.status == "ambiguous"
 
+    def test_first_mentioned_org_wins_not_lowest_id(self):
+        # Both named; CivicWorks (org 2) appears earlier in the text than RTV
+        # (org 1) -> resolve 2, proving position beats id order.
+        r = _resolver({10: [1, 2]}, {99: [1, 2]})
+        res = r.resolve(instance_id=99, person_id=10,
+                        utterance="file under civicworks, or maybe raise the voices",
+                        venue=None)
+        assert res.status == "resolved" and res.org_id == 2
+
+    def test_member_but_instance_not_serving(self):
+        # person is a member of org 1, but this instance serves only 2 and 3
+        r = _resolver({10: [1]}, {99: [2, 3]})
+        res = r.resolve(instance_id=99, person_id=10,
+                        utterance="put this under raise the voices", venue=None)
+        assert res.status == "not_served" and "Raise the Voices" in res.message
+
     def test_naming_a_served_non_member_org(self):
         r = _resolver({10: [1]}, {99: [1, 3]})
         res = r.resolve(instance_id=99, person_id=10,

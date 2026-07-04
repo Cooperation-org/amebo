@@ -39,26 +39,34 @@ class Resolution:
     message: Optional[str] = None                 # one line for ambiguous/not_member/none
 
 
-def _mentions(utterance: str, org_meta: Dict) -> bool:
-    """True if the utterance explicitly names this org — its name, slug (hyphens
-    treated as spaces), or any alias — on word boundaries, case-insensitive."""
+def _mention_pos(utterance: str, org_meta: Dict) -> Optional[int]:
+    """The earliest character index at which the utterance explicitly names this
+    org — its name, slug (hyphens treated as spaces), or any alias — on word
+    boundaries, case-insensitive. None if not mentioned. Position lets the
+    resolver honor the FIRST org named in the text (arch §4.2), not id order."""
     if not utterance:
-        return False
+        return None
     text = utterance.lower()
     terms = set()
     for raw in [org_meta.get("name"), org_meta.get("slug"), *(org_meta.get("aliases") or [])]:
         if not raw:
             continue
         t = str(raw).lower().strip()
+        if not t:
+            continue
         terms.add(t)
         if "-" in t:
             terms.add(t.replace("-", " "))
+    best = None
     for term in terms:
-        if not term:
-            continue
-        if re.search(r"\b" + re.escape(term) + r"\b", text):
-            return True
-    return False
+        m = re.search(r"\b" + re.escape(term) + r"\b", text)
+        if m and (best is None or m.start() < best):
+            best = m.start()
+    return best
+
+
+def _mentions(utterance: str, org_meta: Dict) -> bool:
+    return _mention_pos(utterance, org_meta) is not None
 
 
 class OrgResolver:
@@ -107,20 +115,37 @@ class OrgResolver:
         cand_meta = {m["org_id"]: m for m in self._orgs.metadata(sorted(candidate_ids))}
         thread_ref = venue.thread_ref if venue else None
 
-        # 4. Explicit targeting — a named candidate wins and re-pins.
-        for oid in sorted(candidate_ids):
-            if _mentions(utterance, cand_meta[oid]):
-                if thread_ref:
-                    self._routing.pin_thread(thread_ref, oid, person_id)
-                return Resolution("resolved", org_id=oid, should_pin=True)
+        # 4. Explicit targeting — the FIRST org named in the utterance wins (by
+        #    text position, not id order) and re-pins. A second named candidate
+        #    is out of scope for v1 (§12.7): resolve the first; a caller may offer
+        #    the rest separately.
+        mentioned = sorted(
+            (pos, oid) for oid in candidate_ids
+            if (pos := _mention_pos(utterance, cand_meta[oid])) is not None
+        )
+        if mentioned:
+            target = mentioned[0][1]
+            if thread_ref:
+                self._routing.pin_thread(thread_ref, target, person_id)
+            return Resolution("resolved", org_id=target, should_pin=True)
 
-        # Naming an org the instance serves but the person isn't in -> tell them.
+        # Naming an org that exists but isn't a usable candidate -> a clear
+        # one-liner instead of the generic ask (arch §4.2 step 4), both ways:
+        # (a) the instance serves it but the person isn't a member;
         non_member_served = served - memberships
         for m in self._orgs.metadata(sorted(non_member_served)):
             if _mentions(utterance, m):
                 return Resolution(
                     "not_member",
                     message=f"You're not a member of {m['name']}, so I can't act for it here.",
+                )
+        # (b) the person is a member but THIS instance doesn't serve it.
+        member_not_served = memberships - served
+        for m in self._orgs.metadata(sorted(member_not_served)):
+            if _mentions(utterance, m):
+                return Resolution(
+                    "not_served",
+                    message=f"This amebo doesn't serve {m['name']}.",
                 )
 
         # 5. Thread pin (only if still a candidate).
