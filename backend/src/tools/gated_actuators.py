@@ -445,6 +445,142 @@ register_executor("taiga_close_task", execute_taiga_close)
 
 
 # ---------------------------------------------------------------------------
+# CRM writes (Odoo) — all GATED. Mapped to the REAL odoo-cli verbs (the plan's
+# crm_log_note/create_lead/update_stage names were guesses; these are the verbs
+# the CLI actually has and the team uses). Per-org env via the payload's org id.
+# ---------------------------------------------------------------------------
+
+
+def _crm_env(payload: Dict[str, Any]):
+    from src.tools.cli_read_tools import _conn_env
+    return _conn_env({"org_id": payload.get("org_id")}, "crm")
+
+
+def execute_crm_schedule(action: Dict[str, Any]) -> str:
+    """odoo-cli schedule <contact> <when> [summary] — set a next step/activity."""
+    p = action.get("payload") or {}
+    contact, when = p.get("contact"), p.get("when")
+    if not contact or not when:
+        return "Error: cannot schedule — payload missing contact or when."
+    argv = ["odoo-cli", "schedule", str(contact), str(when)]
+    if p.get("summary"):
+        argv.append(str(p["summary"]))
+    out = run_cli(argv, env=_crm_env(p))
+    if _cli_failed(out):
+        raise RuntimeError(f"crm_schedule failed: {out.strip()}")
+    return out
+
+
+def execute_crm_tag(action: Dict[str, Any]) -> str:
+    """odoo-cli contact-tag <contact> <tag> — tag/categorize a contact."""
+    p = action.get("payload") or {}
+    contact, tag = p.get("contact"), p.get("tag")
+    if not contact or not tag:
+        return "Error: cannot tag — payload missing contact or tag."
+    out = run_cli(["odoo-cli", "contact-tag", str(contact), str(tag)], env=_crm_env(p))
+    if _cli_failed(out):
+        raise RuntimeError(f"crm_tag_contact failed: {out.strip()}")
+    return out
+
+
+def execute_crm_contacted(action: Dict[str, Any]) -> str:
+    """odoo-cli contacted <contact> [date] — log last-contacted."""
+    p = action.get("payload") or {}
+    contact = p.get("contact")
+    if not contact:
+        return "Error: cannot log contact — payload missing contact."
+    argv = ["odoo-cli", "contacted", str(contact)]
+    if p.get("date"):
+        argv.append(str(p["date"]))
+    out = run_cli(argv, env=_crm_env(p))
+    if _cli_failed(out):
+        raise RuntimeError(f"crm_log_contacted failed: {out.strip()}")
+    return out
+
+
+def crm_schedule_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """Draft setting a next step (activity) on a CRM contact. Gated. This is how
+    a deal gets a 'next step' — the pipeline-hygiene fix."""
+    contact = (tool_input.get("contact") or "").strip()
+    when = (tool_input.get("when") or "").strip()
+    if not contact or not when:
+        return "Error: contact and when are required (when: YYYY-MM-DD or 'tuesday')."
+    summary = (tool_input.get("summary") or "").strip()
+    payload = {"contact": contact, "when": when, "org_id": _ctx_org_id(context)}
+    if summary:
+        payload["summary"] = summary
+    preview = f"CRM: schedule next step for {contact} on {when}" + (f" — {summary}" if summary else "")
+    return _route_through_gate(
+        action_type="crm_schedule", context=context, target=contact,
+        payload=payload, preview=preview, executor=execute_crm_schedule,
+    )
+
+
+def crm_tag_contact_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """Draft tagging a CRM contact (e.g. 'ally', 'partner'). Gated."""
+    contact = (tool_input.get("contact") or "").strip()
+    tag = (tool_input.get("tag") or "").strip()
+    if not contact or not tag:
+        return "Error: contact and tag are required."
+    payload = {"contact": contact, "tag": tag, "org_id": _ctx_org_id(context)}
+    return _route_through_gate(
+        action_type="crm_tag_contact", context=context, target=contact,
+        payload=payload, preview=f"CRM: tag {contact!r} as {tag!r}",
+        executor=execute_crm_tag,
+    )
+
+
+def crm_log_contacted_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """Draft logging that a CRM contact was contacted (date defaults to today).
+    Gated."""
+    contact = (tool_input.get("contact") or "").strip()
+    if not contact:
+        return "Error: contact is required."
+    date = (tool_input.get("date") or "").strip()
+    payload = {"contact": contact, "org_id": _ctx_org_id(context)}
+    if date:
+        payload["date"] = date
+    return _route_through_gate(
+        action_type="crm_log_contacted", context=context, target=contact,
+        payload=payload, preview=f"CRM: log contacted {contact}" + (f" on {date}" if date else ""),
+        executor=execute_crm_contacted,
+    )
+
+
+CRM_SCHEDULE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "contact": {"type": "string", "description": "Contact name (or email) in the CRM."},
+        "when": {"type": "string", "description": "When: YYYY-MM-DD, 'tuesday', 'next week'."},
+        "summary": {"type": "string", "description": "What the next step is."},
+    },
+    "required": ["contact", "when"],
+}
+
+CRM_TAG_CONTACT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "contact": {"type": "string", "description": "Contact name (or email)."},
+        "tag": {"type": "string", "description": "Tag to add (e.g. 'ally', 'partner')."},
+    },
+    "required": ["contact", "tag"],
+}
+
+CRM_LOG_CONTACTED_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "contact": {"type": "string", "description": "Contact name (or email)."},
+        "date": {"type": "string", "description": "Date contacted YYYY-MM-DD (default today)."},
+    },
+    "required": ["contact"],
+}
+
+register_executor("crm_schedule", execute_crm_schedule)
+register_executor("crm_tag_contact", execute_crm_tag)
+register_executor("crm_log_contacted", execute_crm_contacted)
+
+
+# ---------------------------------------------------------------------------
 # slack_post — post a message to Slack (GATED)
 # ---------------------------------------------------------------------------
 

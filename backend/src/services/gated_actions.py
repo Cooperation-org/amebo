@@ -74,6 +74,9 @@ GATED_ACTIONS: Set[str] = {
     "taiga_update_task", # actuator — updates a Taiga story (status/assignee/due)
     "taiga_add_comment", # actuator — comments on a Taiga story
     "taiga_close_task",  # actuator — moves a Taiga story to a done status
+    "crm_schedule",      # actuator — set a next step/activity on a CRM contact
+    "crm_tag_contact",   # actuator — tag a CRM contact
+    "crm_log_contacted", # actuator — log last-contacted on a CRM contact
     "send_email",        # sends email (outbound)
     "odoo_cli",          # writes to the CRM (destructive/outbound side effects)
     "mcp_taiga",         # writes to Taiga task management (destructive/outbound)

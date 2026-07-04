@@ -502,3 +502,66 @@ class TestTaigaWriteTools:
         ):
             out = impl(inp, {"draft_gate": gate})
             assert "no org context" in out
+
+
+class TestCrmWriteTools:
+    """WP15: gated CRM writes on the real odoo-cli verbs. Each drafts through
+    the gate (no side effect); its executor builds the right argv + org env."""
+
+    def test_all_gated(self):
+        for a in ("crm_schedule", "crm_tag_contact", "crm_log_contacted"):
+            assert gated_actions.requires_approval(a)
+
+    def test_executors_registered(self):
+        from src.services.action_executors import get_executor
+        assert get_executor("crm_schedule") is gated_actuators.execute_crm_schedule
+        assert get_executor("crm_tag_contact") is gated_actuators.execute_crm_tag
+        assert get_executor("crm_log_contacted") is gated_actuators.execute_crm_contacted
+
+    def test_schedule_routes_through_gate(self):
+        repo, gate = _gate_with_fake_repo()
+        with patch.object(gated_actuators, "run_cli",
+                          side_effect=AssertionError("no side effect")):
+            out = gated_actuators.crm_schedule_impl(
+                {"contact": "Acme", "when": "2026-07-10", "summary": "send pilot terms"},
+                {"org_id": 5, "draft_gate": gate})
+        assert "[held for approval]" in out
+        rec = repo.created[0]
+        assert rec["action_type"] == "crm_schedule"
+        assert rec["payload"]["contact"] == "Acme"
+        assert rec["payload"]["org_id"] == 5
+
+    def test_execute_schedule_builds_argv_and_env(self):
+        seen = {}
+        with patch.object(gated_actuators, "run_cli",
+                          side_effect=lambda a, env=None: seen.update(argv=a, env=env) or "scheduled"), \
+             patch.object(gated_actuators, "_crm_env", return_value={"ODOO_URL": "rtv"}):
+            gated_actuators.execute_crm_schedule({"payload": {
+                "contact": "Acme", "when": "2026-07-10", "summary": "terms", "org_id": 5}})
+        assert seen["argv"] == ["odoo-cli", "schedule", "Acme", "2026-07-10", "terms"]
+        assert seen["env"] == {"ODOO_URL": "rtv"}
+
+    def test_execute_tag_builds_argv(self):
+        seen = {}
+        with patch.object(gated_actuators, "run_cli",
+                          side_effect=lambda a, env=None: seen.update(argv=a) or "tagged"), \
+             patch.object(gated_actuators, "_crm_env", return_value=None):
+            gated_actuators.execute_crm_tag({"payload": {"contact": "Acme", "tag": "ally"}})
+        assert seen["argv"] == ["odoo-cli", "contact-tag", "Acme", "ally"]
+
+    def test_execute_schedule_raises_on_failure(self):
+        import pytest
+        with patch.object(gated_actuators, "run_cli",
+                          side_effect=lambda a, env=None: "Error: odoo-cli exited 1"), \
+             patch.object(gated_actuators, "_crm_env", return_value=None):
+            with pytest.raises(RuntimeError, match="crm_schedule failed"):
+                gated_actuators.execute_crm_schedule({"payload": {"contact": "X", "when": "2026-01-01"}})
+
+    def test_write_tools_require_org_context(self):
+        _, gate = _gate_with_fake_repo()
+        for impl, inp in (
+            (gated_actuators.crm_schedule_impl, {"contact": "A", "when": "2026-01-01"}),
+            (gated_actuators.crm_tag_contact_impl, {"contact": "A", "tag": "x"}),
+            (gated_actuators.crm_log_contacted_impl, {"contact": "A"}),
+        ):
+            assert "no org context" in impl(inp, {"draft_gate": gate})

@@ -732,6 +732,9 @@ from src.tools.gated_actuators import (
     taiga_update_task_impl, TAIGA_UPDATE_TASK_SCHEMA,
     taiga_add_comment_impl, TAIGA_ADD_COMMENT_SCHEMA,
     taiga_close_task_impl, TAIGA_CLOSE_TASK_SCHEMA,
+    crm_schedule_impl, CRM_SCHEDULE_SCHEMA,
+    crm_tag_contact_impl, CRM_TAG_CONTACT_SCHEMA,
+    crm_log_contacted_impl, CRM_LOG_CONTACTED_SCHEMA,
     slack_post_impl as slack_post_gated_impl, SLACK_POST_SCHEMA as SLACK_POST_GATED_SCHEMA,
 )
 
@@ -926,6 +929,45 @@ register_tool(Tool(
     is_read_only=False,
     needs_confirmation=True,
     category="tasks",
+))
+
+register_tool(Tool(
+    name="crm_schedule",
+    description=(
+        "Set a next step (activity) on a CRM contact — the way a deal gets a "
+        "next step. OUTBOUND: drafts a pending action a human approves first."
+    ),
+    input_schema=CRM_SCHEDULE_SCHEMA,
+    execute=crm_schedule_impl,
+    is_read_only=False,
+    needs_confirmation=True,
+    category="crm",
+))
+
+register_tool(Tool(
+    name="crm_tag_contact",
+    description=(
+        "Tag/categorize a CRM contact (e.g. 'ally', 'partner'). OUTBOUND: drafts "
+        "a pending action a human approves first."
+    ),
+    input_schema=CRM_TAG_CONTACT_SCHEMA,
+    execute=crm_tag_contact_impl,
+    is_read_only=False,
+    needs_confirmation=True,
+    category="crm",
+))
+
+register_tool(Tool(
+    name="crm_log_contacted",
+    description=(
+        "Log that a CRM contact was contacted (date defaults to today). "
+        "OUTBOUND: drafts a pending action a human approves first."
+    ),
+    input_schema=CRM_LOG_CONTACTED_SCHEMA,
+    execute=crm_log_contacted_impl,
+    is_read_only=False,
+    needs_confirmation=True,
+    category="crm",
 ))
 
 register_tool(Tool(
