@@ -191,3 +191,16 @@ class TestAbraScope:
         abra_search_impl({"query": "x", "mode": "search"},
                          {"org_id": org_with_knowledge_manifest})
         assert "--scope" not in seen["argv"]
+
+
+# --- WP8 tail: knowledge scope passed into KB search / lookup ---------------
+
+from src.tools.registry import _knowledge_scope
+
+
+class TestKnowledgeScope:
+    def test_scope_from_manifest(self, org_with_knowledge_manifest):
+        assert _knowledge_scope({"org_id": org_with_knowledge_manifest}) == "rtv-scope"
+
+    def test_scope_none_without_manifest(self):
+        assert _knowledge_scope({}) is None

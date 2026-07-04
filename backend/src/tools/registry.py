@@ -224,12 +224,25 @@ DEFAULT_TOOLS = ["search_knowledge_base", "search_slack_history", "lookup_contac
 # Tool implementations
 # ---------------------------------------------------------------------------
 
+def _knowledge_scope(context: Dict) -> Optional[str]:
+    """The acting org's abra scope from its manifest (arch §5/§7), or None. KB
+    search is already org-isolated by BindingService(org_id) + the repo's
+    org_filter; this adds the finer within-org scope when configured."""
+    try:
+        from src.tools.cli_read_tools import _conn
+        c = _conn(context, "knowledge")
+        return c.config.get("scope") if c is not None else None
+    except Exception:
+        return None
+
+
 def _exec_search_kb(tool_input: Dict, context: Dict) -> str:
     """Search the knowledge base (abra content via pgvector)."""
     from src.services.binding_service import BindingService
     svc = BindingService(context.get("org_id"))
     results = svc.repo.search_content(
         query=tool_input["query"],
+        scope=_knowledge_scope(context),
         limit=tool_input.get("limit", 8)
     )
 
@@ -285,7 +298,7 @@ def _exec_lookup_contact(tool_input: Dict, context: Dict) -> str:
     """Look up a name via binding service (abra)."""
     from src.services.binding_service import BindingService
     svc = BindingService(context.get("org_id"))
-    result = svc.about(tool_input["name"])
+    result = svc.about(tool_input["name"], scope=_knowledge_scope(context))
 
     if not result.get('bindings') and not result.get('content_refs'):
         return f"No information found for '{tool_input['name']}'."
