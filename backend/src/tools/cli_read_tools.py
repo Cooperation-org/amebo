@@ -88,6 +88,42 @@ def _require(tool_input: Dict[str, Any], key: str) -> Optional[str]:
 
 
 # ---------------------------------------------------------------------------
+# Per-org connection routing (arch §5). A tool resolves its org's connection
+# from the org.yaml manifest via ToolConnection. If the org has no manifest
+# entry yet (e.g. linkedtrust before its org.yaml is seeded), we fall back to
+# the process env so existing single-org behavior is unchanged until the WP17
+# cutover — "env paths keep working until cutover".
+# ---------------------------------------------------------------------------
+def _org_id_from_context(context: Any) -> Optional[int]:
+    if not isinstance(context, dict):
+        return None
+    oc = context.get("org_context")
+    oc_org = getattr(oc, "org_id", None)
+    if oc_org is not None:
+        return oc_org
+    return context.get("org_id")
+
+
+def _conn_env(context: Any, tool_key: str) -> Optional[Dict[str, str]]:
+    """The org's subprocess env for a tool, from its manifest connection — or
+    None to fall back to the process env (transition). Never raises: connection
+    problems degrade to the env fallback rather than breaking the tool."""
+    org_id = _org_id_from_context(context)
+    if org_id is None:
+        return None
+    try:
+        from src.credentials.connections import (
+            resolve, ToolNotConfigured, ManifestInvalid,
+        )
+        return resolve(org_id, tool_key).as_subprocess_env()
+    except (ToolNotConfigured, ManifestInvalid):
+        return None
+    except Exception:
+        logger.exception("connection resolve failed org=%s tool=%s", org_id, tool_key)
+        return None
+
+
+# ---------------------------------------------------------------------------
 # odoo_search — search CRM contacts (READ)
 # ---------------------------------------------------------------------------
 
@@ -101,7 +137,7 @@ def odoo_search_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str
     # search verb is `contact-search <query>` — searches contacts by name,
     # email, or catcode. odoo-cli exposes no separate "leads" search, so there
     # is no model to choose: a single read-only contact search.
-    return run_cli(["odoo-cli", "contact-search", query])
+    return run_cli(["odoo-cli", "contact-search", query], env=_conn_env(context, "crm"))
 
 
 ODOO_SEARCH_SCHEMA = {
@@ -136,7 +172,7 @@ def crm_read_latest_email_impl(tool_input: Dict[str, Any], context: Dict[str, An
     if sender is None:
         return "Error: sender is required (email address or contact identifier)."
     # Read-only: contact's full message/note history (recent chatter/emails).
-    return run_cli(["odoo-cli", "comms", sender])
+    return run_cli(["odoo-cli", "comms", sender], env=_conn_env(context, "crm"))
 
 
 CRM_READ_LATEST_EMAIL_SCHEMA = {
@@ -166,22 +202,36 @@ import os as _os
 import re as _re
 import xmlrpc.client as _xmlrpc
 
-_ODOO_URL = _os.getenv("ODOO_URL", "http://localhost:8069")
-_ODOO_DB = _os.getenv("ODOO_DB", "linkedtrust_crm")
+def _crm_conf(context: Any = None) -> Dict[str, str]:
+    """Effective Odoo connection env for this org: the manifest ToolConnection
+    (arch §5) if configured, else the process env — the transition fallback that
+    keeps linkedtrust working until its org.yaml is seeded (WP17 cutover)."""
+    env = _conn_env(context, "crm")
+    if env:
+        return env
+    return {
+        "ODOO_URL": _os.getenv("ODOO_URL", "http://localhost:8069"),
+        "ODOO_DB": _os.getenv("ODOO_DB", "linkedtrust_crm"),
+        "ODOO_USER": _os.getenv("ODOO_USER", ""),
+        "ODOO_API_KEY": _os.getenv("ODOO_API_KEY", "") or _os.getenv("ODOO_PASSWORD", ""),
+    }
 
 
-def _odoo():
-    """Authenticate to Odoo in-process; return (models, db, uid, pwd). Raises a
-    clear RuntimeError if not configured / auth fails. Read-only callers only."""
-    user = _os.getenv("ODOO_USER", "")
-    pwd = _os.getenv("ODOO_API_KEY", "") or _os.getenv("ODOO_PASSWORD", "")
+def _odoo(context: Any = None):
+    """Authenticate to the acting org's Odoo in-process; return (models, db, uid,
+    pwd). Config comes from the org's connection (per-org), falling back to env.
+    Raises a clear RuntimeError if not configured / auth fails. Read-only."""
+    conf = _crm_conf(context)
+    url = conf.get("ODOO_URL") or "http://localhost:8069"
+    db = conf.get("ODOO_DB") or "linkedtrust_crm"
+    user = conf.get("ODOO_USER", "")
+    pwd = conf.get("ODOO_API_KEY", "") or conf.get("ODOO_PASSWORD", "")
     if not user or not pwd:
         raise RuntimeError("CRM not configured (set ODOO_USER + ODOO_API_KEY).")
-    uid = _xmlrpc.ServerProxy(f"{_ODOO_URL}/xmlrpc/2/common").authenticate(
-        _ODOO_DB, user, pwd, {})
+    uid = _xmlrpc.ServerProxy(f"{url}/xmlrpc/2/common").authenticate(db, user, pwd, {})
     if not uid:
         raise RuntimeError("CRM authentication failed.")
-    return _xmlrpc.ServerProxy(f"{_ODOO_URL}/xmlrpc/2/object"), _ODOO_DB, uid, pwd
+    return _xmlrpc.ServerProxy(f"{url}/xmlrpc/2/object"), db, uid, pwd
 
 
 def _clean(html: str) -> str:
@@ -198,7 +248,7 @@ def crm_recent_activity_impl(tool_input: Dict[str, Any], context: Dict[str, Any]
         limit = 15
     limit = max(1, min(limit, 50))
     try:
-        m, db, uid, pwd = _odoo()
+        m, db, uid, pwd = _odoo(context)
         msgs = m.execute_kw(db, uid, pwd, "mail.message", "search_read",
             [[("model", "=", "res.partner"),
               ("message_type", "in", ["comment", "email"])]],
@@ -238,7 +288,7 @@ def crm_list_leads_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> 
     if stage:
         domain.append(("stage_id.name", "ilike", stage))
     try:
-        m, db, uid, pwd = _odoo()
+        m, db, uid, pwd = _odoo(context)
         leads = m.execute_kw(db, uid, pwd, "crm.lead", "search_read",
             [domain],
             {"fields": ["name", "partner_name", "stage_id", "user_id",
@@ -284,7 +334,7 @@ def crm_list_contacts_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) 
                   ("name", "ilike", q), ("email", "ilike", q),
                   ("company_name", "ilike", q), ("x_abra_catcode", "ilike", q)]
     try:
-        m, db, uid, pwd = _odoo()
+        m, db, uid, pwd = _odoo(context)
         rows = m.execute_kw(db, uid, pwd, "res.partner", "search_read",
             [domain],
             {"fields": ["name", "email", "company_name", "function"],
