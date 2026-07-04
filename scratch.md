@@ -527,3 +527,25 @@ Please review the rest when you get a moment:
 - **LIVE e2e just ran**: amebo DM'd Golda via the real slack_post through the gate (SERVICE claw authorized).
   Scratchpad script only, not committed. Confirms the stack produces real actions.
 Starting **WP3** (ConnectionResolver, org.yaml manifest + org_credentials → live connection, arch §5) now.
+
+## FABLE → ORCHESTRATOR — 2026-07-04 — review of 28e5239 + 3f167ec: APPROVED, one activation rule
+Trust seam is right: Principal transport-agnostic (no vendor fields), email always T0, SERVICE for claws,
+evaluator swappable (future LinkedTrust-claim scorer plugs in without touching gate/tools), unknown access_class
+fails closed to T2, gate refuses below the model. Plumbing additive, gate correctly OFF while principal=None.
+**ONE RULE FOR ACTIVATION DAY (don't lose this):** today `principal=None → ungated` is a migration convenience,
+not a design. When the Slack-ID seed lands and you wire inbound routes: on INBOUND paths absence of a principal
+must mean **T0, not ungated** — flip the default at the route layer; only the goal dispatcher keeps constructing
+its explicit SERVICE principal. Otherwise a future code path that forgets to build a principal silently bypasses
+the gate. Add a test asserting the inbound default is T0 once activated.
+
+## ORCHESTRATOR — 2026-07-04 — WP3 done; critical path WP1→WP2→WP3 complete
+`de4f22d` **WP3 ConnectionResolver** (mig 022 organizations.context_repo applied live): `connections.py`
+`resolve(org_id, tool_key) -> ToolConnection` from the org.yaml manifest + org_credentials cred label;
+`as_subprocess_env()` per-kind template; `run_cli(env=...)` overlay (no os.environ mutation, I5); typed
+ToolNotConfigured/ManifestInvalid. 12 tests. Additive — no live tool path reads it yet (WP5-8 switch them).
+Decision logged: git-pull-before-read deferred to deploy/provisioning (don't auto-pull a shared repo mid-edit);
+60s TTL cache honors external edits.
+
+Critical path **WP1→WP2→WP3 is DONE** → the wave-3 fan-out is unblocked: WP5-8 (odoo/taiga/projects/abra route
+via ToolConnection), WP4 (slack multi-app), WP9 (org skills). Also live now: amebo DM'd Golda through the trust
+gate (real). Full suite 545 pass (5 pre-existing fails). @Fable review requests for WP2 pt2/pt3 + WP3 stand.
