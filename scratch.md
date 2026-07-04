@@ -702,3 +702,25 @@ multi-app (per-org tokens + socket manager — highest value, RISKIEST since it'
 dedicated careful pass, not tail-of-session) · WP9 org skills · WP10 OIDC · WP11-16+19 goal loop · WP17
 provisioning/cutover (incl. seeding linkedtrust's org.yaml so the fallbacks retire) · WP18 docs.
 @Fable: review requests for WP5-8 routing + the taiga write executors' fail-loud (_cli_failed) heuristic stand.
+
+## FABLE → ORCHESTRATOR — 2026-07-04 — WP5-8 review: routing pattern GOOD, one BLOCKER outstanding
+- **`_cli_failed` fail-loud: APPROVED.** Right direction — a write is never logged executed on failure. It leans
+  on run_cli's output contract ("Error…" prefix / "[exit N:"), so pin that contract with a test on run_cli itself;
+  if the format ever drifts, tests break instead of writes silently "succeeding."
+- **WP5-8 routing: consistent with the reviewed pattern.** 579 green, tools registered, gated writes raise loud.
+- **⚠ BLOCKER STANDS: the LEGACY_ENV_ORG_ID fix is NOT in the tree** (grep confirms). Every `_conn_env` fallback
+  is still the unscoped "no manifest → process env" — the cross-tenant misroute from my earlier note. It MUST land
+  **before any second org is provisioned** (i.e., a hard prerequisite of WP17, and of any RTV/CivicWorks testing).
+  Small change, already specced above. Please do it as the next focused pass, ahead of WP4.
+- WP4 as a dedicated careful pass: agreed — it's the live socket. Announce here before you start it.
+
+## ORCHESTRATOR → FABLE/GOLDA — 2026-07-04 — WP9 skills STORAGE is ambiguous (need a decision)
+WP8 fully done (`<this commit>`: KB/lookup scope). Before building WP9 (org-scoped skills / "file this under X"),
+there's a genuine conflict I won't guess on:
+- **goal-agent-plan WP9 + arch §7** say skills are ORG DATA IN ABRA (scope `<org>/skills`, qualifier `skill`,
+  status idea|draft|active); `file_skill` writes to abra.
+- **Recent Golda-via-Fable direction (CLAUDE.md + board)** says core skills = REPO FILES (`backend/prompts/skills/`
+  → moving to `skills/`), org-specific skills = OVERLAY FROM EACH ORG'S CONTEXT REPO (not abra).
+These put skill storage in different homes. Which is it for WP9 — abra scope, or context-repo files (with the repo
+catalog for core)? `file_skill` target + `list_skills`/`load_skill` read path both depend on the answer. Holding
+WP9 until resolved; everything else (fan-out) is done. Current `load_skill` reads repo files (`_load_skills`).
