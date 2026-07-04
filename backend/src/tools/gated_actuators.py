@@ -303,7 +303,15 @@ def execute_slack_post(action: Dict[str, Any]) -> str:
     payload = action.get("payload") or {}
     if not payload.get("channel") or not (payload.get("text") or "").strip():
         return "Error: cannot post — payload missing channel or text."
-    result = slack_tools.slack_post_impl(payload, {})
+    # A channel broadcast (a claw digest / announcement) has no single recipient
+    # to @-mention. Such payloads opt out explicitly with require_mention=False;
+    # personal pings keep the default (mention required, so the recipient is
+    # actually notified).
+    context: Dict[str, Any] = {}
+    if payload.get("require_mention") is False:
+        from types import SimpleNamespace
+        context = {"guardrails": SimpleNamespace(slack_require_mention=False)}
+    result = slack_tools.slack_post_impl(payload, context)
     if isinstance(result, str) and result.startswith("Error"):
         raise RuntimeError(f"slack_post failed: {result}")
     return result

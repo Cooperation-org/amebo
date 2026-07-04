@@ -54,6 +54,16 @@ def _pipeline_url() -> str:
     return f"{ODOO_PUBLIC_URL}/web#model=crm.lead&view_type=list"
 
 
+def _slack_link(url: str, label: str) -> str:
+    """A Slack ``<url|label>`` link with both parts escaped. Slack treats
+    ``&``/``<``/``>`` as control characters, so an unescaped ``&`` in a URL
+    (ours has ``&model=…&view_type=…``) truncates the link target. Escaping is
+    required for the deep-link to actually open the specific record."""
+    def esc(s: str) -> str:
+        return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return f"<{esc(url)}|{esc(label)}>"
+
+
 # ---------------------------------------------------------------------------
 # Pure core — fully injectable, no I/O of its own
 # ---------------------------------------------------------------------------
@@ -84,7 +94,7 @@ def _line(l: Dict) -> str:
     name = l.get("name") or l.get("partner_name") or "(no name)"
     lead_id = l.get("id")
     if lead_id:
-        return f"• <{_lead_url(lead_id)}|{name}> · {stage}"
+        return f"• {_slack_link(_lead_url(lead_id), name)} · {stage}"
     return f"• {name} · {stage}"
 
 
@@ -113,7 +123,7 @@ def build_digest(buckets: Dict[str, List[Dict]], *, today: str, stale_days: int)
     parts += [_line(l) for l in sample]
     remaining = len(primary) - len(sample)
     if remaining > 0:
-        parts.append(f"<{_pipeline_url()}|…and {remaining} more in the CRM>")
+        parts.append(_slack_link(_pipeline_url(), f"…and {remaining} more in the CRM"))
 
     parts.append("\nGive one a next step — reply `@amebo coach me on <name>`.")
     return "\n".join(parts)

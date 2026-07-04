@@ -71,11 +71,12 @@ def test_digest_counts_both_buckets():
     assert "A" in msg
 
 
-def test_digest_lines_have_clickable_links():
+def test_digest_lines_have_clickable_escaped_links():
     buckets = {"no_next_step": [_lead("A", lead_id=99, activity=None)], "stale": []}
     msg = build_digest(buckets, today=TODAY, stale_days=14)
-    assert "crm.linkedtrust.us/web#id=99&model=crm.lead" in msg
-    assert "<https://crm.linkedtrust.us" in msg  # Slack link syntax
+    # Slack link syntax with ampersands escaped so the deep-link isn't truncated.
+    assert "<https://crm.linkedtrust.us/web#id=99&amp;model=crm.lead&amp;view_type=form|A>" in msg
+    assert "&model=" not in msg  # no raw ampersands left in the URL
 
 
 def test_digest_samples_and_links_the_rest():
