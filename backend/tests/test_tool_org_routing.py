@@ -136,3 +136,58 @@ class TestProjectsRouting:
         org_id, base = org_with_projects_manifest
         got = _project_dir("myproj", {"org_id": org_id})
         assert got == (base / "Active" / "myproj").resolve()
+
+
+# --- WP8: abra scope from the manifest --------------------------------------
+
+import src.tools.cli_read_tools as _clir
+from src.tools.cli_read_tools import abra_search_impl
+
+
+@pytest.fixture
+def org_with_knowledge_manifest(tmp_path):
+    invalidate_cache()
+    with open(os.path.join(str(tmp_path), "org.yaml"), "w") as fh:
+        fh.write(
+            "schema: 1\norg: rtv\ntools:\n"
+            "  knowledge: {kind: abra, scope: rtv-scope}\n"
+        )
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO organizations (org_name, org_slug, context_repo) "
+                "VALUES (%s, %s, %s) RETURNING org_id",
+                (f"Kn {_uid()}", f"kn-{_uid()}", str(tmp_path)),
+            )
+            org_id = cur.fetchone()[0]
+            conn.commit()
+    finally:
+        DatabaseConnection.return_connection(conn)
+    yield org_id
+    invalidate_cache()
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM organizations WHERE org_id = %s", (org_id,))
+            conn.commit()
+    finally:
+        DatabaseConnection.return_connection(conn)
+
+
+class TestAbraScope:
+    def test_about_applies_org_scope(self, org_with_knowledge_manifest, monkeypatch):
+        seen = {}
+        monkeypatch.setattr(_clir, "run_cli",
+                            lambda argv, timeout=10, env=None: seen.setdefault("argv", argv) or "ok")
+        abra_search_impl({"query": "peter", "mode": "about"},
+                         {"org_id": org_with_knowledge_manifest})
+        assert "--scope" in seen["argv"] and "rtv-scope" in seen["argv"]
+
+    def test_search_never_adds_scope(self, org_with_knowledge_manifest, monkeypatch):
+        seen = {}
+        monkeypatch.setattr(_clir, "run_cli",
+                            lambda argv, timeout=10, env=None: seen.setdefault("argv", argv) or "ok")
+        abra_search_impl({"query": "x", "mode": "search"},
+                         {"org_id": org_with_knowledge_manifest})
+        assert "--scope" not in seen["argv"]

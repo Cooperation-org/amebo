@@ -104,10 +104,10 @@ def _org_id_from_context(context: Any) -> Optional[int]:
     return context.get("org_id")
 
 
-def _conn_env(context: Any, tool_key: str) -> Optional[Dict[str, str]]:
-    """The org's subprocess env for a tool, from its manifest connection — or
-    None to fall back to the process env (transition). Never raises: connection
-    problems degrade to the env fallback rather than breaking the tool."""
+def _conn(context: Any, tool_key: str):
+    """The acting org's ToolConnection for a tool from its manifest, or None to
+    fall back (transition). Never raises: connection problems degrade to the
+    fallback rather than breaking the tool."""
     org_id = _org_id_from_context(context)
     if org_id is None:
         return None
@@ -115,12 +115,18 @@ def _conn_env(context: Any, tool_key: str) -> Optional[Dict[str, str]]:
         from src.credentials.connections import (
             resolve, ToolNotConfigured, ManifestInvalid,
         )
-        return resolve(org_id, tool_key).as_subprocess_env()
+        return resolve(org_id, tool_key)
     except (ToolNotConfigured, ManifestInvalid):
         return None
     except Exception:
         logger.exception("connection resolve failed org=%s tool=%s", org_id, tool_key)
         return None
+
+
+def _conn_env(context: Any, tool_key: str) -> Optional[Dict[str, str]]:
+    """The org's subprocess env for a tool (None = fall back to process env)."""
+    c = _conn(context, tool_key)
+    return c.as_subprocess_env() if c is not None else None
 
 
 # ---------------------------------------------------------------------------
@@ -421,7 +427,16 @@ def abra_search_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str
     if mode not in ("search", "about"):
         return "Error: mode must be 'search' or 'about'."
     # abra search "<query>"  /  abra about <name>  (per CLAUDE.md + next-steps.md)
-    return run_cli(["abra", mode, query], env=_conn_env(context, "knowledge"))
+    conn = _conn(context, "knowledge")
+    env = conn.as_subprocess_env() if conn is not None else None
+    argv = ["abra", mode, query]
+    # Apply the org's abra scope from its manifest (arch §5, §7). Only 'about'
+    # supports --scope; 'search' is full-text across the (per-org) abra DB, which
+    # the env routing (ABRA_DATABASE_URL) already isolates.
+    scope = conn.config.get("scope") if conn is not None else None
+    if scope and mode == "about":
+        argv = ["abra", "about", "--scope", str(scope), query]
+    return run_cli(argv, env=env)
 
 
 ABRA_SEARCH_SCHEMA = {
