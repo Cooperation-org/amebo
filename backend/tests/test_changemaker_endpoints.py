@@ -74,6 +74,22 @@ def client(app):
     return _SyncFacade(transport)
 
 
+@pytest.fixture
+def as_user(app):
+    """Authenticate requests as a logged-in SSO user with an org.
+
+    /api/chat/message now requires auth (Depends(get_current_user)) and resolves
+    the instance from the AUTHENTICATED user's org, not a client-supplied value
+    (see chat.py). Override the dependency so tests exercise the real handler
+    instead of bouncing at 403."""
+    from src.api.middleware.auth import get_current_user
+    app.dependency_overrides[get_current_user] = lambda: {
+        "user_id": 1, "org_id": 42, "email": "tester@example.com",
+    }
+    yield {"user_id": 1, "org_id": 42, "email": "tester@example.com"}
+    app.dependency_overrides.pop(get_current_user, None)
+
+
 # ---------------------------------------------------------------------------
 # /api/embeddings/similarity
 # ---------------------------------------------------------------------------
@@ -152,9 +168,13 @@ class TestEmbeddingsSimilarity:
 
 
 class TestChatMessage:
-    """Used by Changemaker /api/suggest to get aligned content suggestions."""
+    """Used by Changemaker /api/suggest to get aligned content suggestions.
 
-    def test_message_returns_reply_and_session(self, client):
+    The endpoint now requires an authenticated SSO user and resolves the instance
+    from that user's org (InstanceRepo.get_by_org), not a client-supplied slug.
+    These tests authenticate via the `as_user` fixture and mock get_by_org."""
+
+    def test_message_returns_reply_and_session(self, client, as_user):
         fake_result = {
             "answer": "Some suggestion.",
             "confidence": 80,
@@ -162,7 +182,9 @@ class TestChatMessage:
         }
         with patch("src.api.routes.chat.QAService") as QA, \
              patch("src.api.routes.chat.InstanceRepo") as IR:
-            IR.return_value.get_by_slug.return_value = None
+            IR.return_value.get_by_org.return_value = {
+                "id": 1, "slug": "inst", "org_id": as_user["org_id"],
+            }
             QA.return_value.answer_question.return_value = fake_result
 
             resp = client.post(
@@ -178,10 +200,12 @@ class TestChatMessage:
         # session_id is auto-generated and must be a non-empty string
         assert isinstance(body["session_id"], str) and body["session_id"]
 
-    def test_session_id_is_preserved(self, client):
+    def test_session_id_is_preserved(self, client, as_user):
         with patch("src.api.routes.chat.QAService") as QA, \
              patch("src.api.routes.chat.InstanceRepo") as IR:
-            IR.return_value.get_by_slug.return_value = None
+            IR.return_value.get_by_org.return_value = {
+                "id": 1, "slug": "inst", "org_id": as_user["org_id"],
+            }
             QA.return_value.answer_question.return_value = {"answer": "ok"}
 
             resp = client.post(
@@ -192,18 +216,22 @@ class TestChatMessage:
         assert resp.status_code == 200
         assert resp.json()["session_id"] == "abc-123"
 
-    def test_empty_message_returns_400(self, client):
+    def test_empty_message_returns_400(self, client, as_user):
+        # auth passes; the empty-message guard rejects before instance lookup
         resp = client.post("/api/chat/message", json={"message": "   "})
         assert resp.status_code == 400
 
-    def test_unknown_instance_returns_404(self, client):
+    def test_no_instance_for_org_returns_404(self, client, as_user):
+        # the user's org has no configured amebo instance
         with patch("src.api.routes.chat.InstanceRepo") as IR:
-            IR.return_value.get_by_slug.return_value = None
-            resp = client.post(
-                "/api/chat/message",
-                json={"message": "hi", "instance_slug": "no-such-instance"},
-            )
+            IR.return_value.get_by_org.return_value = None
+            resp = client.post("/api/chat/message", json={"message": "hi"})
         assert resp.status_code == 404
+
+    def test_unauthenticated_is_rejected(self, client):
+        # no as_user override -> the auth dependency refuses (401/403), never 200
+        resp = client.post("/api/chat/message", json={"message": "hi"})
+        assert resp.status_code in (401, 403)
 
 
 # ---------------------------------------------------------------------------
