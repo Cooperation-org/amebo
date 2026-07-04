@@ -29,6 +29,33 @@ MAX_READ_BYTES = 64 * 1024     # plenty for a MAIN.md
 MAX_OLD_NEW_LEN = 4096          # cap edit string sizes
 
 
+def _projects_root(context: Any = None) -> Path:
+    """The acting org's active-projects root (arch §5). From the org's org.yaml
+    `projects` connection config ({path, active_dir}); falls back to the shared
+    ACTIVE_PROJECTS_ROOT until the org's manifest is seeded (WP17 cutover). The
+    path-traversal guard below is applied relative to whatever root this returns,
+    so it stays exactly as strict per-org."""
+    from src.tools.cli_read_tools import _org_id_from_context
+    org_id = _org_id_from_context(context)
+    if org_id is not None:
+        try:
+            from src.credentials.connections import (
+                resolve, ToolNotConfigured, ManifestInvalid,
+            )
+            cfg = resolve(org_id, "projects").config or {}
+            base = cfg.get("path")
+            if base:
+                root = Path(base)
+                if cfg.get("active_dir"):
+                    root = root / cfg["active_dir"]
+                return root.resolve()
+        except (ToolNotConfigured, ManifestInvalid):
+            pass
+        except Exception:
+            logger.exception("projects connection resolve failed org=%s", org_id)
+    return ACTIVE_PROJECTS_ROOT
+
+
 _SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 
 
@@ -45,16 +72,17 @@ def _validate_slug(slug: str) -> str:
     return slug
 
 
-def _project_dir(slug: str) -> Path:
+def _project_dir(slug: str, context: Any = None) -> Path:
     """
-    Resolve the project's directory and assert it sits under
-    ACTIVE_PROJECTS_ROOT. Any path that tries to escape the root via
-    symlinks or '..' is rejected.
+    Resolve the project's directory and assert it sits under the acting org's
+    projects root. Any path that tries to escape the root via symlinks or '..'
+    is rejected. The guard is relative to the per-org root (arch §5).
     """
     slug = _validate_slug(slug)
-    candidate = (ACTIVE_PROJECTS_ROOT / slug).resolve()
+    root = _projects_root(context)
+    candidate = (root / slug).resolve()
     try:
-        candidate.relative_to(ACTIVE_PROJECTS_ROOT)
+        candidate.relative_to(root)
     except ValueError as exc:
         raise PermissionError(
             f"project_slug {slug!r} resolves outside the active-projects root."
@@ -62,8 +90,8 @@ def _project_dir(slug: str) -> Path:
     return candidate
 
 
-def _project_main_md(slug: str) -> Path:
-    return _project_dir(slug) / MAIN_MD_FILENAME
+def _project_main_md(slug: str, context: Any = None) -> Path:
+    return _project_dir(slug, context) / MAIN_MD_FILENAME
 
 
 # ---------------------------------------------------------------------------
@@ -73,9 +101,10 @@ def _project_main_md(slug: str) -> Path:
 
 def list_projects_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
     entries: List[str] = []
+    root = _projects_root(context)
     try:
-        for name in sorted(os.listdir(ACTIVE_PROJECTS_ROOT)):
-            entry_path = ACTIVE_PROJECTS_ROOT / name
+        for name in sorted(os.listdir(root)):
+            entry_path = root / name
             if not entry_path.is_dir():
                 continue
             if (entry_path / MAIN_MD_FILENAME).is_file():
@@ -103,7 +132,7 @@ LIST_PROJECTS_SCHEMA = {
 def read_main_md_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
     slug_raw = tool_input.get("project_slug")
     try:
-        path = _project_main_md(slug_raw or "")
+        path = _project_main_md(slug_raw or "", context)
     except (ValueError, PermissionError) as exc:
         return f"Error: {exc}"
 
@@ -173,7 +202,7 @@ def edit_main_md_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> st
         return "Error: old_string and new_string are identical — no edit to make."
 
     try:
-        path = _project_main_md(slug_raw or "")
+        path = _project_main_md(slug_raw or "", context)
     except (ValueError, PermissionError) as exc:
         return f"Error: {exc}"
 
@@ -267,7 +296,7 @@ def create_main_md_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> 
         return f"Error: content must be <= {MAX_CREATE_BYTES} bytes; got {body_len}."
 
     try:
-        directory = _project_dir(slug_raw or "")
+        directory = _project_dir(slug_raw or "", context)
     except (ValueError, PermissionError) as exc:
         return f"Error: {exc}"
 

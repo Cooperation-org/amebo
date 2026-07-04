@@ -81,3 +81,58 @@ class TestCrmRouting:
         assert a == "https://crm.rtv.example"
         assert b == "https://linkedtrust.example"
         assert a != b
+
+
+# --- WP7: projects root per org ---------------------------------------------
+
+from pathlib import Path
+from src.tools.main_md_tools import _projects_root, _project_dir, ACTIVE_PROJECTS_ROOT
+
+
+@pytest.fixture
+def org_with_projects_manifest(tmp_path):
+    invalidate_cache()
+    base = tmp_path / "orgrepo"
+    (base / "Active").mkdir(parents=True)
+    ctx = tmp_path / "ctx"
+    ctx.mkdir()
+    with open(ctx / "org.yaml", "w") as fh:
+        fh.write(
+            "schema: 1\norg: rtv\ntools:\n"
+            f"  projects: {{kind: git_repo, path: '{base}', active_dir: Active}}\n"
+        )
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO organizations (org_name, org_slug, context_repo) "
+                "VALUES (%s, %s, %s) RETURNING org_id",
+                (f"Proj {_uid()}", f"proj-{_uid()}", str(ctx)),
+            )
+            org_id = cur.fetchone()[0]
+            conn.commit()
+    finally:
+        DatabaseConnection.return_connection(conn)
+    yield org_id, base
+    invalidate_cache()
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM organizations WHERE org_id = %s", (org_id,))
+            conn.commit()
+    finally:
+        DatabaseConnection.return_connection(conn)
+
+
+class TestProjectsRouting:
+    def test_root_from_manifest(self, org_with_projects_manifest):
+        org_id, base = org_with_projects_manifest
+        assert _projects_root({"org_id": org_id}) == (base / "Active").resolve()
+
+    def test_root_falls_back_to_shared(self):
+        assert _projects_root({}) == ACTIVE_PROJECTS_ROOT
+
+    def test_project_dir_under_org_root(self, org_with_projects_manifest):
+        org_id, base = org_with_projects_manifest
+        got = _project_dir("myproj", {"org_id": org_id})
+        assert got == (base / "Active" / "myproj").resolve()
