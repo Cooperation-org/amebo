@@ -58,6 +58,17 @@ class Tool:
     is_read_only: bool = True
     needs_confirmation: bool = False
     category: str = "general"
+    # Authorization class for the trust gate (arch §4.3, I10). Left None means
+    # "derive from is_read_only" so existing tools get a sane default without
+    # re-annotation; declare explicitly ('read'|'write'|'admin') to override
+    # (e.g. an admin-class tool).
+    access_class: Optional[str] = None
+
+    @property
+    def effective_access_class(self) -> str:
+        if self.access_class:
+            return self.access_class
+        return "read" if self.is_read_only else "write"
 
 
 # ---------------------------------------------------------------------------
@@ -117,23 +128,75 @@ def get_tools_for_instance(instance: Optional[Dict] = None) -> List[Dict]:
     return tools
 
 
+def require_org_context(org_context):
+    """Fail-closed guard (I2): callers on the resolved path use this to assert an
+    OrgContext is present before executing a tool. Raises MissingOrgContext."""
+    from src.services.org_context import MissingOrgContext
+    if org_context is None:
+        raise MissingOrgContext(
+            "tool execution requires a resolved OrgContext (arch §4.2, I2)"
+        )
+    return org_context
+
+
+def trust_gate(tool: "Tool", principal) -> Optional[str]:
+    """The §4.3 authorization gate (I10), in code below the model. Returns a
+    refusal string if `principal` lacks the trust the tool's access_class needs,
+    else None. Trust scoring is delegated to the swappable evaluator seam — this
+    function never computes trust itself."""
+    from src.services.trust import evaluate as trust_evaluate, required_level
+    level = trust_evaluate(principal)
+    need = required_level(tool.effective_access_class)
+    if level < need:
+        return (
+            f"Refused: '{tool.name}' is a {tool.effective_access_class}-class "
+            f"action requiring trust {need.name}, but the caller is {level.name}."
+        )
+    return None
+
+
 def execute_tool(
     tool_name: str,
     tool_input: Dict,
-    workspace_id: str,
-    org_id: Optional[int] = None
+    workspace_id: Optional[str] = None,
+    org_id: Optional[int] = None,
+    *,
+    org_context=None,
+    principal=None,
 ) -> str:
     """
     Execute a tool and return the result as a string.
 
-    This is the framework's tool runner — called in the agentic loop
-    when Claude returns a tool_use block. Same interface as before.
+    The framework's tool runner — called in the agentic loop when Claude returns
+    a tool_use block. Backward compatible: legacy callers pass (workspace_id,
+    org_id) and get today's behavior. The resolved path passes `org_context`
+    (arch §4.1), which is threaded into the tool context, and optionally a
+    `principal` (arch §4.3), which is checked against the trust gate BELOW the
+    model — a refused tool never executes.
     """
     tool = _TOOLS.get(tool_name)
     if not tool:
         return f"Unknown tool: {tool_name}"
 
-    context = {"workspace_id": workspace_id, "org_id": org_id}
+    # Authorization gate (code, not prompt). Only when a principal is supplied;
+    # legacy/service callers without one keep prior behavior until their route
+    # is wired (compat shim, removed at WP17 cutover).
+    if principal is not None:
+        denial = trust_gate(tool, principal)
+        if denial:
+            logger.info("Trust gate denied %s: %s", tool_name, denial)
+            return denial
+
+    ctx_org_id = org_context.org_id if org_context is not None else org_id
+    ctx_workspace = workspace_id
+    if org_context is not None and org_context.venue is not None:
+        ctx_workspace = ctx_workspace or org_context.venue.workspace_ref
+
+    context = {
+        "workspace_id": ctx_workspace,
+        "org_id": ctx_org_id,
+        "org_context": org_context,
+    }
     try:
         return tool.execute(tool_input, context)
     except Exception as e:
