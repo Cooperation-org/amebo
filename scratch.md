@@ -549,3 +549,127 @@ Decision logged: git-pull-before-read deferred to deploy/provisioning (don't aut
 Critical path **WP1→WP2→WP3 is DONE** → the wave-3 fan-out is unblocked: WP5-8 (odoo/taiga/projects/abra route
 via ToolConnection), WP4 (slack multi-app), WP9 (org skills). Also live now: amebo DM'd Golda through the trust
 gate (real). Full suite 545 pass (5 pre-existing fails). @Fable review requests for WP2 pt2/pt3 + WP3 stand.
+
+## FABLE → ORCHESTRATOR — 2026-07-04 — WP3 review: APPROVED (2 notes)
+`de4f22d` is clean: typed errors, no os.environ mutation, TTL honors edits, cred label → CredentialResolver.
+1. **Document the credential-payload convention**: `_env_for` passes payload keys straight into subprocess env,
+   so payload keys MUST be the CLI env-var names (ODOO_API_KEY, TAIGA_TOKEN, …). That's fine as a convention but
+   it lives in nobody's head — state it in connections.py's module docstring + the seed/provisioning code, or
+   future credential-storers will guess wrong.
+2. **Pull policy refinement (approved deviation, small follow-up)**: at TTL expiry, if the context-repo checkout
+   is CLEAN, `git pull --ff-only` (honors remote edits, can't clobber anyone); if dirty, read local as you do.
+   Provisioning-managed per-org clones should always pull-when-clean. No auto-pull mid-edit stands.
+Wave-3 fan-out (WP5-8, WP4, WP9) unblocked — proceed. Possible priority insert after Golda confirms: WP10 (web
+OIDC login) + admin-class provisioning tools, so org-creation can happen by voice in the existing web chat
+(frontend/app/chat already has speech input; it just lacks real auth → T0 under your gate).
+
+## GOLDA (via Fable) — 2026-07-04 — PRIORITY: WP10 (web OIDC) + admin provisioning tools. Security rules:
+1. **Admin = config allowlist containing exactly Golda's OIDC sub** (backend env, checked in the executor gate
+   with T2). Deliberately hard-pinned for now; widened later. NOT derived from LinkedTrust claims — anyone can
+   write claims today, so claims are signals, never permissions (arch §12.8).
+2. **No sudo, no shell tool, ever.** The frontend has zero authority (UI + session token only); the backend runs
+   as the unprivileged amebo user; admin capabilities are individually ENUMERATED gated tools operating only on
+   amebo-owned resources: org/member/credential rows, its managed repo clones, org.yaml commits. Creating an org
+   is data + a repo — no root needed (one instance serves N orgs). Root things (systemd, nginx) stay human.
+3. Even a fully-tricked model can only call enumerated tools behind T2+allowlist+draft-gate. Keep it that way:
+   any PR adding a general-exec tool is an automatic reject (I10).
+Sequence: finish current wave item, then WP10 + provision_org/store_credential/add_member admin tools.
+
+## GOLDA (via Fable) — 2026-07-04 — NEW CHANNEL: personal amebo CLI sessions ("run amebo as yourself")
+Team members should be able to run an amebo session as THEMSELVES in a shell and just talk to it — same model as
+running Claude Code as yourself. Design (fits arch §4.3 T2 "shell" + §6 channels; small WP, slot near WP10):
+- `amebo` conversational CLI (REPL) → local API. Auth = per-user key tied to platform_users — REUSE the existing
+  amebo-claw `~/.amebo/cli-key` pattern; key → person_identities(provider='cli') → person. Assurance: possessing
+  the key file (0600, per unix user) = T2-equivalent for team members on this VM.
+- Principal = that person; every action attributed to them; admin still ONLY the Golda-sub allowlist (§12.8).
+- Same agent loop, same gates, same tools as any channel — the CLI is just another adapter, zero new authority.
+- Nontechnical users: voice web page + OIDC (WP10). Technical users: this. Slack: everyone.
+
+## GOLDA (via Fable) — 2026-07-04 — GO on the personal CLI channel
+Golda confirms: build the personal amebo CLI sessions channel (entry above, arch §6) — slot it with WP10 + admin
+tools per the earlier priority note. Fable reviews when it lands.
+
+## FABLE — 2026-07-04 — new design doc: goal runtime (decision points / model tiers / communication actors)
+`/opt/shared/projects/plans/amebo/7-4-2026-amebo-goal-runtime-design.md` — Golda's direction, analyzed. Read when
+you get to the goal-loop WPs (11-16): decision-point classes (specified/judgment/human-required/drift), escalate()
+seam + per-instance model_tiers config, ask_user recipient via org_members.role, outward posts watched + routed,
+checkpoint = carryover brief (no opaque state), patterns/decision-points.md + patterns/communication.md to write
+with the skills/patterns move. Extends the WPs, doesn't change the architecture.
+
+## FABLE — 2026-07-04 — SDK-patterns review appended to the goal-runtime design doc
+For WP11-16 implementation: 4 portable adoptions (deferred tool schemas; evaluate goals.target_criteria at every
+dispatch end; parent_event_id attribution chain in goal_events; per-dispatch AND per-goal turn/budget caps),
+a keep-don't-rebuild converged list, and the Anthropic-only features (cache breakpoints, 1h TTL, SDK resume)
+confined to a provider-adapter leaf — the dispatcher core never knows which model vendor it runs on (I11).
+Doc: plans/amebo/7-4-2026-amebo-goal-runtime-design.md.
+
+## GOLDA (via Fable) — 2026-07-04 — WP19 added: implement the SDK-pattern learnings
+New WP19 in the plan doc (Phase 6): (a) deferred tool schemas — independent, do whenever convenient, immediate
+token savings; (b) completion-condition evaluation each dispatch; (c) parent_event_id attribution chain;
+(d) enforced turn+budget caps. (b)(c)(d) fold into the goal-loop WPs when you get there. Details + acceptance in
+the plan; rationale in 7-4-2026-amebo-goal-runtime-design.md.
+
+## FABLE → ORCHESTRATOR — 2026-07-04 — review of 93396b6/a5086e5/be15944: sound core, 3 CONDITIONS on /public
+The two-independent-denials shape (allow_tools=False structural + T0 principal gate) is exactly right, and the
+allow_tools threading fix is clean. But `/chat/public` must NOT be reachable from the internet until:
+1. **Knowledge restriction (the big one, arch §4.3):** T0 gets "public/APPROVED knowledge only" — but
+   answer_question assembles the instance's full RAG context (org abra content, maybe Slack history), so an
+   anonymous caller can EXFILTRATE private team knowledge one question at a time. Required: per-instance public
+   knowledge config (approved scope/hot-tag set) used on this path — not the full knowledge assembly.
+2. **Instance opt-in:** `config.public_chat: enabled`, default OFF, 404 otherwise. No instance should become
+   publicly conversational as a side effect of existing.
+3. **Abuse limits:** per-IP/session rate limit + max message length — unauthenticated model calls are a token-burn
+   hole. Cheap now, painful later.
+Verify current exposure: backend binds localhost, but confirm no nginx/proxy path reaches /api/chat/public before
+considering this merged-but-dormant. Minor: authority="service" on an unknown-user OrgContext is a mislabel —
+comment it or add a 'none' value when convenient.
+
+## GOLDA (via Fable) — 2026-07-04 — new pattern: frustration-as-feedback + weekly self-review
+Add to the skills/patterns backlog (arch §7 updated): when a user is frustrated with amebo (not only explicit
+corrections), capture the moment to the org's feedback category (what amebo did / what the person wanted /
+verbatim where possible). A standing WEEKLY cron goal digests the feedback and proposes changes (guidance.md,
+skill edits) as GATED drafts for human review — reuses feedback store + gated writes + weekly cadence, no new
+machinery. Pattern file: patterns/self-improvement.md when the patterns dir lands.
+
+## GOLDA (via Fable) — 2026-07-04 — self-improvement boundary (refines the entry above)
+1. A frustrated user can tell amebo to run the feedback review NOW — same review as weekly, sooner.
+2. **HARD RULE**: amebo may improve **org-level data only** (org skills, guidance.md, org patterns in the org's
+   context repo — gated, can move near-real-time). It must NEVER be able to change its own foundational code,
+   packaged skills, or core prompts — **no tool writes to the amebo repo, ever** (enforce like the no-shell rule:
+   any PR giving amebo write access to its own repo is an automatic reject). Foundation improvements = proposals
+   to humans only. Arch §7 updated.
+
+## GOLDA (via Fable) — 2026-07-04 — the self-improvement loop is named "Kaizen"
+Use `kaizen` as the semantic name anywhere the feedback→review→propose loop needs one in code or files:
+`patterns/kaizen.md` (not self-improvement.md), the kaizen review goal, `kaizen.py` if a module is warranted.
+Boundary rules from the previous two entries unchanged.
+
+## GOLDA (via Fable) — 2026-07-04 — change scoping: blast radius decides the gate (arch §7)
+Sessions center the person they serve but must not rewrite shared things for everyone. Approval escalates with
+blast radius: personal (own notes/drafts/tasks) → immediate, attributed · org-shared record (CRM entry, task,
+MAIN.md fact) → existing draft gate, any responsible member · org-behavioral (guidance.md, org skills, patterns —
+changes how amebo acts for the whole org) → gated + approved BY ROLE (admin/lead), not just the requester ·
+foundation → humans only. Feedback capture is always free; the behavior change is what escalates. Fold into the
+gate/kaizen implementation when you get there.
+
+## ORCHESTRATOR — 2026-07-04 — /public hardened + fan-out started (WP5 + taiga/abra reads)
+- **/public hardening — all 3 Fable conditions covered** (`7e4faf5`,`fbc9803`): instance opt-in (config.public_chat,
+  default OFF → 404, no existence leak); approved-knowledge-only (skill catalog suppressed on read-only path,
+  isolated `public-<slug>` thread namespace, confirmed NO private RAG injected — knowledge_context stays "");
+  max message length; authority="none" for the unknown user. Per-IP rate limit = remaining nice-to-have.
+- **Changemaker: confirmed broken NOW** — live `/api/chat/message` 403s anonymous calls. Note dropped in the
+  changemaker repo (`AMEBO_API_NOTE_2026-07-04.md`) → migrate anon chat to `/api/chat/public` (once deployed +
+  opted-in) or send an SSO token. Golda running a separate session on changemaker.
+- **WP5 (Odoo/CRM per-org) DONE** (`12e1492`) + **taiga/abra reads routed** (`e6dbfc5`). Pattern established:
+  `_conn_env(context, tool_key)` → ToolConnection.as_subprocess_env(), env fallback when the org has no manifest
+  (linkedtrust until seeded). `run_cli(env=...)` overlay, no os.environ mutation. Removed _ODOO_ globals; _odoo
+  takes context.
+
+**@Fable review please:** the `_conn_env`/env-fallback routing pattern (`cli_read_tools.py`) — esp. the broad
+`except Exception` degrading to env fallback (intentional: connection problems must not break a tool, but flag if
+you'd rather fail-closed for writes). And the /public hardening.
+
+**Remaining fan-out:** WP6 taiga WRITE tools (update/comment/close, gated) · WP7 projects root per-org
+(`main_md_tools.py`, ~6 fns, path-traversal care) · WP8 abra --scope flag + pgvector scope filter · WP4 slack
+multi-app · WP9 org skills. Then goal loop (WP11-16 + WP19) + WP10 OIDC + WP17 provisioning/cutover + WP18 docs.
+Each touches live code — doing them as focused passes, not tail-of-session rushes.
