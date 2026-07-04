@@ -178,6 +178,17 @@ class GoalDispatcher:
             org_context = self._load_org_context(goal["org_id"])
             instance = self._load_instance(goal["org_id"])
             summary, tool_calls = self._pursue(goal, instance, org_context)
+            # Close the dispatch with a self-summary so the NEXT dispatch carries
+            # over progress (arch §8.1, WP11). Best-effort — a bookkeeping failure
+            # must never fail the dispatch itself.
+            try:
+                self._goal_repo.append_event(
+                    goal_id=goal_id, actor_type="claw", action="dispatch_summary",
+                    result_summary=summary,
+                    metadata={"tool_calls": len(tool_calls or [])},
+                )
+            except Exception:
+                logger.exception("Failed to record dispatch_summary for %s", goal_id)
         except (CredentialMissing, CredentialExpired, CredentialRevoked) as exc:
             return self._block_on_credential(goal, exc)
         except GuardrailTripped as exc:
@@ -384,7 +395,51 @@ class GoalDispatcher:
         criteria = goal.get("target_criteria")
         if criteria:
             lines.append("## Target criteria\n" + str(criteria))
+        brief = self._carryover_brief(goal.get("id"))
+        if brief:
+            lines.append(brief)
         return "\n\n".join(lines)
+
+    def _carryover_brief(self, goal_id: Optional[str],
+                         recent: int = 8, max_older: int = 20) -> str:
+        """Progress carryover from earlier dispatches (arch §8.1), so a week-long
+        goal iterates instead of restarting each dispatch. Recent events verbatim,
+        older ones compressed.
+
+        CRITICAL (I1): this is amebo's OWN NOTES from past dispatches, NOT the
+        current state of the world. A dispatch must RE-READ current truth from
+        the shared tools (the Taiga task may be closed, the contact may have
+        replied, a human may have done the step) before acting on these notes.
+        """
+        if not goal_id:
+            return ""
+        try:
+            events = self._goal_repo.list_events(goal_id)
+        except Exception:
+            logger.exception("carryover: could not load events for %s", goal_id)
+            return ""
+        interesting = [e for e in (events or [])
+                       if e.get("action") not in ("created", "activated")]
+        if not interesting:
+            return ""
+        recent_events = interesting[-recent:]
+        older = interesting[:-recent][-max_older:] if len(interesting) > recent else []
+
+        lines = [
+            "## Progress so far — YOUR NOTES from earlier dispatches.",
+            "These may be STALE: re-check the live tools (Taiga, CRM, the repo) "
+            "for current truth before acting on any of them.",
+        ]
+        if older:
+            lines.append("\nEarlier (compressed):")
+            for e in older:
+                s = (e.get("result_summary") or "").strip().replace("\n", " ")
+                lines.append(f"  - {e.get('action')}: {s[:120]}")
+        lines.append("\nRecent:")
+        for e in recent_events:
+            s = (e.get("result_summary") or "").strip()
+            lines.append(f"  - [{e.get('action')}] {s[:400]}")
+        return "\n".join(lines)
 
     def _run_agentic_loop(
         self,

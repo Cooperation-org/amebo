@@ -99,9 +99,9 @@ class TestDispatchHappyPath:
         assert final["status"] == "completed"
         assert final["completed_at"] is not None
 
-        # Audit trail: created → activated → completed
+        # Audit trail: created → activated → dispatch_summary → completed
         actions = [e["action"] for e in engine.events(g["id"])]
-        assert actions == ["created", "activated", "completed"]
+        assert actions == ["created", "activated", "dispatch_summary", "completed"]
 
     def test_notification_sent_when_channel_set(self, engine, test_org_id):
         g = engine.create_goal(
@@ -215,7 +215,7 @@ class TestRecurringGoalReArms:
         assert final["completed_at"] is None
 
         actions = [e["action"] for e in engine.events(g["id"])]
-        assert actions == ["created", "activated", "rearmed"]
+        assert actions == ["created", "activated", "dispatch_summary", "rearmed"]
 
     def test_cron_goal_can_dispatch_again_after_rearm(self, engine, test_org_id):
         # Proves recurrence: a re-armed goal is runnable again, not stuck.
@@ -231,7 +231,8 @@ class TestRecurringGoalReArms:
         assert engine.get(g["id"])["status"] == "pending"
         actions = [e["action"] for e in engine.events(g["id"])]
         assert actions == [
-            "created", "activated", "rearmed", "activated", "rearmed",
+            "created", "activated", "dispatch_summary", "rearmed",
+            "activated", "dispatch_summary", "rearmed",
         ]
 
     def test_one_shot_goals_still_complete_terminally(self, engine, test_org_id):
