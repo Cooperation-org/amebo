@@ -203,7 +203,7 @@ class QAService:
         if thread_ref and self.client:
             return self._generate_with_thread_context(
                 question, thread_ref, source_type, author_info,
-                instance_slug=instance_slug
+                instance_slug=instance_slug, allow_tools=allow_tools
             )
 
         # --- Legacy RAG path: slash commands (/ask, /askall) without thread context ---
@@ -729,7 +729,8 @@ Answer the question based on this context. Be comprehensive and include all rele
         thread_ref: str,
         source_type: str = "slack",
         author_info: Optional[str] = None,
-        instance_slug: Optional[str] = None
+        instance_slug: Optional[str] = None,
+        allow_tools: bool = True,
     ) -> Dict:
         """
         Agentic answer generation — mirrors the Claude Code pattern.
