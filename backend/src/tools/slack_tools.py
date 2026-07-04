@@ -46,6 +46,19 @@ def slack_post_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
     text = tool_input.get("text") or ""
     thread_ts = tool_input.get("thread_ts")
     mention_user_id: Optional[str] = tool_input.get("mention_user_id") or None
+    # WP13 attribution (I7): a caller can pass mention_person_id (a platform_users
+    # id) instead of a raw Slack id; resolve it to the person's Slack handle via
+    # member_tool_accounts, scoped to the acting org.
+    if not mention_user_id and tool_input.get("mention_person_id"):
+        oc = context.get("org_context") if isinstance(context, dict) else None
+        org_id = getattr(oc, "org_id", None) or (context.get("org_id") if isinstance(context, dict) else None)
+        if org_id:
+            try:
+                from src.db.repositories.member_tool_account_repo import MemberToolAccountRepo
+                mention_user_id = MemberToolAccountRepo().slack_mention(
+                    org_id, tool_input["mention_person_id"])
+            except Exception:
+                logger.exception("mention_person_id resolution failed")
 
     # Per-goal guardrail context decides whether @-mention is required.
     # Defaults to True since most "ping someone" use cases need it.
