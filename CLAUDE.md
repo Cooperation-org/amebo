@@ -21,19 +21,14 @@ Standing rules (details in the architecture doc): amebo is a **participant, not 
 
 ## What Amebo Is
 
-Amebo is a **knowledge cooperation tool** — not a chatbot, not an engineering tool. It helps teams, nonprofits, organizers, activists, and small businesses leverage their collective knowledge to grow and collaborate effectively.
-
-The core purpose: **make a team's scattered knowledge (conversations, contacts, documents, meeting notes, relationships) accessible and actionable through natural questions, with efficient context management that scales.**
-
-Target users: nonprofit teams, community organizers, activists, small businesses who need a growth engine for their network and relationships — not just a Q&A bot over Slack history.
+A **knowledge-cooperation agent** for teams, nonprofits, organizers, and small businesses: it makes the team's scattered knowledge (conversations, contacts, docs, relationships) actionable, and pursues the team's goals as a gated, accountable participant in their existing spaces.
 
 ### Design Principles
 
-1. **Source-agnostic** — Slack today, but also email, web, CLI shell, API. The conversation manager doesn't know or care where messages come from.
-2. **Instance-configurable** — Each deployment has its own identity prompt, skills, tools, and knowledge sources. A WhatsCookin instance has CRM access; a nonprofit deployment does not.
-3. **Efficient context** — Modeled after Claude Code: full thread history with prompt caching (stable prefix cached, only new turn is fresh tokens), compaction when threads get long, 24h TTL garbage collection on stale threads.
-4. **Knowledge layered, not monolithic** — Vector search (pgvector) for fuzzy recall, structured bindings (abra) for typed relationships, hot tags for priority, skills for question-type behavior. Each layer adds context without requiring the others.
-5. **Tools are per-instance permissions** — An instance's `config.allowed_tools` controls what CLI tools (odoo-cli, abra, mcp-taiga) it can invoke. Never hardcode tool access.
+1. **Source-agnostic I/O** — Slack, email, web, API are *configured* channels; the conversation core never knows which one (I11). Prefer configuration over baked-in channel behavior.
+2. **Instance-configurable** — identity prompt, skills, knowledge sources, and `config.allowed_tools` per deployment. Never hardcode tool access.
+3. **Efficient context** — thread history with prompt caching, compaction past ~80K tokens, 24h GC on stale threads.
+4. **Knowledge layered, not monolithic** — pgvector fuzzy recall + abra bindings + hot tags + skills; each layer adds context without requiring the others.
 
 ### Architecture Summary
 
@@ -74,9 +69,6 @@ Org (short for Organization) is amebo's top-level grouping. It is **not** Slack-
 
 These are semantic concepts amebo can interpret. **Apps calling amebo are clients, not part of amebo's core.** Amebo knows about Vision/Values/Goals as concepts. It does not know about Changemaker, LinkedIn, or any specific app. App-specific behavior goes into per-instance configuration, not into core code.
 
-### Channels are General I/O
-Slack, email, Twitter/X, Discord are general-purpose channels. They are configured, not hardcoded. If a channel is widely used, it may warrant code-level support, but prefer configuration over baked-in behavior.
-
 ### Git Repo Per Org
 Each org has one primary Git repo (created on their behalf if they don't have one) holding their context map and org-specific resources. Onboarding: connect existing or create new (in a dedicated GitHub org, private). Credential management: use modern auth (GitHub App or fine-grained tokens), never store passwords.
 
@@ -104,8 +96,8 @@ An instance is a deployment/persona; it can serve N orgs (`instance_orgs` join, 
 ```bash
 cd backend && source venv/bin/activate
 
-# Run (port 8001 for rearchitect test instance)
-API_PORT=8001 python -m src.main
+# Run locally (pick a free port; the live primary owns 8000)
+API_PORT=8010 python -m src.main
 
 # Tests
 pytest
@@ -146,17 +138,19 @@ USE_EVENT_SUBSCRIPTIONS — 'true' for HTTP webhooks instead of Socket Mode
 - `mcp-taiga` — task management — available to WhatsCookin instance
 - `abra` — knowledge base search — available to all instances (scoped by org)
 
-## Backend Structure (`backend/src/`)
+## File map (`backend/src/`) — check here BEFORE searching the codebase
 
 **Routes → Services → Repositories → Database**
 
-- `api/routes/` — REST endpoints: `auth`, `qa`, `documents`, `workspaces`, `bindings`, `team`, `organizations`, `slack_oauth`, `admin`
-- `services/conversation_manager.py` — **THE KERNEL**: thread context, caching, compaction
-- `services/qa_service.py` — RAG pipeline: vector search + knowledge base + bindings → Claude
-- `services/binding_service.py` — structured knowledge enrichment
-- `services/ingestion_service.py` — source-agnostic content storage
-- `db/pgvector_client.py` — vector storage/search (replaces chromadb)
-- `db/abra_connection.py` — read-only connection to abra's knowledge
-- `db/repositories/` — thread_repo, instance_repo, binding_repo, message_repo, etc.
-- `prompts/identity.md` — default identity prompt
-- `prompts/skills/*.md` — skill definitions with YAML frontmatter + triggers
+- **Entry & loop**: `main.py` (unified backend: API + Slack listener + schedulers) · `services/conversation_manager.py` (thread context/caching/compaction kernel) · `services/qa_service.py` (agentic loop + skill loading; used by live chat AND goal dispatch)
+- **Multi-org tenancy** (2026-07, arch §2–4): `services/org_context.py` (OrgContext/Venue) · `services/org_resolution.py` (§4.2 resolver + recognition) · `db/repositories/`: `org_member_repo`, `person_identity_repo`, `org_routing_repo`, `org_repo`, `instance_repo`
+- **Goals & claws**: `services/goal_dispatcher.py` · `goal_scheduler.py` · concrete claws `services/*_claw.py` · `services/action_executors.py` (approve → execute registry)
+- **Gates** (every write/outbound goes through these): `services/draft_approval_service.py` · `services/human_output_gate.py` · `services/goal_guardrails.py`
+- **Tools**: `tools/registry.py` (registration + the executor — the OrgContext/authorization choke point) · `tools/cli_read_tools.py` (reads, incl. `load_skill`) · `tools/gated_actuators.py` (writes)
+- **Channels**: `channels/` (contract + slack/web adapters) · `services/slack_commands.py` (inbound events) · `collector/` (Slack ingestion)
+- **Credentials**: `credentials/resolver.py` — the ONLY path to secrets (per-org, encrypted)
+- **DB**: `migrations/*.sql` (numbered, reversible; 020–021 = multi-org) · `db/pgvector_client.py` · `db/abra_connection.py` (read-only abra)
+- **Prompts**: `prompts/identity.md` · `prompts/skills/*.md`
+- **API routes**: `api/routes/` — qa, goals, pending_actions, slack_oauth, organizations, admin, …
+
+Optional shortcut when abra is available: `abra search "<concept>" --scope amebo` surfaces key concepts with file pointers (category `amebo/concepts`). The repo is the authority — abra may be absent in some environments.
