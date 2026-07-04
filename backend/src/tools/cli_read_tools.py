@@ -421,7 +421,7 @@ def abra_search_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str
     if mode not in ("search", "about"):
         return "Error: mode must be 'search' or 'about'."
     # abra search "<query>"  /  abra about <name>  (per CLAUDE.md + next-steps.md)
-    return run_cli(["abra", mode, query])
+    return run_cli(["abra", mode, query], env=_conn_env(context, "knowledge"))
 
 
 ABRA_SEARCH_SCHEMA = {
@@ -454,7 +454,7 @@ def taiga_list_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
     project = _require(tool_input, "project")
     if project is None:
         return "Error: project is required (a Taiga project slug/name)."
-    return run_cli(["mcp-taiga", "list", project])
+    return run_cli(["mcp-taiga", "list", project], env=_conn_env(context, "tasks"))
 
 
 TAIGA_LIST_SCHEMA = {
