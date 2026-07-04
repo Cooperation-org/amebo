@@ -34,10 +34,34 @@ class SlackPostError(RuntimeError):
     """Raised when Slack returns an error or the API call fails."""
 
 
-def _bot_token() -> str:
+def _workspace_from_context(context) -> Optional[str]:
+    if not isinstance(context, dict):
+        return None
+    oc = context.get("org_context")
+    venue = getattr(oc, "venue", None)
+    if venue is not None and getattr(venue, "workspace_ref", None):
+        return venue.workspace_ref
+    return context.get("workspace_id")
+
+
+def _bot_token(context=None) -> str:
+    """The Slack bot token for the acting workspace (WP4): resolved from the
+    per-workspace credential store (set at install), falling back to the env
+    SLACK_BOT_TOKEN for the legacy single-workspace deployment until cutover."""
+    ws = _workspace_from_context(context)
+    if ws and not ws.startswith("web-"):
+        try:
+            from src.services.credential_service import CredentialService
+            creds = CredentialService().get_credentials(ws)
+            if creds and creds.get("bot_token"):
+                return creds["bot_token"]
+        except Exception:
+            logger.exception("per-workspace slack token lookup failed for %s", ws)
     token = os.getenv("SLACK_BOT_TOKEN")
     if not token:
-        raise SlackPostError("SLACK_BOT_TOKEN is not configured.")
+        raise SlackPostError(
+            "no Slack bot token (no stored credential for this workspace and "
+            "SLACK_BOT_TOKEN is unset).")
     return token
 
 
@@ -88,7 +112,7 @@ def slack_post_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
             body = f"<@{mention_user_id}> {body}"
 
     try:
-        token = _bot_token()
+        token = _bot_token(context)
     except SlackPostError as exc:
         return f"Error: {exc}"
 
