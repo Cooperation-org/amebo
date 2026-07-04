@@ -49,8 +49,10 @@ class InvalidTransitionError(RuntimeError):
 # the event log lives alongside.
 _TRANSITIONS = {
     "pending":   {"active": "activated", "paused": "paused"},
-    "active":    {"completed": "completed", "failed": "failed", "paused": "paused", "pending": "rearmed"},
+    "active":    {"completed": "completed", "failed": "failed", "paused": "paused",
+                  "pending": "rearmed", "waiting_user": "question_asked"},
     "paused":    {"active": "resumed", "pending": "reset"},
+    "waiting_user": {"pending": "user_answered", "failed": "failed", "paused": "paused"},
     "completed": {},  # terminal
     "failed":    {},  # terminal
 }
@@ -254,6 +256,55 @@ class GoalEngine:
             to_status="active",
             actor_type="user",
             actor_user_id=actor_user_id,
+            require_existing=True,
+        )
+        assert result is not None
+        return result
+
+    def await_user(
+        self,
+        goal_id: str,
+        question: str,
+        thread_ref: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Pause an active goal to ask a human (WP12). active -> waiting_user,
+        recording the question (action 'question_asked') + the thread to watch
+        for the reply. The scheduler skips waiting_user goals."""
+        result = self._transition(
+            goal_id,
+            to_status="waiting_user",
+            actor_type="claw",
+            summary=question,
+            metadata={"thread_ref": thread_ref} if thread_ref else None,
+            require_existing=True,
+        )
+        assert result is not None
+        return result
+
+    def answer(
+        self,
+        goal_id: str,
+        answer: str,
+        thread_ref: Optional[str] = None,
+        actor_user_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Record a human's reply to a waiting goal (WP12). waiting_user ->
+        pending (action 'user_answered'); carryover (WP11) delivers the answer to
+        the next dispatch."""
+        goal = self._repo.get(goal_id)
+        if goal is None:
+            raise GoalNotFoundError(goal_id)
+        if goal["status"] != "waiting_user":
+            raise InvalidTransitionError(
+                f"answer requires waiting_user state; goal {goal_id} is {goal['status']!r}"
+            )
+        result = self._transition(
+            goal_id,
+            to_status="pending",
+            actor_type="user",
+            actor_user_id=actor_user_id,
+            summary=answer,
+            metadata={"thread_ref": thread_ref} if thread_ref else None,
             require_existing=True,
         )
         assert result is not None

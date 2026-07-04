@@ -236,6 +236,19 @@ class GoalDispatcher:
                 goal, f"⚠ Goal FAILED: {goal['title']}\n{str(exc)[:300]}")
             return DispatchResult(goal_id=goal_id, status="failed", error=str(exc))
 
+        # If the pursuit paused to ask a human (WP12), don't complete — post the
+        # question and leave the goal waiting_user for the reply. The scheduler
+        # skips waiting_user; a reply re-arms it to pending (engine.answer).
+        if self._engine.get(goal_id).get("status") == "waiting_user":
+            question = self._latest_question(goal_id)
+            self._notify_alert(
+                goal, f"❓ {goal['title']}: {question}" if question
+                else f"❓ {goal['title']} — I need your input to continue.")
+            return DispatchResult(
+                goal_id=goal_id, status="waiting_user", summary=question,
+                tool_rounds=len(tool_calls), tool_calls=tool_calls,
+            )
+
         # Finish the cycle, then notify. Recurring (cron) goals re-arm to
         # pending so the scheduler runs them again on the next cron edge;
         # one-shot goals complete terminally.
@@ -832,6 +845,17 @@ class GoalDispatcher:
             except (ValueError, TypeError):
                 cfg = {}
         return cfg.get("goal_budget") or {}
+
+    def _latest_question(self, goal_id: str) -> Optional[str]:
+        """The most recent unanswered question text (WP12)."""
+        try:
+            events = self._goal_repo.list_events(goal_id)
+        except Exception:
+            return None
+        for e in reversed(events or []):
+            if e.get("action") == "question_asked":
+                return e.get("result_summary")
+        return None
 
     def _dispatch_count(self, goal_id: str) -> int:
         try:

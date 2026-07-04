@@ -822,6 +822,21 @@ register_tool(Tool(
     category="skills",
 ))
 
+from src.tools.goal_tools import ask_user_impl, ASK_USER_SCHEMA  # noqa: E402
+
+register_tool(Tool(
+    name="ask_user",
+    description=(
+        "While pursuing a GOAL, pause and ask the human ONE short question, then "
+        "stop. The goal resumes automatically when they reply. Use when you hit a "
+        "decision only a person can make — don't guess."
+    ),
+    input_schema=ASK_USER_SCHEMA,
+    execute=ask_user_impl,
+    is_read_only=True,
+    category="goals",
+))
+
 register_tool(Tool(
     name="list_skills",
     description=(

@@ -26,7 +26,7 @@ from src.db.connection import DatabaseConnection
 logger = logging.getLogger(__name__)
 
 
-VALID_STATUSES = {"pending", "active", "completed", "failed", "paused"}
+VALID_STATUSES = {"pending", "active", "completed", "failed", "paused", "waiting_user"}
 VALID_ACTOR_TYPES = {"user", "claw", "system"}
 
 
