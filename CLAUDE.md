@@ -59,7 +59,7 @@ ConversationManager — builds Claude API calls with:
 | Binding | abra DB `bindings` | Typed relationship (name → target) |
 | Content | abra DB `content` | Searchable knowledge (project docs, notes) |
 | Hot Tag | abra DB `hot_tags` | Priority flag on a name |
-| Skill | `backend/prompts/skills/*.md` → moving to repo-root `skills/` (+ `patterns/`) per arch §7 | Question-type-specific behavior; org overlays live in each org's context repo |
+| Skill | `backend/prompts/skills/*.md` today (move to repo-root `skills/` + `patterns/` is PLANNED per arch §7, **not yet done** — check the board) | Question-type-specific behavior; org overlays live in each org's context repo |
 
 ## Architecture Principles
 

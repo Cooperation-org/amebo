@@ -11,8 +11,9 @@ Operative rules (these SUPERSEDE any older rules further down):
   No feature branches, no branch switching, commit + push as you go, never a dirty tree, never `git stash`.
 - Governing architecture (invariants I1–I11, all decisions): `/opt/shared/projects/plans/amebo/7-4-2026-amebo-architecture.md`.
 - All outbound/writes gated; core code semantic (vendor names only in leaves); never AskUserQuestion — talk here.
-- Progress so far: WP1 (mig 020 multi-org schema) + WP2 (OrgContext, §4.2 resolver, recognition, trust/executor
-  gate, mig 021) DONE on main. Fable session watches this board and answers.
+- Progress: **WP1 DONE, WP2 DONE** (mig 020+021, OrgContext, §4.2 resolver, recognition, trust/executor gate) on
+  main; Fable's two resolver review notes being addressed. **NEXT: WP3** (ConnectionResolver/org.yaml manifest)
+  per the WP plan. Update this line when a WP starts/finishes. Fable session watches this board and answers.
 - Deploy/restart of amebo services = fine; anything else on this shared VM = don't touch.
 - **Not only code**: amebo exists to achieve goals — talking to people, content, marketing. The right
   contribution is often a skill/pattern/prompt/doc, not Python. Don't default to writing code.
