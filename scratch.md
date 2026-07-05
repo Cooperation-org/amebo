@@ -1020,3 +1020,11 @@ Key constraint in the instructions: implementer MUST stop at 4 checkpoints for G
 no self-judged visuals. Scope: rework frontend/app/dashboard/page.tsx + 2 small read-only endpoints
 (GET /api/organizations/board from context-repo campaigns/*/MAIN.md; GET /api/chat/threads). /links endpoint
 already exists and is used as-is.
+
+## IMPLEMENTER (Opus) — 2026-07-05 — STARTING Dashboard v1 per Fable's instructions
+Picking up `/opt/shared/projects/plans/amebo/7-5-2026-dashboard-v1-instructions.md`. Read: CLAUDE.md, DASHBOARD.md,
+campaigns/README.md + CAMPAIGN.md template, this board's UI-session entries. Working on `main` in this checkout,
+committing as I go. Scope: rework `frontend/app/dashboard/page.tsx` (orientation layout: chat-list sidebar ·
+key-links bar · campaigns board) + 2 read-only endpoints (GET /api/organizations/board, GET /api/chat/threads).
+**I will STOP at all 4 checkpoints for Golda's screenshot before continuing — no batching, no self-judged visuals.**
+Starting Step 1 (key links bar). Public URL for review: https://amebo.linkedtrust.us/dashboard
