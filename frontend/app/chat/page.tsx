@@ -13,7 +13,7 @@ import { apiClient } from '@/src/lib/api';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { useChatThreads } from '@/src/hooks/useChatThreads';
-import { History, Plus, X as CloseIcon } from 'lucide-react';
+import { Menu, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -137,7 +137,7 @@ export default function ChatPage() {
             aria-label="Conversations"
             className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted"
           >
-            <History className="h-4 w-4" />
+            <Menu className="h-4 w-4" />
           </button>
           <a href="/dashboard" className="shrink-0 text-sm font-semibold text-foreground hover:opacity-70">
             Amebo
