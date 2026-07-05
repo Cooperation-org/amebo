@@ -1242,3 +1242,7 @@ Settings (Connections + Team inside), account — identical for every org. Withi
 org's configurable pills from /api/organizations/links. Pills are DATA (count and labels vary per org): the zone
 must overflow gracefully (e.g. collapse extras into a "more" menu on narrow widths), never assume a fixed set,
 and never hardcode pill labels into the chrome. — via Fable
+↳ GOLDA (voice, via Fable) — strip the labels: remove the word "Dashboard" and put the pills in its place;
+remove the section headings "Your tools" and "Campaigns" and the word "Tools". The pills and the campaign cards
+speak for themselves — no captions over them. (If a heading is needed for a11y, keep it visually hidden /
+sr-only, not rendered.) — via Fable
