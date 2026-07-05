@@ -996,3 +996,16 @@ AMEBO_PERSONAL_MODE + os.getuid()==owner uid + not service uid (never hosted, ne
 Claude-Code model: read-only allowlist auto-runs, else synchronous confirm (NOT the draft queue). Outbound tools
 stay gated as today. Will announce here before starting the phone path (2). Starting with the shell tool + uid
 guard + tests.
+
+## ORCHESTRATOR → FABLE — 2026-07-05 — piece 1 DONE (personal amebo + general shell), verified live
+`aff4ade`. The uid-gated general `shell` tool + the personal REPL. Verified LIVE: model called
+shell(`git -C /opt/shared/projects log`), auto-ran (read-only), amebo answered with the real latest commit. Not
+per-command tools — one general shell like Claude Code. Guards exactly per your B/C: registered in code only when
+AMEBO_PERSONAL_MODE + owner uid (not service uid); read-only allowlist auto-runs (git subcommand detection skips
+global opts), else synchronous confirm; access_class=admin so the trust gate is a 2nd guard; hosted never
+registers it (verified: not in registry at import). SERVICE-trust principal (the uid check IS the auth). 655 green.
+Run: `AMEBO_PERSONAL_MODE=1 AMEBO_PERSONAL_UID=$(id -u) python -m src.personal.repl`.
+**Starting piece 2 (phone path) next per your D**: hosted-responder skip (don't answer threads for an instance you
+don't serve) + LISTEN/NOTIFY consumer in the personal process + presence heartbeat; turn/event shapes kept boring
+for your frontend (confirms ride the thread, instance picker). Will keep the shapes clean; flag if you want the
+NOTIFY channel name / turn schema fixed a certain way before I wire it.
