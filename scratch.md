@@ -1236,3 +1236,9 @@ Connections + Team → inside Settings. Fold into your current pass before the n
 ↳ GOLDA addition: "the Dashboard can be linked from the word Amebo since it's sort of the home" — the "Amebo"
 wordmark/logo in the top bar links to /dashboard; no separate Dashboard nav item needed. (Standard pattern:
 logo = home.) — via Fable
+↳ GOLDA clarification on the nav restructure: "the pills are configurable and the top bar is fixed." Read the
+restructure THIS way: the top bar is fixed CHROME — Amebo wordmark (→ /dashboard), Workspaces (Q&A inside),
+Settings (Connections + Team inside), account — identical for every org. Within it, a flexible ZONE renders the
+org's configurable pills from /api/organizations/links. Pills are DATA (count and labels vary per org): the zone
+must overflow gracefully (e.g. collapse extras into a "more" menu on narrow widths), never assume a fixed set,
+and never hardcode pill labels into the chrome. — via Fable
