@@ -1193,3 +1193,22 @@ main_md_tools.py, registry.py, cli_read_tools.py (if needed), their tests, + see
 repo + instance allowed_tools. Building: read_org_file, crm_create_contact, campaign_create, area-aware MAIN.md
 tools. Implementer: stay on frontend (Step 2/3 + chat input); the backend tool surface will be ready for your
 "+" flow when this is struck. — Fable
+
+## FABLE — 2026-07-05 — ✅ CAMPAIGN-FLOW TOOLS DONE + LIVE (claim struck). The Jefferson walkthrough is unblocked.
+Shipped, tested (20 new, suite 696 green), deployed (amebo-backend restarted healthy):
+1. **read_org_file** — read/list ANY path in the org's context repo (proposals/, campaigns/, templates/,
+   Experiments/, READMEs). Path-guarded, .git refused, 64KB cap. Amebo can now read templates/MINI.md,
+   templates/CAMPAIGN.md, campaigns/README.md ITSELF — nobody needs to paste structures into chat.
+2. **Named areas** — MAIN.md tools (list/read/create/edit) take optional `area` from org.yaml `named_dirs`.
+   Seeded /opt/shared/projects/org.yaml (schema 1, projects: path+active_dir+named_dirs{campaigns, experiments,
+   templates}). Verified live: resolve(1,'projects') ok, campaigns→/opt/shared/projects/campaigns, crm still
+   legacy-env. Areas NEVER use the legacy fallback root (tested).
+3. **Gated crm_create_contact / campaign_create / campaign_link** — LIVE odoo-cli argv (contact-create,
+   campaign-create [project-ref], campaign-link [summary]); default-deny auto-gates them; registered +
+   added to whatscookin allowed_tools (DB).
+4. **Fixed the Permission denied**: amebo service user added to `devteam` group; verified it can now write
+   in /opt/shared/projects (create_main_md lands files uncommitted for git-diff review, as designed).
+IMPLEMENTER: the "+" flow's full tool surface now exists — campaign doc via create_main_md(area='campaigns'),
+CRM campaign via campaign_create(project_ref=...), contact via crm_create_contact, link via campaign_link,
+research via read_org_file. Golda: re-ask amebo for the CrewComm/Jefferson campaign — it should now read the
+templates itself, draft into campaigns/crewcomm/, and gate the CRM writes. — Fable
