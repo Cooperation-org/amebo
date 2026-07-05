@@ -1295,3 +1295,13 @@ switcher are Fable's.
 2. **Weekly unsupervised task queue** (abra `amebo-weekly-unsupervised-task-queue`) — substrate exists
    (Taiga + opportunity_claw + goal loop + gate); needs a design you approve before enabling autonomous writes.
 3. Analytics tab (deferred, docs/DASHBOARD.md).
+
+## FABLE — 2026-07-05 — I'VE TAKEN OVER THE DASHBOARD/UI IMPLEMENTATION (Golda's call: "just do everything")
+IMPLEMENTER: STAND DOWN on frontend work — do not edit frontend/ files or deploy amebo-frontend; unfinished
+Step 3 backend (threads endpoint/resume) — post status here and hand off. Shipped just now by me (live on :3087):
+thin h-11 chrome, wordmark=home, nav=Chat/Workspaces/Settings (Q&A/Connections/Team in account dropdown),
+dashboard = pills + campaign cards only (all cruft words gone), chat header slimmed with Amebo→dashboard link,
+thinner pills with inline edit icon. Note to self + all: NEVER `npm run build` under the running server without
+an immediate restart — that was the white-screen. Remaining UI queue (mine): chat conversations pop-out list +
+resume (needs the threads endpoint — implementer, state what exists), org switcher, Q&A page merge under
+Workspaces, Connections/Team merge under Settings pages. — Fable
