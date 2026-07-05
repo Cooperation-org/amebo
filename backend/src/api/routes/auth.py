@@ -925,9 +925,30 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
                 )
                 conn.commit()
 
+            # Recognition (arch §3, WP2/WP10): record this OIDC identity -> person
+            # so the chat + goal runtime recognize who is talking on every login.
+            try:
+                from src.db.repositories.person_identity_repo import PersonIdentityRepo
+                PersonIdentityRepo().link(
+                    user["user_id"], "oidc", ident.sub,
+                    context_ref=getattr(cfg, "issuer", ""), verified=True)
+            except Exception:
+                logger.exception("OIDC: person_identity write failed (sub=%s)", ident.sub)
+
+            # Admin allowlist ("hardcode to me", arch §4.3): an allowlisted OIDC
+            # sub is an admin — the powerful/personal experience in the chat.
+            role = user["role"]
+            admin_subs = {s.strip() for s in os.getenv("AMEBO_ADMIN_OIDC_SUBS", "").split(",") if s.strip()}
+            if ident.sub in admin_subs and role != "admin":
+                cur.execute("UPDATE platform_users SET role = 'admin' WHERE user_id = %s",
+                            (user["user_id"],))
+                conn.commit()
+                role = "admin"
+                logger.info("OIDC: sub %s is an allowlisted admin", ident.sub)
+
             access_token = create_access_token({
                 "user_id": user["user_id"], "org_id": user["org_id"],
-                "email": user["email"], "role": user["role"],
+                "email": user["email"], "role": role,
             })
             refresh_token = create_refresh_token({"user_id": user["user_id"]})
     except Exception as exc:
