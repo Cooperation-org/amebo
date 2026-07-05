@@ -17,19 +17,43 @@ const sessionKey = (instance: string) => `amebo-chat-session:${instance}`;
  * reload continues the same conversation. The transcript itself is client state
  * (the server owns the durable thread).
  */
-export function useChat(instanceSlug: string) {
+export function useChat(instanceSlug: string, resumeSessionId?: string) {
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sessionId = useRef<string | undefined>(undefined);
 
-  // Restore the per-instance session id when the instance changes.
+  // Resume a specific conversation (from the dashboard chat list) if asked;
+  // otherwise restore the per-instance session id. Resume hydrates the past
+  // turns read-only from the server (the loop/gates are untouched).
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    sessionId.current = localStorage.getItem(sessionKey(instanceSlug)) || undefined;
-    setTurns([]);
-    setError(null);
-  }, [instanceSlug]);
+    let cancelled = false;
+
+    if (resumeSessionId) {
+      sessionId.current = resumeSessionId;
+      localStorage.setItem(sessionKey(instanceSlug), resumeSessionId);
+      setError(null);
+      setTurns([]);
+      apiClient
+        .getChatThreadTurns(resumeSessionId)
+        .then((history) => {
+          if (cancelled) return;
+          setTurns(history.map((h) => ({ role: h.role, text: h.text })));
+        })
+        .catch(() => {
+          // couldn't load history — start clean on this session, no hard error
+        });
+    } else {
+      sessionId.current = localStorage.getItem(sessionKey(instanceSlug)) || undefined;
+      setTurns([]);
+      setError(null);
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [instanceSlug, resumeSessionId]);
 
   const send = useCallback(
     async (message: string): Promise<string | null> => {

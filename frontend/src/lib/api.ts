@@ -404,6 +404,15 @@ class ApiClient {
   async getOrgBoard(): Promise<OrgBoard> {
     return this.request('/api/organizations/board');
   }
+
+  // The user's own web conversations (for the dashboard chat list)
+  async getChatThreads(): Promise<ChatThreadSummary[]> {
+    return this.request('/api/chat/threads');
+  }
+
+  async getChatThreadTurns(sessionId: string): Promise<ChatTurnOut[]> {
+    return this.request(`/api/chat/threads/${encodeURIComponent(sessionId)}/turns`);
+  }
 }
 
 export interface OrgLink {
@@ -428,6 +437,18 @@ export interface BoardItem {
 export interface OrgBoard {
   kind?: string;
   items: BoardItem[];
+}
+
+export interface ChatThreadSummary {
+  session_id: string;
+  title: string | null;
+  snippet: string;
+  updated_at: string | null;
+}
+
+export interface ChatTurnOut {
+  role: 'user' | 'assistant';
+  text: string;
 }
 
 export interface ChatMessageResponse {

@@ -179,6 +179,77 @@ class ThreadRepo:
         finally:
             DatabaseConnection.return_connection(conn)
 
+    def stamp_web_thread_user(self, source_ref: str, workspace_id: Optional[str], user_id: int):
+        """Record the owner on a web thread (once). Lets the dashboard list a user
+        their OWN conversations. Only sets it when unset — never reassigns."""
+        if not user_id or not source_ref:
+            return
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE threads SET user_id = %s
+                    WHERE source_type = 'web' AND source_ref = %s
+                      AND workspace_id IS NOT DISTINCT FROM %s
+                      AND user_id IS NULL
+                    """,
+                    (user_id, source_ref, workspace_id),
+                )
+                conn.commit()
+        finally:
+            DatabaseConnection.return_connection(conn)
+
+    def web_threads_for_user(self, user_id: int, limit: int = 30) -> List[Dict]:
+        """A user's own web conversations, newest-active first, with a snippet
+        from the first user message. Read-only; scoped to the user (privacy)."""
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT t.id, t.source_ref, t.title, t.last_active_at,
+                           (SELECT tt.content FROM thread_turns tt
+                            WHERE tt.thread_id = t.id AND tt.role = 'user'
+                            ORDER BY tt.id ASC LIMIT 1) AS first_user_msg
+                    FROM threads t
+                    WHERE t.user_id = %s AND t.source_type = 'web'
+                    ORDER BY t.last_active_at DESC NULLS LAST
+                    LIMIT %s
+                    """,
+                    (user_id, limit),
+                )
+                return [dict(r) for r in cur.fetchall()]
+        finally:
+            DatabaseConnection.return_connection(conn)
+
+    def web_thread_turns_for_user(self, source_ref: str, user_id: int) -> Optional[List[Dict]]:
+        """Turns of a user's own web thread (for resume). Returns None if the
+        thread doesn't exist or isn't owned by this user (fail closed)."""
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT id FROM threads
+                    WHERE source_type = 'web' AND source_ref = %s AND user_id = %s
+                    """,
+                    (source_ref, user_id),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                cur.execute(
+                    """
+                    SELECT role, content, created_at FROM thread_turns
+                    WHERE thread_id = %s ORDER BY id ASC
+                    """,
+                    (row['id'],),
+                )
+                return [dict(r) for r in cur.fetchall()]
+        finally:
+            DatabaseConnection.return_connection(conn)
+
     def clear_thread(self, thread_id: int):
         """Clear all turns and summary for a thread (the 'refresh' button)."""
         conn = DatabaseConnection.get_connection()

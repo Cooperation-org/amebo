@@ -15,11 +15,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from typing import Any, Dict, Optional
 
+import re
+
 from src.services.qa_service import QAService
 from src.db.repositories.instance_repo import InstanceRepo
+from src.db.repositories.thread_repo import ThreadRepo
 from src.api.middleware.auth import get_service_client, get_current_user
 
 router = APIRouter()
+
+# Web user turns are stored with a "[{author dict}] " prefix; strip it for display.
+_AUTHOR_PREFIX_RE = re.compile(r"^\[[^\]]*\]\s*")
+
+
+def _clean_turn_text(content: str) -> str:
+    return _AUTHOR_PREFIX_RE.sub("", content or "").strip()
 
 # Public (unauthenticated) chat guards — see /api/chat/public.
 PUBLIC_CHAT_MAX_MESSAGE_LEN = 4000
@@ -112,12 +122,65 @@ async def chat_message(req: ChatRequest, current_user: dict = Depends(get_curren
         instance_slug=instance['slug']
     )
 
+    # Record the owner on the web thread (once) so the dashboard can list this
+    # user their own conversations. Best-effort — never fail the reply on it.
+    try:
+        ThreadRepo().stamp_web_thread_user(session_id, workspace_id, current_user.get('user_id'))
+    except Exception:
+        logger.warning("could not stamp web thread owner", exc_info=True)
+
     return ChatResponse(
         reply=result.get('answer', 'Sorry, I could not generate a response.'),
         session_id=session_id,
         confidence=result.get('confidence', 50),
         tool_rounds=result.get('context_used', 0)
     )
+
+
+class ChatThreadSummary(BaseModel):
+    session_id: str
+    title: Optional[str] = None
+    snippet: str = ""
+    updated_at: Optional[str] = None
+
+
+class ChatTurnOut(BaseModel):
+    role: str
+    text: str
+
+
+@router.get("/threads", response_model=list[ChatThreadSummary])
+async def list_my_chat_threads(current_user: dict = Depends(get_current_user)):
+    """The authenticated user's own web conversations, newest first (read-only)."""
+    user_id = current_user.get('user_id')
+    if not user_id:
+        return []
+    rows = ThreadRepo().web_threads_for_user(user_id, limit=30)
+    out = []
+    for r in rows:
+        snippet = _clean_turn_text(r.get('first_user_msg') or '')
+        if len(snippet) > 140:
+            snippet = snippet[:140].rstrip() + '…'
+        last = r.get('last_active_at')
+        out.append(ChatThreadSummary(
+            session_id=r['source_ref'],
+            title=r.get('title'),
+            snippet=snippet,
+            updated_at=last.isoformat() if last else None,
+        ))
+    return out
+
+
+@router.get("/threads/{session_id}/turns", response_model=list[ChatTurnOut])
+async def get_my_chat_thread_turns(session_id: str, current_user: dict = Depends(get_current_user)):
+    """Turns of one of the user's OWN web threads, for resume. 404 if not theirs."""
+    user_id = current_user.get('user_id')
+    if not user_id:
+        raise HTTPException(status_code=404, detail="Not found")
+    turns = ThreadRepo().web_thread_turns_for_user(session_id, user_id)
+    if turns is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return [ChatTurnOut(role=t['role'], text=_clean_turn_text(t['content'])) for t in turns]
 
 
 class PublicChatRequest(BaseModel):

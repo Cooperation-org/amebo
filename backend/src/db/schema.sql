@@ -664,6 +664,7 @@ CREATE TABLE IF NOT EXISTS threads (
     source_type VARCHAR(50) NOT NULL,  -- 'slack', 'email', 'web', 'api'
     source_ref VARCHAR(255) NOT NULL,  -- slack thread_ts, email thread_id, session_id
     workspace_id VARCHAR(20),          -- for Slack; NULL for other sources
+    user_id INT REFERENCES platform_users(user_id) ON DELETE SET NULL,  -- owner (web chats), NULL otherwise
     title VARCHAR(500),
     summary TEXT,                       -- compacted summary of older turns
     summary_through_turn_id INT,       -- last turn included in summary

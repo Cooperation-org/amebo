@@ -31,8 +31,9 @@ export default function ChatPage() {
   const [instanceName, setInstanceName] = useState<string>('Amebo');
   const [input, setInput] = useState('');
   const [speakReplies, setSpeakReplies] = useState(false);
+  const [resumeSession, setResumeSession] = useState<string | undefined>(undefined);
 
-  const { turns, send, sending, error, reset } = useChat(instance);
+  const { turns, send, sending, error, reset } = useChat(instance, resumeSession);
   const bottomRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const { user, logout } = useAuthStore();
@@ -45,8 +46,12 @@ export default function ChatPage() {
   // Read ?instance= once on mount (avoids useSearchParams' Suspense requirement).
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const q = new URLSearchParams(window.location.search).get('instance');
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get('instance');
     if (q) setInstance(q);
+    // ?session=<id> resumes a conversation picked from the dashboard chat list.
+    const s = params.get('session');
+    if (s) setResumeSession(s);
     // Voice replies are OFF by default every load — amebo listens and outputs
     // text; it does not speak unless the user explicitly toggles it on.
   }, []);
