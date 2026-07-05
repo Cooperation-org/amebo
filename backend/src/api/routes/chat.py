@@ -77,10 +77,28 @@ async def chat_message(req: ChatRequest, current_user: dict = Depends(get_curren
 
     workspace_id = f"web-{instance['slug']}"
 
+    # Recognized user -> their identity + trust. An admin (the recognized owner,
+    # via the OIDC admin allowlist) gets the FULL powerful tool suite; everyone
+    # else gets the instance's configured tools. Same chat, more power when it
+    # knows it's you. (Shell is never here — it lives only in a personal process.)
+    from src.services.org_context import OrgContext, Venue
+    from src.services.trust import Principal
+    is_admin = current_user.get("role") == "admin"
+    org_context = OrgContext(
+        org_id=instance.get("org_id"), instance_id=instance["id"],
+        actor_type="user", actor_person_id=current_user.get("user_id"),
+        authority="service", venue=Venue(channel_kind="web", thread_ref=session_id),
+    ) if instance.get("org_id") is not None else None
+    principal = Principal(transport="web", person_id=current_user.get("user_id"),
+                          authenticated=True)  # SSO session -> T2
+
     # Use QA service with thread context (agentic path)
     qa_service = QAService(
         workspace_id=workspace_id,
-        org_id=instance.get('org_id')
+        org_id=instance.get('org_id'),
+        org_context=org_context,
+        principal=principal,
+        full_tools=is_admin,
     )
 
     result = qa_service.answer_question(

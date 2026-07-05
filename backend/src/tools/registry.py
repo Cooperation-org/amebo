@@ -101,6 +101,15 @@ def get_read_only_tools() -> List[Tool]:
     return [t for t in _TOOLS.values() if t.is_read_only]
 
 
+def get_all_tool_schemas(exclude_categories=("personal",)) -> List[Dict]:
+    """Every registered tool's schema — the full/powerful set offered to an
+    admin (recognized owner) in the chat. Excludes 'personal' tools (shell), which
+    only ever live in a personal process anyway. The trust gate + draft gate still
+    apply per tool; allowed_tools is only a scoping convenience (arch §4.3)."""
+    return [_tool_to_schema(t) for t in _TOOLS.values()
+            if t.category not in set(exclude_categories)]
+
+
 def get_tools_for_instance(instance: Optional[Dict] = None) -> List[Dict]:
     """
     Get tool definitions for an instance, respecting allowed_tools config.

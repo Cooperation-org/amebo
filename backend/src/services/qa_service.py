@@ -124,7 +124,7 @@ class QAService:
     """
 
     def __init__(self, workspace_id: str, org_id: Optional[int] = None,
-                 org_context=None, principal=None):
+                 org_context=None, principal=None, full_tools: bool = False):
         """
         Initialize Q&A service.
 
@@ -153,6 +153,8 @@ class QAService:
         # pre-multi-org behavior so wiring routes one at a time can't regress).
         self.org_context = org_context
         self.principal = principal
+        # Recognized owner/admin gets the full powerful tool suite in the chat.
+        self.full_tools = full_tools
         self.query_service = QueryService(workspace_id)
 
         # Binding service for structured knowledge enrichment (reads from abra DB)
@@ -743,7 +745,9 @@ Answer the question based on this context. Be comprehensive and include all rele
         Loop: call Claude with tools → if tool_use, execute and loop → stop on text.
         """
         from src.services.conversation_manager import ConversationManager, apply_cache_control
-        from src.tools.registry import get_tools_for_instance, execute_tool
+        from src.tools.registry import (
+            get_tools_for_instance, get_all_tool_schemas, execute_tool,
+        )
 
         try:
             mgr = ConversationManager(
@@ -774,7 +778,15 @@ Answer the question based on this context. Be comprehensive and include all rele
             # path) offers ZERO tools, so the model structurally cannot execute
             # anything — a read-only answer from assembled knowledge only. The
             # trust gate is a second, independent guard when a principal is set.
-            tools = get_tools_for_instance(mgr._instance) if allow_tools else []
+            if not allow_tools:
+                tools = []
+            elif getattr(self, "full_tools", False):
+                # Recognized owner/admin: the full powerful suite (shell excluded —
+                # it only lives in a personal process). Trust + draft gates still
+                # apply per tool.
+                tools = get_all_tool_schemas()
+            else:
+                tools = get_tools_for_instance(mgr._instance)
             logger.info(f"Available tools: {[t['name'] for t in tools]}")
 
             # Apply prompt caching

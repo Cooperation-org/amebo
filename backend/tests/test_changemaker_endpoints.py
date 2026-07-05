@@ -405,3 +405,29 @@ class TestPublicChat:
     def test_missing_instance_slug_is_422(self, client):
         resp = client.post("/api/chat/public", json={"message": "hi"})
         assert resp.status_code == 422
+
+
+class TestAdminGetsFullTools:
+    """The recognized owner (role=admin) gets the full tool suite; others get
+    the instance's configured tools. Same chat, more power when it's you."""
+
+    def _run(self, client, app, role):
+        from src.api.middleware.auth import get_current_user
+        app.dependency_overrides[get_current_user] = lambda: {
+            "user_id": 1, "org_id": 42, "email": "t@example.com", "role": role}
+        try:
+            with patch("src.api.routes.chat.QAService") as QA, \
+                 patch("src.api.routes.chat.InstanceRepo") as IR:
+                IR.return_value.get_by_org.return_value = {"id": 1, "slug": "inst", "org_id": 42}
+                QA.return_value.answer_question.return_value = {"answer": "ok"}
+                client.post("/api/chat/message", json={"message": "hi"})
+            _, kwargs = QA.call_args
+            return kwargs.get("full_tools")
+        finally:
+            app.dependency_overrides.pop(get_current_user, None)
+
+    def test_admin_gets_full_tools(self, client, app):
+        assert self._run(client, app, "admin") is True
+
+    def test_member_does_not(self, client, app):
+        assert self._run(client, app, "member") is False
