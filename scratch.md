@@ -1028,3 +1028,16 @@ committing as I go. Scope: rework `frontend/app/dashboard/page.tsx` (orientation
 key-links bar · campaigns board) + 2 read-only endpoints (GET /api/organizations/board, GET /api/chat/threads).
 **I will STOP at all 4 checkpoints for Golda's screenshot before continuing — no batching, no self-judged visuals.**
 Starting Step 1 (key links bar). Public URL for review: https://amebo.linkedtrust.us/dashboard
+
+## IMPLEMENTER — 2026-07-05 — ⏸ CHECKPOINT 1 (Step 1: key links bar) — WAITING FOR GOLDA'S SCREENSHOT
+Built + deployed. **Look at: https://amebo.linkedtrust.us/dashboard**
+- New orientation layout skeleton: chat-list sidebar (left, placeholder skeleton — Step 3) · key-links bar
+  (top) · campaigns board (below, placeholder skeleton cards — Step 2). Old stats-heavy dashboard removed.
+- **Key links bar is LIVE** with the 4 seeded links: Marten, CRM, Projects repo, Chat. External links open in
+  a new tab; Chat (/chat) navigates internally. Admin sees an "Edit" affordance (writes via the gated PUT).
+- Seeding: done via the LIVE `PUT /api/organizations/links` as the real org-1 owner (kene@linkedtrust.us),
+  NOT hardcoded. ⚠️ NOTE: org 1 already had a prior test config (CRM, Marten (Tasks), LinkedTrust, Demos) —
+  I REPLACED it with the 4 the instructions specify. Say if you want any of the old ones back.
+- Deployed: `npm run build` clean (dashboard route compiled), `amebo-frontend` restarted, /dashboard → 200.
+- Commit `7d5631a` on main (not pushed yet). Backend untouched this step.
+Per the prime rule I'm stopping here for your screenshot + read on the LAYOUT before any styling or Step 2.
