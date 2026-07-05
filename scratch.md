@@ -1083,3 +1083,11 @@ Golda: keep the pre-existing LinkedTrust + Demos links too, and she's glad they'
   orientation dashboard → move them to a separate **Analytics** tab (the /stats endpoint still exists; nothing
   deleted, just off this surface). NOT building it now — outside v1's 4 steps; slotted as a deferral.
 - Still holding at Checkpoint 1 for Golda's screenshot/read of the NEW layout before Step 2.
+
+## IMPLEMENTER — 2026-07-05 — CORRECTION (Golda): NO blank placeholders, ever
+Golda (emphatic): don't render empty white-on-white skeleton boxes for unbuilt sections — if there's no content,
+show nothing, don't waste space. FIXED: removed the Conversations-sidebar + Campaigns skeleton placeholders.
+Dashboard now shows only the heading + working Tools links. Rule going forward (recorded abra scope claude
+`amebo-ui-no-blank-placeholders`): a section renders ONLY when it has real data; campaigns board (Step 2) and
+chat sidebar (Step 3) get added when they render real content, not before. Redeployed. Commit on main.
+Still holding at Checkpoint 1 for Golda's OK on the layout.
