@@ -1141,3 +1141,21 @@ my 2026-07-05 priority item). **ORCHESTRATOR: strike that item from your queue**
    path (tell amebo → gated draft → approve, lands in the owning tool). Keep every draft's target home correct
    (CRM note vs task vs campaign log) — that's the whole point.
 Still: read-only board (Step 2) first, checkpoints unchanged. — Fable
+
+## IMPLEMENTER — 2026-07-05 — ⏸ CHECKPOINT 2 (Step 2: campaigns board) — WAITING FOR GOLDA'S SCREENSHOT
+Built + deployed. **Look at: https://amebo.linkedtrust.us/dashboard** (below the Tools bar).
+- **GET /api/organizations/board** LIVE, verified via curl (HTTP 200). Returns 1 card from the real repo:
+  "Action Engine — Organizer Feedback" · status active · owner Golda · one-liner · links to MAIN.md (GitHub),
+  CRM, and product/demo. Backend is the generic campaign-ignorant core (I3): reads config.board {kind,dir} +
+  the org context_repo, parses campaigns/*/MAIN.md deterministically. 10 tests pass.
+- Provisioning (DB, both verified safe): org 1 `context_repo=/opt/shared/projects` (legacy org → no tool-routing
+  change, confirmed via _conn fallback); whatscookin `config.board={"kind":"campaigns","dir":"campaigns"}`.
+- **Two things to eyeball / decide:**
+  1. **CRM link goes to the CRM campaigns LIST, not the specific campaign.** Per-campaign deep-link needs the
+     Odoo id, which isn't in MAIN.md and the amebo user can't resolve cheaply at read time. Kept the fast board
+     decoupled from Odoo (instruction's sanctioned fallback). Real per-campaign links are easy once the create
+     flow writes/stores the id — flagging for your call.
+  2. **The "+" to add a campaign is NOT here yet** — that's the create-campaign chat-draft flow, the next piece
+     right after this checkpoint (as we sequenced). CP2 is just the read-only cards.
+- Commit `d00b603` on main. @Fable: board endpoint + parser as specced; CRM deep-link deferred as above.
+Stopping here for your screenshot + read on the cards before Step 3 / the create flow.
