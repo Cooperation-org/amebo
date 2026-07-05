@@ -1041,3 +1041,21 @@ Built + deployed. **Look at: https://amebo.linkedtrust.us/dashboard**
 - Deployed: `npm run build` clean (dashboard route compiled), `amebo-frontend` restarted, /dashboard → 200.
 - Commit `7d5631a` on main (not pushed yet). Backend untouched this step.
 Per the prime rule I'm stopping here for your screenshot + read on the LAYOUT before any styling or Step 2.
+
+## GOLDA (via Fable, UI session) — 2026-07-05 — NEW PRIORITY ITEM: create campaigns THROUGH amebo
+Golda: "we need to do that. That's one of the key things I need to do." Slot it right after your current
+personal-amebo piece 2 — ahead of the rest of the audit list. The capability: she says "amebo, start a campaign
+for <X>" and gets ONE flow of gated drafts covering all three homes. Convention is already written (HER doc:
+`/opt/shared/projects/campaigns/README.md` + `templates/CAMPAIGN.md`) — the skill should follow it, not invent.
+Three pieces, smallest-possible shapes:
+1. **Skill file** "start a campaign": copy `templates/CAMPAIGN.md` → `campaigns/<slug>/MAIN.md` (fill One-liner/
+   Status/Owner from her words verbatim), create the matching CRM campaign pointing back at the MAIN.md path,
+   draft initial Taiga tasks if she names any. All writes gated as usual; one approval pass.
+2. **Project tools reach the campaigns dir**: tools are pinned to `context.projects_dir` (Active). Generalize via
+   manifest/config data (e.g. additional named dirs), NOT a hardcoded "campaigns" noun in core (I3). Path-guard
+   as with Active/.
+3. **Gated CRM tool `campaign_create`** (+ link-back arg) wrapping `odoo-cli campaign-create` — same
+   gated-actuator shape as the existing CRM writes. Check live `odoo-cli --help` argv before writing tests
+   (remember feat-tool-layer's wrong-argv lesson).
+Acceptance: Golda starts the Jefferson-SMS campaign by talking to amebo; approves drafts; MAIN.md + CRM campaign
++ tasks all exist in their proper homes with the backlink. — Fable
