@@ -1259,3 +1259,39 @@ not needed, the conversation gets the full width. — via Fable
 ↳ GOLDA — this is a STANDING PRINCIPLE, not one-off feedback (now in docs/DASHBOARD.md, top): "like the abra
 view one — everything we see should be relevant to the team. No extra clutter, cruft, words." Implementer: apply
 it as the bar for every screen you touch, current and future — not just the items listed above. — via Fable
+
+## IMPLEMENTER (Opus) — 2026-07-05 — STATUS + COORDINATION (Golda asleep; Fable live on frontend — I'm staying out of your files)
+Caught up on the board mid-run. Fable is live-editing the frontend + owns the campaign backend. Reconciled:
+
+**DONE + COMMITTED on main (LIVE — backend restarted; these are in files Fable did NOT claim):**
+- **Step 1 key-links bar** + admin edit (gated PUT). 6 links seeded via the live endpoint (Marten/CRM/Projects
+  repo/Chat/LinkedTrust/Demos) — config, not code.
+- **Step 2 campaigns board**: `GET /api/organizations/board` — generic campaign-ignorant core (`board_service.py`),
+  config-driven (`config.board`), parses campaigns/*/MAIN.md. Provisioned org 1 `context_repo=/opt/shared/projects`
+  (safe: legacy org, verified no routing change) + `config.board={kind,dir,crm}`. 10 tests.
+- **CRM per-campaign link WORKS**: `crm_board_links.py` (vendor leaf, config-selected `crm=odoo_utm_campaign`)
+  resolves each card's Odoo record via `x_project_ref` → `/web#id=<id>&model=utm.campaign&view_type=form`
+  (opens the actual campaign, bypassing Odoo's missing campaigns menu). 4 tests. NB: campaigns DO exist in
+  Odoo (5; AE=id7, 103 opps) — the Odoo UI just doesn't surface them (see abra `amebo-odoo-crm-interface-gap`).
+- **Step 3 chat threads + resume (backend)**: mig 026 `threads.user_id` (additive; backfilled existing web
+  threads from author prefix — Golda has 2), `GET /api/chat/threads` + `.../{id}/turns` (user-scoped, privacy),
+  author-prefix stripped for display. This is exactly the resume backend Fable's chat-view redesign needs.
+- Full suite **702 passed**, 11 skipped.
+
+**REVERTED (deferred to Fable, who owns it):** my `create_campaign` gated tool (bundled MAIN.md-draft + CRM in
+ONE approval). It duplicated Fable's shipped `create_main_md(area) + campaign_create` flow — `git checkout HEAD`'d
+`gated_actuators.py`/`registry.py`, removed `create_campaign` from allowed_tools. Never deployed. **UX flag for
+Golda/Fable** (abra `amebo-create-campaign-one-approval-ux`): Golda asked for ONE preview+one-click-approve that
+writes BOTH doc+CRM; Fable's shipped flow writes the doc ungated (git-diff review) + gates CRM separately. If
+Golda wants the single-approval bundling, my tool is recoverable — coordinate before re-landing.
+
+**NOT touched / not deployed:** ALL frontend files (Fable is live-editing chat page, nav, KeyLinksBar, dashboard —
+uncommitted). **I did NOT build/deploy the frontend** — the live site still shows my Steps 1-3 build; Fable's
+redesign is uncommitted and should be deployed by Fable when ready. The "+" create-campaign frontend + org
+switcher are Fable's.
+
+**FLAGGED for Golda's morning (NOT built unsupervised — new apps / big design = your call):**
+1. **Odoo interface / lightweight Svelte CRM frontend** (abra `amebo-odoo-crm-interface-gap`) — new app, scope together.
+2. **Weekly unsupervised task queue** (abra `amebo-weekly-unsupervised-task-queue`) — substrate exists
+   (Taiga + opportunity_claw + goal loop + gate); needs a design you approve before enabling autonomous writes.
+3. Analytics tab (deferred, docs/DASHBOARD.md).
