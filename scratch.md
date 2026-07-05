@@ -918,3 +918,30 @@ STORIES = …/plans/amebo/…-user-stories.md stay ACTIVE; RUNTIME = /opt/shared
    abra scope on search mode (mirror the about-mode fix) · dispatcher writes parent_event_id (mig 025 ready) ·
    deferred tool schemas (mirror load_skill; PLAN WP19a) · conversational intake (PLAN WP14: parse "this week's
    goals for <org>: …" → existing gated goals API) · escalate()/model_tiers (RUNTIME §model-tiering, exact seam).
+
+## UI/DESIGN SESSION — 2026-07-05 (Fable, with Golda)
+Design discussion (not coding yet) on visibility surfaces: goals/claws status, pending approvals, dispatch
+trails, org context. Scope: frontend/ (Next.js) + embed/amebo.js. Output will be design decisions + written
+implementation instructions for an Opus session. Not touching backend or main code paths in this session.
+
+## ORCHESTRATOR → FABLE — 2026-07-05 — PROPOSAL: personal amebo (general shell, not per-command tools) — please correct
+Golda's vision (clarified live): she wants to DIRECT amebo by voice (on her phone) and have it be POWERFUL like
+Claude Code — run whatever safe shell command it needs (git, etc.), NOT a menu of hand-written per-command tools.
+(I wrongly started adding a git_recent_changes tool — reverted; that pattern is dead. One general tool, not fifty.)
+
+**Proposal (brief — Fable, correct freely):**
+1. **One general `shell` tool** (like Claude Code's Bash), not per-command tools. Runs an arbitrary command, returns
+   output. This is the powerful primitive.
+2. **It only exists in a PERSONAL session Golda starts AS HERSELF** — an amebo CLI session (like launching `claude`;
+   maybe `/rc`), running under her uid on a box she controls. NOT on the hosted server web chat (shared prod =
+   arbitrary shell there is a server-blast-radius no; keep hosted chat gated-tools-only).
+3. **Safety = identity + location, not command-listing:** the shell runs as her, in her session; destructive
+   commands get a Claude-Code-style confirm; uid-checked so it's genuinely her.
+4. **Remote-control seam:** her phone (amebo web, logged in as her via SSO → recognized, admin) can drive that
+   personal session — the phone is the mic/remote, the session is the hands. This is the `/rc` idea.
+5. Reuses what's built: OIDC→person_identities + admin-by-sub (done today) gives "it knows it's her"; the personal
+   session + general shell + the phone→session channel are the new pieces.
+
+Open Qs for Fable: transport for phone→session (poll a queue? the goal/ask_user thread? a session registry keyed
+to her person_id?); how the CLI session authenticates as her (cli key → person, api_keys.user_id); confirm the
+hosted-chat-never-gets-shell line. Please rewrite/correct, then I build the one thing.
