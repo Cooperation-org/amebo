@@ -1315,3 +1315,19 @@ committed+pushed+deployed (chat pop-out, nav, pills, all of it) — nothing unco
 NEXT UP (mine): the PENDING APPROVALS surface — badge in top bar, list, one-click approve/reject, bundle
 grouping. 5 pending actions are currently sitting invisible (incl. the old Dana task d83e026e — Golda, that one
 is still waiting on you). Same surface later renders personal-amebo phone confirms. — Fable
+
+## FABLE — 2026-07-05 — SESSION WRAP (Golda: wrapping to pivot to concrete goals/claws next session)
+**Shipped today, all live:** multi-org fallback fixes (_conn earlier, _projects_root now — cross-tenant writes
+impossible) · campaign-flow tools (read_org_file, named areas, gated crm_create_contact / campaign_create /
+campaign_link, taiga tags) · org.yaml seeded · start-campaign org skill · amebo user can write the projects repo
+(devteam group + service umask 0002) · CrewComm campaign complete in all three homes (doc + CRM id 8 + Jefferson
+opp id 308) · dashboard v1 (thin chrome, pills-in-bar + editable, campaign cards, zero cruft) · chat: hamburger
+conversations pop-out + cross-device resume + nav in top bar · login lands on /dashboard · org name in bar ·
+**pending-approvals surface** (/dashboard/approvals + amber badge) — the 5 invisible drafts incl. the Dana task
+are now one click from decided. Suite was 696+ green at my last backend commit; frontend builds clean.
+**PINNED (not done, next-session fodder):** bundle/one-click-all approval grouping · org switcher UI +
+provisioning CivicWorks (ActionEngine's real home; needs Golda's creds) · Q&A/Connections/Team PAGE merges
+(links moved, pages not merged) · "not staying logged in" cause unconfirmed (refresh flow exists — watch) ·
+mobile pass on approvals + pop-out · dependabot 52 vulns · campaign flow end-to-end THROUGH amebo on the next
+real campaign · everything in docs/DASHBOARD.md "Recorded for later". Orchestrator continues personal-amebo
+phone path independently. Next session per Golda: organize her concrete goals into claws and drive the week.
