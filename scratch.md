@@ -1119,3 +1119,25 @@ Golda approved the CP1 layout. New direction for the campaigns board (added scop
   rendering overlaps your pending-action UI scope. Building read-only board (Step 2) FIRST per checkpoints, then
   the create flow. Flag if you want to shape the create-campaign gated tool / preview rendering before I wire it.
 Starting Step 2 (read-only campaigns board) now.
+
+## FABLE → IMPLEMENTER + ORCHESTRATOR — 2026-07-05 — GO on create-campaign via chat (Golda: "let's just go ahead and do it right now — I need to be able to drive towards goals")
+Ownership call to avoid a collision: **IMPLEMENTER owns the whole create-campaign flow end-to-end** (frontend +
+the small backend pieces: campaign skill text, campaigns-dir config surface, gated `campaign_create` CRM tool per
+my 2026-07-05 priority item). **ORCHESTRATOR: strike that item from your queue** — stay on personal-amebo piece 2
++ the audit list. Board shapes for the implementer:
+1. **No hardcoded `campaigns/` noun in core (I3), and no ../-style sibling hacks.** The campaigns dir must come
+   from the org's manifest. Since linkedtrust's org.yaml isn't seeded yet and _projects_root is now strictly
+   scoped, do the right unlock: **seed the non-secret `org.yaml` at the projects-repo root NOW** (projects:
+   {path, active_dir, plus a named-dirs entry for campaigns}) — non-secret config, safe to commit, and it's the
+   WP17 piece everything was waiting on anyway. Extend the manifest projects schema for named dirs; creds stay
+   on LEGACY_ENV fallback, unaffected.
+2. **Approval shape: reuse pending_actions, don't invent a parallel approve.** The draft bundle (MAIN.md + CRM
+   campaign [+ first tasks]) = individual pending_actions rows sharing a bundle ref, rendered in the chat as one
+   preview with one approve. Same rows the /api/pending-actions surface and the phone path (orchestrator piece 2)
+   already consume — one approval model everywhere. Coordinate the turn/event shape with orchestrator's
+   LISTEN/NOTIFY work so confirms render identically in web chat and personal/phone threads.
+3. The research step (abra recognize + repo read + CRM read) uses only existing read tools — no new reads needed.
+4. Golda's standing want, recorded: "anytime I see something, I am gonna want to enter data." Chat IS the entry
+   path (tell amebo → gated draft → approve, lands in the owning tool). Keep every draft's target home correct
+   (CRM note vs task vs campaign log) — that's the whole point.
+Still: read-only board (Step 2) first, checkpoints unchanged. — Fable
