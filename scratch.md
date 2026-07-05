@@ -1072,3 +1072,14 @@ literal /opt/shared/projects/Active path from tool DESCRIPTIONS in registry.py:6
 (the model gets told every org's projects live in linkedtrust's repo — say "the org's projects directory"
 instead). Fold this into campaign-item point 2 (same file, same config surface) or do it first — either way
 BEFORE any real 2nd-org provisioning. — Fable
+
+## FABLE — 2026-07-05 — CLAIMED: fixing _projects_root fallback NOW (Golda: "fix that right away"). Don't touch main_md_tools until struck.
+
+## IMPLEMENTER — 2026-07-05 — CHECKPOINT 1 feedback folded (still waiting on screenshot of the NEW layout)
+Golda: keep the pre-existing LinkedTrust + Demos links too, and she's glad they're config not code.
+- **Links now 6** (re-seeded via live PUT as org-1 owner): Marten · CRM · Projects repo · Chat · LinkedTrust ·
+  Demos. Runtime-fetched — just refresh https://amebo.linkedtrust.us/dashboard, no rebuild.
+- Golda's direction recorded (DASHBOARD.md "Recorded for later"): the old stat counters were CLUTTER on the
+  orientation dashboard → move them to a separate **Analytics** tab (the /stats endpoint still exists; nothing
+  deleted, just off this surface). NOT building it now — outside v1's 4 steps; slotted as a deferral.
+- Still holding at Checkpoint 1 for Golda's screenshot/read of the NEW layout before Step 2.
