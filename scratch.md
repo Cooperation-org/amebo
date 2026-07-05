@@ -1227,3 +1227,9 @@ tree has your uncommitted chat.py/thread_repo/schema.sql — I did NOT restart o
    org — memberships from org_members, selector in the header, org context threaded to /links, /board, chat
    (resolution chain §4.2 already supports explicit org). In CHAT it already works per-action: say
    "under <org>" or pin a thread. The dashboard needs the picker.
+
+## GOLDA (via Fable) — 2026-07-05 — nav restructure: pills move UP into the top bar
+Her words: "move the pill buttons up to top bar. Q&A can go under Workspaces, Connections can go under
+Settings, Team can go under Settings — so that the top bar has space for the pills." I.e. the key-links pills
+(Marten/CRM/repo/chat) become the top bar's primary content; secondary nav collapses: Q&A → inside Workspaces,
+Connections + Team → inside Settings. Fold into your current pass before the next checkpoint screenshot. — Fable
