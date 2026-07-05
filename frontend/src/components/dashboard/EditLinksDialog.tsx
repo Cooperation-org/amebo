@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -31,6 +31,16 @@ export function EditLinksDialog({ open, onOpenChange, initialLinks }: EditLinksD
     initialLinks.length > 0 ? initialLinks : [{ label: '', url: '' }]
   );
   const setLinks = useSetOrgLinks();
+
+  // Re-seed the rows each time the dialog opens: initialLinks is empty at
+  // mount (query still loading), so a once-only initializer shows blank rows
+  // forever — the add-but-can't-edit bug.
+  useEffect(() => {
+    if (open) {
+      setRows(initialLinks.length > 0 ? initialLinks : [{ label: '', url: '' }]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   const updateRow = (i: number, field: keyof OrgLink, value: string) => {
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, [field]: value } : r)));
