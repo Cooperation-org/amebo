@@ -1249,3 +1249,7 @@ sr-only, not rendered.) — via Fable
 ↳ GOLDA general directive: "take out useless clutter." Sweep the whole dashboard with that eye — every label,
 box, count, or divider that doesn't help her act goes. Density of useful things, zero chrome-for-chrome's-sake.
 — via Fable
+↳ GOLDA — conversations list placement CHANGED: the conversations sidebar lives ONLY in the chat view, NOT on
+the dashboard (supersedes the earlier "both places" instruction — the dashboard drops its chat-list sidebar
+entirely; less clutter, dashboard = pills + campaign cards). Chat view keeps: persistent left list on desktop,
+drop-down/slide-out on mobile, resume required. — via Fable
