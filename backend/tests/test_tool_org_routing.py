@@ -204,3 +204,60 @@ class TestKnowledgeScope:
 
     def test_scope_none_without_manifest(self):
         assert _knowledge_scope({}) is None
+
+
+# --- Cross-tenant fallback guard (Fable review finding, 2026-07-05) ---------
+#
+# The process env holds the LEGACY org's credentials. Only that org (env
+# LEGACY_ENV_ORG_ID) may fall back to it; any other org with a missing/broken
+# manifest must RAISE, never silently misroute through the legacy org's
+# accounts.
+
+from src.credentials.connections import ToolNotConfigured, ManifestInvalid
+from src.tools.cli_read_tools import _conn
+
+
+@pytest.fixture
+def org_without_manifest(tmp_path):
+    """An org whose context repo exists but has no org.yaml at all."""
+    invalidate_cache()
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO organizations (org_name, org_slug, context_repo) "
+                "VALUES (%s, %s, %s) RETURNING org_id",
+                (f"NoManifest {_uid()}", f"nomanifest-{_uid()}", str(tmp_path)),
+            )
+            org_id = cur.fetchone()[0]
+            conn.commit()
+    finally:
+        DatabaseConnection.return_connection(conn)
+    yield org_id
+    invalidate_cache()
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM organizations WHERE org_id = %s", (org_id,))
+            conn.commit()
+    finally:
+        DatabaseConnection.return_connection(conn)
+
+
+class TestLegacyFallbackScoping:
+    def test_non_legacy_org_never_falls_back(self, org_without_manifest, monkeypatch):
+        monkeypatch.setenv("LEGACY_ENV_ORG_ID", "999999")  # someone else
+        with pytest.raises((ToolNotConfigured, ManifestInvalid)):
+            _conn({"org_id": org_without_manifest}, "crm")
+
+    def test_legacy_org_still_falls_back(self, org_without_manifest, monkeypatch):
+        monkeypatch.setenv("LEGACY_ENV_ORG_ID", str(org_without_manifest))
+        assert _conn({"org_id": org_without_manifest}, "crm") is None
+
+    def test_unset_means_strict_for_everyone(self, org_without_manifest, monkeypatch):
+        monkeypatch.delenv("LEGACY_ENV_ORG_ID", raising=False)
+        with pytest.raises((ToolNotConfigured, ManifestInvalid)):
+            _conn({"org_id": org_without_manifest}, "crm")
+
+    def test_no_org_context_is_untouched_legacy_path(self):
+        assert _conn({}, "crm") is None

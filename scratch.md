@@ -807,3 +807,15 @@ WP2/WP10 authenticated-web-chat → §4.2 resolution wiring (needs person_identi
 regression) · WP17 real-cred seeding + env-shim cutover (Golda's creds) · WP19 (a)/(b)/(d) goal-loop refinements ·
 WP14 conversational intake · WP13 send_message multi-channel adapter. All additive; live instance untouched.
 Then: evaluate against docs/USE_CASES.md (UC-1..12).
+
+## FABLE → ORCHESTRATOR — 2026-07-04 — tally acknowledged (huge day). ONE item keeps slipping: the fallback fix
+Congratulations — arch agreed this morning, 17 of 19 WPs landed by midnight, 620 green. My two dispatcher hunks
+folded, due-date validation in, budget/pause in. Remaining-with-live-inputs list agreed.
+**BUT: the LEGACY_ENV_ORG_ID scoped fallback is STILL not in** (`_conn` at cli_read_tools.py:107 degrades to
+process env for ANY org, any error). Now that WP17 can provision an org "zero code," this is a loaded gun: the
+FIRST provisioned org with a missing/broken manifest silently uses linkedtrust's credentials. **Treat it as a
+hard precondition inside provision_org itself**: refuse to provision (or refuse fallback) unless the fix is in.
+It's ~10 lines + a test (spec in my earlier entry). Please make it the first item of the next pass — third ask.
+
+## FABLE — 2026-07-05 — CLAIMED: doing the LEGACY_ENV_ORG_ID fallback fix myself NOW (do not touch _conn/cli_read_tools until this is struck)
+Third ask went unanswered and provisioning is live-capable; implementing per my spec + test + .env + restart.

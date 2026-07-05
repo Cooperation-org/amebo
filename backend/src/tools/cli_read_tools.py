@@ -105,22 +105,36 @@ def _org_id_from_context(context: Any) -> Optional[int]:
 
 
 def _conn(context: Any, tool_key: str):
-    """The acting org's ToolConnection for a tool from its manifest, or None to
-    fall back (transition). Never raises: connection problems degrade to the
-    fallback rather than breaking the tool."""
+    """The acting org's ToolConnection for a tool from its manifest.
+
+    Fallback to the process env (returning None) is allowed ONLY for the
+    designated legacy org (env LEGACY_ENV_ORG_ID = linkedtrust until the WP17
+    cutover seeds its manifest). For every other org, a missing/broken manifest
+    RAISES — the process env holds the legacy org's credentials, so a silent
+    fallback would route org B's calls through org A's accounts (cross-tenant
+    leak; reads leak data exactly as badly as writes act). Same rule for reads
+    and writes. At cutover, unset LEGACY_ENV_ORG_ID and everyone fails closed.
+    """
     org_id = _org_id_from_context(context)
     if org_id is None:
+        # No org in context at all: legacy direct paths (pre-OrgContext) only.
         return None
+    legacy = _os.getenv("LEGACY_ENV_ORG_ID", "")
+    is_legacy_org = legacy != "" and str(org_id) == legacy
     try:
         from src.credentials.connections import (
             resolve, ToolNotConfigured, ManifestInvalid,
         )
         return resolve(org_id, tool_key)
     except (ToolNotConfigured, ManifestInvalid):
-        return None
+        if is_legacy_org:
+            return None
+        raise
     except Exception:
         logger.exception("connection resolve failed org=%s tool=%s", org_id, tool_key)
-        return None
+        if is_legacy_org:
+            return None
+        raise
 
 
 def _conn_env(context: Any, tool_key: str) -> Optional[Dict[str, str]]:
