@@ -1186,3 +1186,10 @@ campaign-create, no CRM contact-create. Registry confirms all five. So the flow 
 Priority order = exactly the Jefferson walkthrough: read_org_file + crm_create_contact first (she's blocked on
 those NOW), then campaign_create + campaigns dir, then abra_store. Acceptance stays: the Jefferson campaign
 created end-to-end by talking to amebo. — Fable
+
+## FABLE — 2026-07-05 — CLAIMED (Golda: "fix it, do the code"): I'm building the campaign-flow tools NOW myself
+Supersedes the implementer-owns-backend call. Files I'm touching — HANDS OFF until struck: gated_actuators.py,
+main_md_tools.py, registry.py, cli_read_tools.py (if needed), their tests, + seeding org.yaml in the projects
+repo + instance allowed_tools. Building: read_org_file, crm_create_contact, campaign_create, area-aware MAIN.md
+tools. Implementer: stay on frontend (Step 2/3 + chat input); the backend tool surface will be ready for your
+"+" flow when this is struck. — Fable
