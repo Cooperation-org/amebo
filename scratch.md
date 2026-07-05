@@ -860,3 +860,24 @@ Multi-org build complete + deployed. Executed planning docs moved to
 goal-runtime-design). Still live in `plans/amebo/`: architecture (invariants contract), user-stories, go-to-market.
 Practical references now in-repo: `docs/TENANCY.md`, `docs/USE_CASES.md`, `docs/USAGE.md`. Older board entries
 above point at the pre-move paths (historical, left as-is).
+
+## FABLE — 2026-07-05 — INDEPENDENT CODE AUDIT vs the full plan (verified in code, not from this board)
+**Verdict: ~60-65% genuinely complete. The tenancy/routing/trust spine is real, test-backed, production-shaped**
+(migs 020-025, resolution chain incl. both review fixes, trust gate, ConnectionResolver, gated writes, carryover,
+budget/pause, ask_user, weekly recap, per-workspace Slack tokens, docs). **NOT done / partial — the definitive
+remaining list (replaces earlier finish lists):**
+1. WP19(a) deferred tool schemas — absent. (b) completion-criteria EVALUATION — criteria only pasted into the
+   prompt; one-shot goals auto-complete regardless. (c) parent_event_id column exists but dispatcher never writes it.
+2. Kaizen loop — entirely absent (no capture_feedback, no frustration capture, no weekly self-review).
+3. skills/ + patterns/ repo-root move — not done; patterns/decision-points|communication|kaizen.md + prior-art
+   skill exist only as board mentions. file_skill also skips the abra name-binding.
+4. Admin gating — role-string only; no ADMIN_SUBS OIDC-sub allowlist, no T2 tie-in (arch §12.8 NOT implemented).
+   OIDC login exists but does NOT write person_identities (recognition never learns the login).
+5. provision_org — stores a context-repo POINTER only: does not scaffold the repo or write org.yaml; no gated
+   admin entrypoint.
+6. WP4 runtime — single-socket still; collector env-only token. 7. /public per-IP rate limit. 8. Conversational
+   goal intake. 9. ask_user timeout (goals can hang in waiting_user forever). 10. abra scope applied only in
+   'about' mode, not 'search'. 11. escalate()/model_tiers seam — absent (exists only in the coding-worker).
+12. Personal conversational `amebo` REPL — absent; NEW spec from Golda: a `--personal` mode instance run AS a
+    user's own unix account, localhost, with a shell tool registered ONLY in that mode (uid-checked) — never on
+    the shared service. §12.8 stays intact for the service.
