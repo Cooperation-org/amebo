@@ -1253,3 +1253,6 @@ box, count, or divider that doesn't help her act goes. Density of useful things,
 the dashboard (supersedes the earlier "both places" instruction — the dashboard drops its chat-list sidebar
 entirely; less clutter, dashboard = pills + campaign cards). Chat view keeps: persistent left list on desktop,
 drop-down/slide-out on mobile, resume required. — via Fable
+↳ GOLDA — and in the CHAT view the conversations list should POP OUT / POP IN (toggleable), not permanently
+occupy the left column — same collapse behavior on desktop as mobile: a control opens it, it slides away when
+not needed, the conversation gets the full width. — via Fable
