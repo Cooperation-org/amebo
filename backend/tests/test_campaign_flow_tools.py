@@ -197,3 +197,25 @@ def test_new_action_types_are_gated_by_default():
     from src.services.gated_actions import requires_approval
     for t in ("crm_create_contact", "campaign_create", "campaign_link"):
         assert requires_approval(t)
+
+
+class TestTaskCampaignTags:
+    def test_create_task_argv_includes_tags(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(gated_actuators, "run_cli",
+                            lambda argv, **kw: calls.append(argv) or "Created #7: Find conferences")
+        gated_actuators.execute_taiga_create(
+            {"payload": {"subject": "Find conferences", "project": "integralmass",
+                         "due_date": "2026-07-12", "tags": ["crewcomm"]}})
+        assert calls[0][:4] == ["mcp-taiga", "create", "integralmass", "Find conferences"]
+        assert ["-t", "crewcomm"] == calls[0][-2:]
+
+    def test_impl_threads_tags_to_payload(self, monkeypatch):
+        drafts = []
+        monkeypatch.setattr(gated_actuators, "_route_through_gate",
+                            lambda **kw: drafts.append(kw) or "DRAFTED")
+        gated_actuators.taiga_create_task_impl(
+            {"subject": "s", "project": "p", "due_date": "2027-01-01",
+             "tags": ["crewcomm", " ", ""]},
+            {"org_id": 1})
+        assert drafts[0]["payload"]["tags"] == ["crewcomm"]

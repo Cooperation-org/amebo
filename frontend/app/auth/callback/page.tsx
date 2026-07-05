@@ -4,7 +4,7 @@
 // LinkedTrust IdP and minting amebo's own session) redirects the browser here
 // with the tokens in the URL fragment, e.g.
 //   /auth/callback#access_token=...&refresh_token=...
-// We stash them via the existing TokenManager and continue to /chat. The
+// We stash them via the existing TokenManager and continue to /dashboard. The
 // fragment is stripped from history so tokens don't linger in the URL.
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -27,7 +27,7 @@ export default function OidcCallbackPage() {
       if (refreshToken) TokenManager.setRefreshToken(refreshToken);
       // Drop the fragment from the URL/history before navigating on.
       window.history.replaceState(null, '', window.location.pathname);
-      router.replace('/chat');
+      router.replace('/dashboard');
     } else {
       toast.error('Sign-in did not complete. Please try again.');
       router.replace('/login');

@@ -171,6 +171,8 @@ def execute_taiga_create(action: Dict[str, Any]) -> str:
         argv += ["--due", payload["due_date"]]
     if payload.get("assignee"):
         argv += ["--assign", payload["assignee"]]
+    for tag in payload.get("tags") or []:
+        argv += ["-t", str(tag)]
     if payload.get("cash") is not None:
         argv += ["--cash", str(payload["cash"])]
     out = run_cli(argv)
@@ -241,6 +243,11 @@ def taiga_create_task_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) 
         payload["assignee"] = assignee
     if cash is not None:
         payload["cash"] = cash
+    tags = tool_input.get("tags")
+    if isinstance(tags, list):
+        clean = [str(t).strip() for t in tags if str(t).strip()]
+        if clean:
+            payload["tags"] = clean
     if (context or {}).get("notify_channel"):
         payload["notify_channel"] = context["notify_channel"]
 
@@ -249,6 +256,8 @@ def taiga_create_task_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) 
         bits.append(f"assigned to {assignee}")
     if cash is not None:
         bits.append(f"${cash}")
+    if payload.get("tags"):
+        bits.append("tags: " + "/".join(payload["tags"]))
     preview = ", ".join(bits)
 
     return _route_through_gate(
@@ -289,6 +298,13 @@ TAIGA_CREATE_TASK_SCHEMA = {
         "cash": {
             "type": "integer",
             "description": "Optional funds to attach to the task (adds a cash tag).",
+        },
+        "tags": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Optional tags. Convention: tag campaign tasks with the "
+                           "campaign slug (e.g. 'crewcomm') so they're queryable "
+                           "per campaign.",
         },
     },
     "required": ["subject", "project", "due_date"],
