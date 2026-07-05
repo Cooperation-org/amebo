@@ -700,3 +700,142 @@ SLACK_POST_SCHEMA = {
 # Register the slack_post executor so an approved slack_post pending_action can
 # be posted from its stored payload (see src/services/action_executors.py).
 register_executor("slack_post", execute_slack_post)
+
+
+# ---------------------------------------------------------------------------
+# CRM contact + campaign writes (Odoo) — GATED. Built for the create-campaign
+# flow (board 2026-07-05): create a contact, create a campaign (mirroring a
+# campaigns/<slug>/MAIN.md in the org's repo via project-ref), and link a
+# contact onto a campaign as an opportunity. argv checked against the LIVE
+# odoo-cli --help (contact-create <name> <email>; campaign-create <name>
+# [project-ref]; campaign-link <campaign> <contact> [summary]).
+# ---------------------------------------------------------------------------
+
+
+def execute_crm_create_contact(action: Dict[str, Any]) -> str:
+    """odoo-cli contact-create <name> <email>."""
+    p = action.get("payload") or {}
+    name, email = p.get("name"), p.get("email")
+    if not name or not email:
+        return "Error: cannot create contact — payload missing name or email."
+    out = run_cli(["odoo-cli", "contact-create", str(name), str(email)], env=_crm_env(p))
+    if _cli_failed(out):
+        raise RuntimeError(f"crm_create_contact failed: {out.strip()}")
+    return out
+
+
+def execute_campaign_create(action: Dict[str, Any]) -> str:
+    """odoo-cli campaign-create <name> [project-ref]."""
+    p = action.get("payload") or {}
+    name = p.get("name")
+    if not name:
+        return "Error: cannot create campaign — payload missing name."
+    argv = ["odoo-cli", "campaign-create", str(name)]
+    if p.get("project_ref"):
+        argv.append(str(p["project_ref"]))
+    out = run_cli(argv, env=_crm_env(p))
+    if _cli_failed(out):
+        raise RuntimeError(f"campaign_create failed: {out.strip()}")
+    return out
+
+
+def execute_campaign_link(action: Dict[str, Any]) -> str:
+    """odoo-cli campaign-link <campaign> <contact> [summary]."""
+    p = action.get("payload") or {}
+    campaign, contact = p.get("campaign"), p.get("contact")
+    if not campaign or not contact:
+        return "Error: cannot link — payload missing campaign or contact."
+    argv = ["odoo-cli", "campaign-link", str(campaign), str(contact)]
+    if p.get("summary"):
+        argv.append(str(p["summary"]))
+    out = run_cli(argv, env=_crm_env(p))
+    if _cli_failed(out):
+        raise RuntimeError(f"campaign_link failed: {out.strip()}")
+    return out
+
+
+def crm_create_contact_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """Draft creating a new CRM contact. Gated."""
+    name = (tool_input.get("name") or "").strip()
+    email = (tool_input.get("email") or "").strip()
+    if not name or not email:
+        return "Error: name and email are both required to create a contact."
+    payload = {"name": name, "email": email, "org_id": _ctx_org_id(context)}
+    return _route_through_gate(
+        action_type="crm_create_contact", context=context, target=name,
+        payload=payload, preview=f"CRM: create contact {name!r} <{email}>",
+        executor=execute_crm_create_contact,
+    )
+
+
+def campaign_create_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """Draft creating a CRM campaign, optionally pointing at its doc in the
+    org's projects repo (project_ref = repo path like 'campaigns/<slug>/MAIN.md').
+    Gated."""
+    name = (tool_input.get("name") or "").strip()
+    if not name:
+        return "Error: name is required to create a campaign."
+    project_ref = (tool_input.get("project_ref") or "").strip()
+    payload = {"name": name, "org_id": _ctx_org_id(context)}
+    if project_ref:
+        payload["project_ref"] = project_ref
+    preview = f"CRM: create campaign {name!r}" + (
+        f" → {project_ref}" if project_ref else "")
+    return _route_through_gate(
+        action_type="campaign_create", context=context, target=name,
+        payload=payload, preview=preview, executor=execute_campaign_create,
+    )
+
+
+def campaign_link_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """Draft attaching a CRM contact to a campaign as an opportunity. Gated."""
+    campaign = (tool_input.get("campaign") or "").strip()
+    contact = (tool_input.get("contact") or "").strip()
+    if not campaign or not contact:
+        return "Error: campaign and contact are both required."
+    summary = (tool_input.get("summary") or "").strip()
+    payload = {"campaign": campaign, "contact": contact, "org_id": _ctx_org_id(context)}
+    if summary:
+        payload["summary"] = summary
+    preview = f"CRM: link {contact!r} onto campaign {campaign!r}" + (
+        f" — {summary}" if summary else "")
+    return _route_through_gate(
+        action_type="campaign_link", context=context, target=contact,
+        payload=payload, preview=preview, executor=execute_campaign_link,
+    )
+
+
+CRM_CREATE_CONTACT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string", "description": "Full name for the new contact."},
+        "email": {"type": "string", "description": "Email address for the new contact."},
+    },
+    "required": ["name", "email"],
+}
+
+CAMPAIGN_CREATE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string", "description": "Campaign name (mirrors the MAIN.md's campaign name)."},
+        "project_ref": {
+            "type": "string",
+            "description": "Path of the campaign's doc in the org's projects repo, e.g. 'campaigns/<slug>/MAIN.md'.",
+        },
+    },
+    "required": ["name"],
+}
+
+CAMPAIGN_LINK_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "campaign": {"type": "string", "description": "Existing campaign name."},
+        "contact": {"type": "string", "description": "Existing CRM contact name (or email)."},
+        "summary": {"type": "string", "description": "One line on why/what this opportunity is."},
+    },
+    "required": ["campaign", "contact"],
+}
+
+register_executor("crm_create_contact", execute_crm_create_contact)
+register_executor("campaign_create", execute_campaign_create)
+register_executor("campaign_link", execute_campaign_link)

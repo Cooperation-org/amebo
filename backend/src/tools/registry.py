@@ -629,6 +629,7 @@ from src.tools.main_md_tools import (
     EDIT_MAIN_MD_SCHEMA,
     create_main_md_impl,
     CREATE_MAIN_MD_SCHEMA,
+    read_org_file_impl, READ_ORG_FILE_SCHEMA,
 )
 from src.tools.slack_tools import slack_post_impl, SLACK_POST_SCHEMA
 
@@ -746,6 +747,9 @@ from src.tools.gated_actuators import (
     crm_schedule_impl, CRM_SCHEDULE_SCHEMA,
     crm_tag_contact_impl, CRM_TAG_CONTACT_SCHEMA,
     crm_log_contacted_impl, CRM_LOG_CONTACTED_SCHEMA,
+    crm_create_contact_impl, CRM_CREATE_CONTACT_SCHEMA,
+    campaign_create_impl, CAMPAIGN_CREATE_SCHEMA,
+    campaign_link_impl, CAMPAIGN_LINK_SCHEMA,
     slack_post_impl as slack_post_gated_impl, SLACK_POST_SCHEMA as SLACK_POST_GATED_SCHEMA,
 )
 
@@ -991,6 +995,60 @@ register_tool(Tool(
     ),
     input_schema=CRM_LOG_CONTACTED_SCHEMA,
     execute=crm_log_contacted_impl,
+    is_read_only=False,
+    needs_confirmation=True,
+    category="crm",
+))
+
+register_tool(Tool(
+    name="read_org_file",
+    description=(
+        "Read any file (or list any directory) inside the org's context/projects "
+        "repo — proposals, templates, conventions, campaign docs, READMEs. Read "
+        "only. Path is relative to the repo root; '.' lists the root. Use this "
+        "when the answer lives in the repo but outside a project MAIN.md."
+    ),
+    input_schema=READ_ORG_FILE_SCHEMA,
+    execute=read_org_file_impl,
+    is_read_only=True,
+    category="projects",
+))
+
+register_tool(Tool(
+    name="crm_create_contact",
+    description=(
+        "Create a NEW contact in the CRM (name + email). OUTBOUND: drafts a "
+        "pending action a human approves first."
+    ),
+    input_schema=CRM_CREATE_CONTACT_SCHEMA,
+    execute=crm_create_contact_impl,
+    is_read_only=False,
+    needs_confirmation=True,
+    category="crm",
+))
+
+register_tool(Tool(
+    name="campaign_create",
+    description=(
+        "Create a campaign in the CRM, optionally pointing at its doc in the "
+        "org's projects repo (project_ref, e.g. 'campaigns/<slug>/MAIN.md'). "
+        "OUTBOUND: drafts a pending action a human approves first."
+    ),
+    input_schema=CAMPAIGN_CREATE_SCHEMA,
+    execute=campaign_create_impl,
+    is_read_only=False,
+    needs_confirmation=True,
+    category="crm",
+))
+
+register_tool(Tool(
+    name="campaign_link",
+    description=(
+        "Attach an existing CRM contact to a campaign as an opportunity. "
+        "OUTBOUND: drafts a pending action a human approves first."
+    ),
+    input_schema=CAMPAIGN_LINK_SCHEMA,
+    execute=campaign_link_impl,
     is_read_only=False,
     needs_confirmation=True,
     category="crm",
