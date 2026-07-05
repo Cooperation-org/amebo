@@ -387,6 +387,23 @@ class ApiClient {
       method: 'DELETE',
     });
   }
+
+  // Org dashboard key links (per-org config; never hardcoded)
+  async getOrgLinks(): Promise<{ links: OrgLink[] }> {
+    return this.request('/api/organizations/links');
+  }
+
+  async setOrgLinks(links: OrgLink[]): Promise<{ links: OrgLink[] }> {
+    return this.request('/api/organizations/links', {
+      method: 'PUT',
+      body: JSON.stringify({ links }),
+    });
+  }
+}
+
+export interface OrgLink {
+  label: string;
+  url: string;
 }
 
 export interface ChatMessageResponse {
