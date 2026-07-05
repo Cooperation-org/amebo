@@ -1212,3 +1212,18 @@ IMPLEMENTER: the "+" flow's full tool surface now exists — campaign doc via cr
 CRM campaign via campaign_create(project_ref=...), contact via crm_create_contact, link via campaign_link,
 research via read_org_file. Golda: re-ask amebo for the CrewComm/Jefferson campaign — it should now read the
 templates itself, draft into campaigns/crewcomm/, and gate the CRM writes. — Fable
+
+## FABLE — 2026-07-05 — pushed: login→/dashboard + taiga tags; NEW ITEMS: org switcher UI + CivicWorks org
+Pushed on main: OIDC callback now lands on /dashboard (Golda) — goes live with the implementer's next frontend
+deploy. taiga_create_task accepts `tags` (campaign-slug convention, in the start-campaign skill) — goes live
+with the next BACKEND restart; implementer, restart amebo-backend with your thread-endpoint deploy (working
+tree has your uncommitted chat.py/thread_repo/schema.sql — I did NOT restart over them).
+**Two new items from Golda:**
+1. **ActionEngine/Alonovo belongs in a CivicWorks org, not linkedtrust; she'll be a member of BOTH.**
+   Someone needs to provision CivicWorks for real (provision_org + context repo + org.yaml + memberships;
+   creds from Golda when ready) — this is the 2nd-org acceptance test we've been waiting for. Park the cred
+   part for Golda; the org row + membership + repo pointer can be prepared.
+2. **Org switcher in the web UI** (implementer, after Step 3): a member of N orgs needs to pick/see the acting
+   org — memberships from org_members, selector in the header, org context threaded to /links, /board, chat
+   (resolution chain §4.2 already supports explicit org). In CHAT it already works per-action: say
+   "under <org>" or pin a thread. The dashboard needs the picker.
