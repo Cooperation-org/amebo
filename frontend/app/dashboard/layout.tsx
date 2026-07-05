@@ -26,14 +26,18 @@ export default function DashboardLayout({
   const { canInviteUsers } = usePermissions();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
+  // Thin fixed chrome (docs/DASHBOARD.md): wordmark = home; only the few
+  // top-level places live here. Q&A/Connections/Team are secondary — they sit
+  // in the account dropdown until their pages merge under Workspaces/Settings.
   const navigation = [
     { name: 'Chat', href: '/chat', icon: MessageSquare },
-    { name: 'Dashboard', href: '/dashboard', icon: MessageSquare },
-    { name: 'Q&A', href: '/dashboard/qa', icon: MessageSquare },
     { name: 'Workspaces', href: '/dashboard/workspaces', icon: Building2 },
+    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
+  ];
+  const secondary = [
+    { name: 'Q&A', href: '/dashboard/qa', icon: MessageSquare },
     { name: 'Connections', href: '/dashboard/connections', icon: Link2 },
     ...(canInviteUsers ? [{ name: 'Team', href: '/dashboard/team', icon: Users }] : []),
-    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
   ];
 
   const handleLogout = async () => {
@@ -45,20 +49,20 @@ export default function DashboardLayout({
       <div className="min-h-screen bg-gray-50">
         <nav className="bg-white shadow-sm border-b">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between h-16">
+            <div className="flex justify-between h-11">
               <div className="flex items-center space-x-8">
-                <Link href="/dashboard" className="text-xl font-semibold text-gray-900">
+                <Link href="/dashboard" className="text-base font-semibold text-gray-900">
                   Amebo
                 </Link>
                 <div className="hidden md:flex space-x-4">
-                  {navigation.map((item) => {
+                  {[...navigation, ...secondary].map((item) => {
                     const Icon = item.icon;
                     const isActive = pathname === item.href;
                     return (
                       <Link
                         key={item.name}
                         href={item.href}
-                        className={`flex items-center px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                        className={`flex items-center px-2.5 py-1 rounded-md text-sm font-medium transition-colors ${
                           isActive
                             ? 'bg-blue-100 text-blue-700'
                             : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
@@ -90,6 +94,18 @@ export default function DashboardLayout({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
+                    {secondary.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <DropdownMenuItem asChild key={item.name}>
+                          <Link href={item.href} className="flex items-center">
+                            <Icon className="h-4 w-4 mr-2" />
+                            {item.name}
+                          </Link>
+                        </DropdownMenuItem>
+                      );
+                    })}
+                    <DropdownMenuSeparator />
                     <DropdownMenuItem asChild>
                       <Link href="/dashboard/settings" className="flex items-center">
                         <Settings className="h-4 w-4 mr-2" />

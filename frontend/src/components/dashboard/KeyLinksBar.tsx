@@ -16,13 +16,13 @@ function isInternal(url: string) {
 function LinkButton({ link }: { link: OrgLink }) {
   if (isInternal(link.url)) {
     return (
-      <Button asChild variant="outline" className="h-auto py-2.5 px-4">
+      <Button asChild variant="outline" className="h-auto py-1.5 px-3 text-sm">
         <Link href={link.url}>{link.label}</Link>
       </Button>
     );
   }
   return (
-    <Button asChild variant="outline" className="h-auto py-2.5 px-4">
+    <Button asChild variant="outline" className="h-auto py-1.5 px-3 text-sm">
       <a href={link.url} target="_blank" rel="noopener noreferrer">
         {link.label}
         <ExternalLink className="h-3.5 w-3.5 ml-2 text-gray-400" />
@@ -44,35 +44,31 @@ export function KeyLinksBar() {
 
   return (
     <section aria-label="Key links" className="mb-6">
-      <div className="flex items-center justify-between mb-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Tools</h2>
-        {isAdmin && links && links.length > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-gray-500 h-7"
-            onClick={() => setEditOpen(true)}
-          >
-            <Pencil className="h-3.5 w-3.5 mr-1.5" />
-            Edit
-          </Button>
-        )}
-      </div>
-
       {isLoading ? (
         <div className="flex flex-wrap gap-2">
-          <Skeleton className="h-11 w-28" />
-          <Skeleton className="h-11 w-28" />
-          <Skeleton className="h-11 w-28" />
+          <Skeleton className="h-8 w-24" />
+          <Skeleton className="h-8 w-24" />
+          <Skeleton className="h-8 w-24" />
         </div>
       ) : links && links.length > 0 ? (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {links.map((link, i) => (
             <LinkButton key={`${link.label}-${i}`} link={link} />
           ))}
+          {isAdmin && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-gray-400 h-7 px-2"
+              onClick={() => setEditOpen(true)}
+              aria-label="Edit links"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+          )}
         </div>
       ) : isAdmin ? (
-        <Button variant="outline" className="h-auto py-2.5 px-4" onClick={() => setEditOpen(true)}>
+        <Button variant="outline" className="h-auto py-1.5 px-3 text-sm" onClick={() => setEditOpen(true)}>
           <Plus className="h-4 w-4 mr-2" />
           Add your org&apos;s tools
         </Button>

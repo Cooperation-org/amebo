@@ -125,12 +125,12 @@ export default function ChatPage() {
   return (
     <div className="flex h-[100dvh] flex-col bg-background text-foreground">
       {/* Header */}
-      <header className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
-        <div className="min-w-0">
-          <h1 className="truncate text-base font-semibold">{instanceName}</h1>
-          <p className="truncate text-xs text-muted-foreground">
-            Talking to amebo{instance ? ` · ${instance}` : ''}
-          </p>
+      <header className="flex items-center justify-between gap-2 border-b border-border px-4 py-1.5">
+        <div className="flex min-w-0 items-baseline gap-3">
+          <a href="/dashboard" className="shrink-0 text-sm font-semibold text-foreground hover:opacity-70">
+            Amebo
+          </a>
+          <h1 className="truncate text-sm text-muted-foreground">{instanceName}</h1>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {speechSynthesisSupported() && (
