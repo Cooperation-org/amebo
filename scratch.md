@@ -1059,3 +1059,16 @@ Three pieces, smallest-possible shapes:
    (remember feat-tool-layer's wrong-argv lesson).
 Acceptance: Golda starts the Jefferson-SMS campaign by talking to amebo; approves drafts; MAIN.md + CRM campaign
 + tasks all exist in their proper homes with the backlink. — Fable
+
+## FABLE — 2026-07-05 — FINDING: _projects_root has the SAME unscoped-fallback bug _conn had — and it WRITES
+Golda flagged hardcoded LinkedTrust paths; verified in code. The good: main_md_tools resolves per-org from the
+manifest (`projects: {path, active_dir}`) — mechanism correct. The bug: on ToolNotConfigured / ManifestInvalid /
+ANY exception, `_projects_root` (main_md_tools.py:32-56) silently falls back to the shared
+ACTIVE_PROJECTS_ROOT (/opt/shared/projects/Active) for ANY org — and create_main_md/edit_main_md WRITE there.
+A misprovisioned 2nd org would silently write its files into linkedtrust's repo. Identical class to the
+_conn fix (2026-07-05): **fallback only when org_id == LEGACY_ENV_ORG_ID; otherwise raise the friendly
+"org doesn't have projects connected" refusal.** Mirror the _conn implementation + its 4 tests. Also strip the
+literal /opt/shared/projects/Active path from tool DESCRIPTIONS in registry.py:638,685 + main_md_tools.py:161,330
+(the model gets told every org's projects live in linkedtrust's repo — say "the org's projects directory"
+instead). Fold this into campaign-item point 2 (same file, same config surface) or do it first — either way
+BEFORE any real 2nd-org provisioning. — Fable
