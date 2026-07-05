@@ -102,6 +102,19 @@ def _route_through_gate(
             "action without a team identity to attribute it to."
         )
 
+    # Owner directing live (admin, recognized) -> DO IT NOW, don't queue a draft.
+    # The recognized owner is the approver in real time; the trust gate already
+    # authorized the action. Still attributed + auditable. Non-admin / autonomous
+    # claws keep the draft-approval gate below.
+    if (context or {}).get("auto_execute"):
+        try:
+            out = executor({"payload": payload, "org_id": org_id,
+                            "action_type": action_type})
+            return f"Done: {out}" if out else f"Done: {action_type}."
+        except Exception as exc:
+            logger.exception("auto_execute failed for %s", action_type)
+            return f"Error: {action_type} failed: {exc}"
+
     gate = _gate(context)
     result = gate.gate_or_execute(
         org_id=org_id,

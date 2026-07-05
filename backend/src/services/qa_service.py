@@ -826,6 +826,9 @@ Answer the question based on this context. Be comprehensive and include all rele
                             org_id=self.org_id,
                             org_context=self.org_context,
                             principal=self.principal,
+                            # Owner (admin) directing live -> gated tools execute
+                            # now instead of drafting. Non-admin stays gated.
+                            auto_execute=self.full_tools,
                         )
                         logger.info(f"Tool result [{tool_round}]: {len(result)} chars")
                         tool_results.append({

@@ -172,6 +172,7 @@ def execute_tool(
     *,
     org_context=None,
     principal=None,
+    auto_execute: bool = False,
 ) -> str:
     """
     Execute a tool and return the result as a string.
@@ -205,6 +206,7 @@ def execute_tool(
         "workspace_id": ctx_workspace,
         "org_id": ctx_org_id,
         "org_context": org_context,
+        "auto_execute": auto_execute,   # owner-directing-live: gated tools run now
     }
     try:
         return tool.execute(tool_input, context)
@@ -634,8 +636,8 @@ from src.tools.slack_tools import slack_post_impl, SLACK_POST_SCHEMA
 register_tool(Tool(
     name="list_projects",
     description=(
-        "List the team's active projects (directory names under "
-        "/opt/shared/projects/Active/). Use this first to know which "
+        "List the team's active projects (directory names in the org's "
+        "projects directory). Use this first to know which "
         "project slugs are valid before reading or editing a MAIN.md."
     ),
     input_schema=LIST_PROJECTS_SCHEMA,
@@ -682,7 +684,7 @@ register_tool(Tool(
     description=(
         "Create a NEW MAIN.md for a project that does not have one yet. "
         "Refuses to overwrite an existing MAIN.md (use edit_main_md for those). "
-        "Creates the project directory under /opt/shared/projects/Active/ if "
+        "Creates the project directory in the org's projects directory if "
         "needed. ALWAYS read an existing project's MAIN.md first with "
         "read_main_md so the new one follows the exact pattern. Use the team's "
         "own words and do not invent facts — ask the person for anything you "

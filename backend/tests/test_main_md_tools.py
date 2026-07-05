@@ -167,3 +167,78 @@ class TestEditMainMd:
         )
         assert "-Line B" in out
         assert "+Line BBB" in out
+
+
+# ---------------------------------------------------------------------------
+# Cross-tenant fallback guard for the filesystem root (Fable, 2026-07-05) —
+# same rule as cli_read_tools._conn: only the LEGACY_ENV_ORG_ID org may fall
+# back to the shared ACTIVE_PROJECTS_ROOT; every other org with a missing/
+# broken projects config must RAISE. These tools WRITE, so a silent fallback
+# would land org B's files in org A's repo.
+# ---------------------------------------------------------------------------
+
+from src.credentials.connections import ToolNotConfigured
+
+
+class _FakeConn:
+    def __init__(self, config):
+        self.config = config
+
+
+class TestProjectsRootLegacyScoping:
+    def _raise_not_configured(self, org_id, tool_key):
+        raise ToolNotConfigured(org_id, tool_key)
+
+    def test_non_legacy_org_never_falls_back(self, monkeypatch):
+        import src.credentials.connections as connections
+        monkeypatch.setenv("LEGACY_ENV_ORG_ID", "999999")  # someone else
+        monkeypatch.setattr(connections, "resolve", self._raise_not_configured)
+        with pytest.raises(ToolNotConfigured):
+            main_md_tools._projects_root({"org_id": 2})
+
+    def test_legacy_org_still_falls_back(self, monkeypatch):
+        import src.credentials.connections as connections
+        monkeypatch.setenv("LEGACY_ENV_ORG_ID", "2")
+        monkeypatch.setattr(connections, "resolve", self._raise_not_configured)
+        root = main_md_tools._projects_root({"org_id": 2})
+        assert root == main_md_tools.ACTIVE_PROJECTS_ROOT
+
+    def test_unset_means_strict_for_everyone(self, monkeypatch):
+        import src.credentials.connections as connections
+        monkeypatch.delenv("LEGACY_ENV_ORG_ID", raising=False)
+        monkeypatch.setattr(connections, "resolve", self._raise_not_configured)
+        with pytest.raises(ToolNotConfigured):
+            main_md_tools._projects_root({"org_id": 2})
+
+    def test_no_org_context_is_untouched_legacy_path(self, monkeypatch):
+        monkeypatch.delenv("LEGACY_ENV_ORG_ID", raising=False)
+        assert main_md_tools._projects_root({}) == main_md_tools.ACTIVE_PROJECTS_ROOT
+        assert main_md_tools._projects_root(None) == main_md_tools.ACTIVE_PROJECTS_ROOT
+
+    def test_configured_org_gets_its_own_root(self, monkeypatch, tmp_path):
+        import src.credentials.connections as connections
+        monkeypatch.delenv("LEGACY_ENV_ORG_ID", raising=False)
+        own = tmp_path / "their-repo"
+        own.mkdir()
+        monkeypatch.setattr(
+            connections, "resolve",
+            lambda org_id, tool_key: _FakeConn({"path": str(own), "active_dir": "Active"}),
+        )
+        assert main_md_tools._projects_root({"org_id": 2}) == (own / "Active").resolve()
+
+    def test_config_without_path_raises_for_non_legacy(self, monkeypatch):
+        import src.credentials.connections as connections
+        monkeypatch.delenv("LEGACY_ENV_ORG_ID", raising=False)
+        monkeypatch.setattr(connections, "resolve", lambda org_id, tool_key: _FakeConn({}))
+        with pytest.raises(ToolNotConfigured):
+            main_md_tools._projects_root({"org_id": 2})
+
+    def test_resolver_crash_raises_for_non_legacy(self, monkeypatch):
+        import src.credentials.connections as connections
+        monkeypatch.delenv("LEGACY_ENV_ORG_ID", raising=False)
+
+        def boom(org_id, tool_key):
+            raise RuntimeError("db down")
+        monkeypatch.setattr(connections, "resolve", boom)
+        with pytest.raises(RuntimeError):
+            main_md_tools._projects_root({"org_id": 2})

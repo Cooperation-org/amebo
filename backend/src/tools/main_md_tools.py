@@ -1,8 +1,10 @@
 """
 Tools for reading and editing project MAIN.md files.
 
-These let the claw inspect and update the team's project metadata in
-`/opt/shared/projects/Active/`. Every project has a MAIN.md describing
+These let the claw inspect and update the team's project metadata in the
+acting org's projects directory (from its org.yaml `projects` connection;
+the shared legacy root only for LEGACY_ENV_ORG_ID until the WP17 cutover).
+Every project has a MAIN.md describing
 team lead, slack channel, repos, links, etc. The claw's job is to keep
 those in sync with what's actually happening (mostly inferred from
 recent Slack activity).
@@ -30,30 +32,47 @@ MAX_OLD_NEW_LEN = 4096          # cap edit string sizes
 
 
 def _projects_root(context: Any = None) -> Path:
-    """The acting org's active-projects root (arch §5). From the org's org.yaml
-    `projects` connection config ({path, active_dir}); falls back to the shared
-    ACTIVE_PROJECTS_ROOT until the org's manifest is seeded (WP17 cutover). The
-    path-traversal guard below is applied relative to whatever root this returns,
-    so it stays exactly as strict per-org."""
+    """The acting org's active-projects root (arch §5), from the org's org.yaml
+    `projects` connection config ({path, active_dir}).
+
+    Fallback to the shared ACTIVE_PROJECTS_ROOT is allowed ONLY for the
+    designated legacy org (env LEGACY_ENV_ORG_ID, = linkedtrust until the WP17
+    cutover seeds its manifest) — same rule as cli_read_tools._conn. For every
+    other org a missing/broken manifest RAISES: the shared root belongs to the
+    legacy org, and these tools WRITE (create/edit MAIN.md), so a silent
+    fallback would land org B's files in org A's repo. The path-traversal guard
+    below is applied relative to whatever root this returns, so it stays
+    exactly as strict per-org."""
     from src.tools.cli_read_tools import _org_id_from_context
     org_id = _org_id_from_context(context)
-    if org_id is not None:
-        try:
-            from src.credentials.connections import (
-                resolve, ToolNotConfigured, ManifestInvalid,
-            )
-            cfg = resolve(org_id, "projects").config or {}
-            base = cfg.get("path")
-            if base:
-                root = Path(base)
-                if cfg.get("active_dir"):
-                    root = root / cfg["active_dir"]
-                return root.resolve()
-        except (ToolNotConfigured, ManifestInvalid):
-            pass
-        except Exception:
-            logger.exception("projects connection resolve failed org=%s", org_id)
-    return ACTIVE_PROJECTS_ROOT
+    if org_id is None:
+        # No org in context at all: legacy direct paths (pre-OrgContext) only.
+        return ACTIVE_PROJECTS_ROOT
+    legacy = os.getenv("LEGACY_ENV_ORG_ID", "")
+    is_legacy_org = legacy != "" and str(org_id) == legacy
+    from src.credentials.connections import (
+        resolve, ToolNotConfigured, ManifestInvalid,
+    )
+    try:
+        cfg = resolve(org_id, "projects").config or {}
+    except (ToolNotConfigured, ManifestInvalid):
+        if is_legacy_org:
+            return ACTIVE_PROJECTS_ROOT
+        raise
+    except Exception:
+        logger.exception("projects connection resolve failed org=%s", org_id)
+        if is_legacy_org:
+            return ACTIVE_PROJECTS_ROOT
+        raise
+    base = cfg.get("path")
+    if not base:
+        if is_legacy_org:
+            return ACTIVE_PROJECTS_ROOT
+        raise ToolNotConfigured(org_id, "projects", "no 'path' in projects config")
+    root = Path(base)
+    if cfg.get("active_dir"):
+        root = root / cfg["active_dir"]
+    return root.resolve()
 
 
 _SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
@@ -158,7 +177,7 @@ READ_MAIN_MD_SCHEMA = {
     "properties": {
         "project_slug": {
             "type": "string",
-            "description": "Slug of the project (directory name under /opt/shared/projects/Active/).",
+            "description": "Slug of the project (directory name in the org's projects directory).",
         },
     },
     "required": ["project_slug"],
@@ -326,8 +345,8 @@ CREATE_MAIN_MD_SCHEMA = {
         "project_slug": {
             "type": "string",
             "description": (
-                "Slug for the project — the directory name under "
-                "/opt/shared/projects/Active/. Lowercase, no spaces. The "
+                "Slug for the project — the directory name in the org's "
+                "projects directory. Lowercase, no spaces. The "
                 "directory is created if it does not exist."
             ),
         },

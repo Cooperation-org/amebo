@@ -565,3 +565,29 @@ class TestCrmWriteTools:
             (gated_actuators.crm_log_contacted_impl, {"contact": "A"}),
         ):
             assert "no org context" in impl(inp, {"draft_gate": gate})
+
+
+class TestAutoExecuteForOwner:
+    """Owner directing live (auto_execute) -> gated actions run NOW, not drafted."""
+
+    def test_auto_execute_runs_executor(self):
+        calls = []
+        def fake_exec(action):
+            calls.append(action)
+            return "Created #9: Ship it"
+        out = gated_actuators._route_through_gate(
+            action_type="taiga_create_task",
+            context={"org_id": 7, "auto_execute": True},
+            target="amebo", payload={"subject": "x", "project": "amebo"},
+            preview="p", executor=fake_exec)
+        assert out.startswith("Done") and "Created #9" in out
+        assert len(calls) == 1 and calls[0]["payload"]["subject"] == "x"
+
+    def test_without_auto_execute_still_drafts(self):
+        repo, gate = _gate_with_fake_repo()
+        out = gated_actuators._route_through_gate(
+            action_type="taiga_create_task",
+            context={"org_id": 7, "draft_gate": gate},
+            target="amebo", payload={"subject": "x"}, preview="p",
+            executor=lambda a: (_ for _ in ()).throw(AssertionError("must not run")))
+        assert "held for approval" in out and len(repo.created) == 1

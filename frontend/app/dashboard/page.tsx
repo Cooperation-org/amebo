@@ -16,8 +16,9 @@ export default function DashboardPage() {
 
   return (
     <div className="flex flex-col lg:flex-row gap-6">
-      {/* Chat-list sidebar (Step 3) */}
-      <aside className="lg:w-64 lg:flex-shrink-0">
+      {/* Chat-list sidebar (Step 3). On phones it stacks BELOW the main content
+          (order-last); on wide screens it's the left column (lg:order-first). */}
+      <aside className="order-last lg:order-first lg:w-64 lg:flex-shrink-0">
         <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
           Conversations
         </h2>
