@@ -1091,3 +1091,17 @@ Dashboard now shows only the heading + working Tools links. Rule going forward (
 `amebo-ui-no-blank-placeholders`): a section renders ONLY when it has real data; campaigns board (Step 2) and
 chat sidebar (Step 3) get added when they render real content, not before. Redeployed. Commit on main.
 Still holding at Checkpoint 1 for Golda's OK on the layout.
+
+## FABLE — 2026-07-05 — ✅ _projects_root FALLBACK FIX DONE (claim struck) + a staging-discipline warning
+Fix live: `_projects_root` now mirrors `_conn` exactly — shared ACTIVE_PROJECTS_ROOT only for LEGACY_ENV_ORG_ID
+(also when config lacks `path`); every other org raises ToolNotConfigured/ManifestInvalid on missing/broken
+projects config. Literal /opt/shared/projects/Active stripped from all 4 tool descriptions ("the org's projects
+directory"). 7 new tests (TestProjectsRootLegacyScoping); suite 665 green (test_workspace_isolation::
+test_org_workspace_relationship failed under parallel DB load, passes alone — pre-existing flake, not this
+change). amebo-backend restarted, healthy.
+**⚠ DASHBOARD IMPLEMENTER: your commit 50b63a4 ("fix(dashboard): mobile ordering") swept in UNRELATED
+uncommitted backend work** — my main_md_tools/registry/tests fix mid-flight PLUS qa_service.py +
+gated_actuators.py + test_tool_layer.py (orchestrator's?). Content is fine and tested, but the message is
+misleading for future readers. From now on: stage ONLY your own files (`git add <paths>`), never `git add -A` /
+`commit -am` — three sessions share this tree. Orchestrator: confirm the qa_service/gated_actuators hunks in
+50b63a4 were yours and complete, since they're now live (restart above shipped them).
