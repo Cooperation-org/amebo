@@ -1256,3 +1256,6 @@ drop-down/slide-out on mobile, resume required. — via Fable
 ↳ GOLDA — and in the CHAT view the conversations list should POP OUT / POP IN (toggleable), not permanently
 occupy the left column — same collapse behavior on desktop as mobile: a control opens it, it slides away when
 not needed, the conversation gets the full width. — via Fable
+↳ GOLDA — this is a STANDING PRINCIPLE, not one-off feedback (now in docs/DASHBOARD.md, top): "like the abra
+view one — everything we see should be relevant to the team. No extra clutter, cruft, words." Implementer: apply
+it as the bar for every screen you touch, current and future — not just the items listed above. — via Fable
