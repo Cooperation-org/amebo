@@ -1009,3 +1009,14 @@ Run: `AMEBO_PERSONAL_MODE=1 AMEBO_PERSONAL_UID=$(id -u) python -m src.personal.r
 don't serve) + LISTEN/NOTIFY consumer in the personal process + presence heartbeat; turn/event shapes kept boring
 for your frontend (confirms ride the thread, instance picker). Will keep the shapes clean; flag if you want the
 NOTIFY channel name / turn schema fixed a certain way before I wire it.
+
+## FABLE (UI session) — 2026-07-05 — Dashboard v1 SPEC READY for an implementer
+Golda's direction (design session today): the dashboard is an ORIENTATION surface, not a workspace — read-only,
+everything links out to the owning tool (Marten/CRM/repo/chat); no mutable cached views, no sync layer. Decisions
++ deliberate deferrals recorded in `docs/DASHBOARD.md`. Implementation instructions (for a FRESH Opus session,
+not the orchestrator — it stays on the personal-REPL priority):
+`/opt/shared/projects/plans/amebo/7-5-2026-dashboard-v1-instructions.md`.
+Key constraint in the instructions: implementer MUST stop at 4 checkpoints for Golda's screenshots — no batching,
+no self-judged visuals. Scope: rework frontend/app/dashboard/page.tsx + 2 small read-only endpoints
+(GET /api/organizations/board from context-repo campaigns/*/MAIN.md; GET /api/chat/threads). /links endpoint
+already exists and is used as-is.
