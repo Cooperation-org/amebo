@@ -2,6 +2,7 @@
 
 import { useAuthStore } from '@/src/store/useAuthStore';
 import { KeyLinksBar } from '@/src/components/dashboard/KeyLinksBar';
+import { CampaignsBoard } from '@/src/components/dashboard/CampaignsBoard';
 
 /**
  * Dashboard v1 — an ORIENTATION surface, not a workspace. Read-only: it shows
@@ -28,6 +29,7 @@ export default function DashboardPage() {
       </div>
 
       <KeyLinksBar />
+      <CampaignsBoard />
     </div>
   );
 }

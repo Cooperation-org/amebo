@@ -399,11 +399,33 @@ class ApiClient {
       body: JSON.stringify({ links }),
     });
   }
+
+  // Read-only orientation board (campaigns for LinkedTrust; config-driven)
+  async getOrgBoard(): Promise<OrgBoard> {
+    return this.request('/api/organizations/board');
+  }
 }
 
 export interface OrgLink {
   label: string;
   url: string;
+}
+
+export interface BoardItem {
+  slug: string;
+  name: string;
+  one_liner: string;
+  status: string;
+  owner: string;
+  crm_ref: string;
+  taiga: string;
+  main_md_url: string | null;
+  docs_links: OrgLink[];
+}
+
+export interface OrgBoard {
+  kind?: string;
+  items: BoardItem[];
 }
 
 export interface ChatMessageResponse {

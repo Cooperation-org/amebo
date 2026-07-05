@@ -372,6 +372,47 @@ async def get_org_links(current_user: dict = Depends(get_current_user)):
         DatabaseConnection.return_connection(conn)
 
 
+@router.get("/board")
+async def get_org_board(current_user: dict = Depends(get_current_user)):
+    """Read-only orientation board for the org, assembled from its context repo.
+
+    Generic + config-driven (I3): reads the instance's ``config.board``
+    (``{"kind": ..., "dir": ...}``) and returns ``{"kind", "items"}``. No board
+    config -> ``{"items": []}`` and the frontend hides the section. Fails closed
+    (empty) with no org context (I2). No LLM, no DB writes."""
+    org_id = current_user.get('org_id')
+    if not org_id:
+        return {"items": []}
+
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+            cur.execute(
+                """
+                SELECT config->'board' AS board
+                FROM instances
+                WHERE org_id = %s
+                ORDER BY id
+                LIMIT 1
+                """,
+                (org_id,)
+            )
+            row = cur.fetchone()
+    finally:
+        DatabaseConnection.return_connection(conn)
+
+    board_cfg = row['board'] if row and row['board'] else None
+    if not board_cfg:
+        return {"items": []}
+
+    from src.services.board_service import read_board
+    try:
+        return read_board(org_id, board_cfg)
+    except Exception as e:
+        logger.error(f"Board assembly error: {e}", exc_info=True)
+        return {"items": []}
+
+
 @router.put("/links")
 async def set_org_links(
     request: OrgLinksRequest,
