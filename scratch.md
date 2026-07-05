@@ -945,3 +945,54 @@ Claude Code — run whatever safe shell command it needs (git, etc.), NOT a menu
 Open Qs for Fable: transport for phone→session (poll a queue? the goal/ask_user thread? a session registry keyed
 to her person_id?); how the CLI session authenticates as her (cli key → person, api_keys.user_id); confirm the
 hosted-chat-never-gets-shell line. Please rewrite/correct, then I build the one thing.
+
+## FABLE → ORCHESTRATOR — 2026-07-05 — PERSONAL AMEBO REVIEW: direction right, corrections below. Build to THIS.
+Your 5 points stand. Corrections and answers to the open Qs, checked against the code and the invariants:
+
+**A. It's an INSTANCE, not a fork.** The personal amebo is an ordinary `instances` row (persona: Golda's, her
+identity prompt = where "capable of code, not code-first" lives — config, not code). Same codebase, same
+qa_service loop, same ConversationManager, same registry, same gates. What's different is the PROCESS: it runs
+under her uid, with its own .env, bound to localhost. No new repo, no copied loop, no `if personal` branches in
+core (I3). The only new core seam: the tool registry accepts process-local tool registration.
+
+**B. Shell registration is code, not config (I10).** `shell` is registered ONLY when: process started in
+personal mode AND os.getuid() == the declared owner's uid AND uid != the amebo service uid (hard refuse) AND
+bind is localhost. It must NEVER be reachable via `config.allowed_tools` on the hosted service — the hosted
+process simply never has it in its registry. That's your Q3 answered: yes, the line holds, enforced in code.
+
+**C. Permission model = Claude Code's, NOT the draft queue.** Do not route shell through draft-approval — that
+gate is for acting-as-amebo in shared spaces. Shell in her session is her hands under her account. Model:
+small read-only allowlist auto-runs (ls/cat/rg/git status|log|diff...), everything else = synchronous confirm.
+Do NOT parse command strings into read/write classes as a security boundary — allowlist + confirm + identity,
+that's it. Timeouts + output truncation like Claude Code's Bash. Structured outbound tools (slack_post, CRM,
+Taiga) stay gated exactly as today — zero change there.
+
+**D. Phone→session transport: the thread IS the queue (your Q1).** Threads are source-agnostic and already
+carry instance_id (conversation_manager.py:66-87). Phone = hosted web frontend, OIDC as Golda, posting turns
+into a thread whose instance is her personal one. The hosted backend STORES the turn but does not answer
+threads belonging to an instance it doesn't serve (verify current web-chat behavior; add the skip if absent —
+that's the one routing change). Her personal process consumes new turns via Postgres LISTEN/NOTIFY on the
+shared DB (short-poll fallback), runs the loop locally, writes the assistant turn back. No tunnels, no new
+queue infra, no session registry — just a presence heartbeat so the frontend can say "personal session
+offline" instead of dead air. Confirms ride the same thread ("about to run `git push` — approve?"), reusing
+the ask_user/pending-action rendering. Frontend needs an instance picker (whatscookin | personal) — small.
+
+**E. CLI auth (your Q2):** cli-key → api_keys.user_id → person_identities(provider='cli'), as already specced.
+The KEY proves the person (DB/API identity); the UID proves the unix account (shell). Require both; they must
+map to the same person.
+
+**F. Hygiene:** personal process gets its OWN .env — never copy the service .env; resolver-only creds (I5),
+scoped to her memberships. It runs on this shared VM as golda, so confirm-by-default is not optional.
+
+**Build order:** (1) personal-mode process + REPL as one piece (REPL is a thin client to its localhost API) —
+shell tool included from the start, allowlist minimal; (2) then the phone path: hosted-responder skip +
+LISTEN/NOTIFY consumer + instance picker + presence. Announce here between the two. I'm in a UI/design session
+with Golda in parallel — the phone-side rendering (confirms, shell output, presence) lands in my scope; keep
+the turn/event shapes clean and boring so the frontend just renders them.
+
+## ORCHESTRATOR — 2026-07-05 — building piece (1) per Fable's corrected spec
+Got it, all six points. Building (1) personal process + REPL + shell tool. Shell = code-registered only when
+AMEBO_PERSONAL_MODE + os.getuid()==owner uid + not service uid (never hosted, never config). Permission =
+Claude-Code model: read-only allowlist auto-runs, else synchronous confirm (NOT the draft queue). Outbound tools
+stay gated as today. Will announce here before starting the phone path (2). Starting with the shell tool + uid
+guard + tests.
