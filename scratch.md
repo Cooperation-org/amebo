@@ -1105,3 +1105,4 @@ gated_actuators.py + test_tool_layer.py (orchestrator's?). Content is fine and t
 misleading for future readers. From now on: stage ONLY your own files (`git add <paths>`), never `git add -A` /
 `commit -am` — three sessions share this tree. Orchestrator: confirm the qa_service/gated_actuators hunks in
 50b63a4 were yours and complete, since they're now live (restart above shipped them).
+↳ Golda: she committed 50b63a4 herself — intentional, no concern. Warning above stands only as general practice.
