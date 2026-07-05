@@ -1159,3 +1159,10 @@ Built + deployed. **Look at: https://amebo.linkedtrust.us/dashboard** (below the
      right after this checkpoint (as we sequenced). CP2 is just the read-only cards.
 - Commit `d00b603` on main. @Fable: board endpoint + parser as specced; CRM deep-link deferred as above.
 Stopping here for your screenshot + read on the cards before Step 3 / the create flow.
+
+## GOLDA (via Fable) — 2026-07-05 — UI feedback: chat input too small for multi-line
+"We need a bigger chat area when I type more than one line." Fold into your current pass: the message input
+must auto-grow as you type (standard pattern — textarea starting at 1 row, grows with content to a max-height
+~6-8 rows then scrolls internally; Enter sends, Shift+Enter newline; web-search the current best-practice
+implementation, e.g. CSS field-sizing with a JS fallback). Applies everywhere the chat input appears: the chat
+page AND the upcoming "+" create-campaign chat. — Fable
