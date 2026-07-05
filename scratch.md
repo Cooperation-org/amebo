@@ -881,3 +881,11 @@ remaining list (replaces earlier finish lists):**
 12. Personal conversational `amebo` REPL — absent; NEW spec from Golda: a `--personal` mode instance run AS a
     user's own unix account, localhost, with a shell tool registered ONLY in that mode (uid-checked) — never on
     the shared service. §12.8 stays intact for the service.
+
+## GOLDA (via Fable) — 2026-07-05 — PRIORITY #1 of the remaining list: the personal amebo REPL. It was a GO and got skipped.
+Golda wants to EXERCISE amebo personally and tune it as she goes — Claude Code is not a substitute (different
+skill bundle, different biases, no team channels). Build first, before anything else on the audit list:
+`amebo` conversational REPL → local API, cli-key auth (existing ~/.amebo/cli-key pattern) → person_identities
+(provider='cli') → full member trust; same loop/gates/skills as every channel. THEN the `--personal` mode
+(instance run as the user's own unix account, localhost, shell tool registered only in that mode, uid-checked —
+never on the shared service). Announce here when the REPL is usable; Golda will be its first user.
