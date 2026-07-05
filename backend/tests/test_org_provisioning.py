@@ -13,6 +13,13 @@ def _uid():
     return uuid.uuid4().hex[:10]
 
 
+@pytest.fixture(autouse=True)
+def _pin_legacy(monkeypatch):
+    # scoped env-credential fallback must be pinned before provisioning (Fable)
+    monkeypatch.setenv("LEGACY_ENV_ORG_ID", "1")
+
+
+
 @pytest.fixture
 def bootstrap():
     """A home org + user + instance to provision a NEW org against."""
@@ -92,3 +99,10 @@ class TestProvisioning:
         a = provision_org(slug, "Idem", aliases=["i"])
         b = provision_org(slug, "Idem Renamed", aliases=["i", "j"])
         assert a["org_id"] == b["org_id"]  # same org, updated
+
+
+class TestLegacyPinPrecondition:
+    def test_refuses_to_provision_without_legacy_pin(self, monkeypatch):
+        monkeypatch.delenv("LEGACY_ENV_ORG_ID", raising=False)
+        with pytest.raises(RuntimeError, match="LEGACY_ENV_ORG_ID"):
+            provision_org("nope", "Nope")

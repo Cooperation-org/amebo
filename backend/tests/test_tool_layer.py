@@ -191,7 +191,7 @@ class TestGatedActuators:
         ):
             out = gated_actuators.taiga_create_task_impl(
                 {"subject": "Ship tool layer", "project": "amebo",
-                 "due_date": "2026-06-20"},
+                 "due_date": "2099-01-15"},
                 {"org_id": 7, "draft_gate": gate},
             )
 
@@ -202,7 +202,7 @@ class TestGatedActuators:
         assert rec["org_id"] == 7
         assert rec["action_type"] == "taiga_create_task"
         assert rec["payload"]["subject"] == "Ship tool layer"
-        assert rec["payload"]["due_date"] == "2026-06-20"
+        assert rec["payload"]["due_date"] == "2099-01-15"
         assert rec["acting_identity"] == "amebo:7"
 
     def test_slack_post_gated_routes_through_gate_no_side_effect(self):
@@ -227,7 +227,7 @@ class TestGatedActuators:
     def test_actuator_requires_org_context(self):
         _, gate = _gate_with_fake_repo()
         out = gated_actuators.taiga_create_task_impl(
-            {"subject": "x", "project": "amebo", "due_date": "2026-06-20"},
+            {"subject": "x", "project": "amebo", "due_date": "2099-01-15"},
             {"draft_gate": gate},
         )
         assert "no org context" in out
@@ -235,7 +235,7 @@ class TestGatedActuators:
     def test_actuator_delegated_identity_stamp(self):
         repo, gate = _gate_with_fake_repo()
         gated_actuators.taiga_create_task_impl(
-            {"subject": "x", "project": "amebo", "due_date": "2026-06-20"},
+            {"subject": "x", "project": "amebo", "due_date": "2099-01-15"},
             {"org_id": 9, "principal": "golda", "draft_gate": gate},
         )
         assert repo.created[0]["acting_identity"] == "urn:amebo:user:golda"
@@ -260,7 +260,7 @@ class TestGatedActuators:
     def test_taiga_create_payload_carries_assignee_and_cash(self):
         repo, gate = _gate_with_fake_repo()
         gated_actuators.taiga_create_task_impl(
-            {"subject": "x", "project": "amebo", "due_date": "2026-06-20",
+            {"subject": "x", "project": "amebo", "due_date": "2099-01-15",
              "assignee": "golda", "cash": 50},
             {"org_id": 1, "draft_gate": gate},
         )
@@ -279,11 +279,11 @@ class TestGatedActuators:
         with patch.object(gated_actuators, "run_cli", side_effect=fake_run_cli):
             gated_actuators.execute_taiga_create({"payload": {
                 "project": "amebo", "subject": "Ship X", "description": "ctx",
-                "due_date": "2026-06-20", "assignee": "golda", "cash": 50,
+                "due_date": "2099-01-15", "assignee": "golda", "cash": 50,
             }})
         assert captured["argv"] == [
             "mcp-taiga", "create", "amebo", "Ship X",
-            "--description", "ctx", "--due", "2026-06-20",
+            "--description", "ctx", "--due", "2099-01-15",
             "--assign", "golda", "--cash", "50",
         ]
 
@@ -295,7 +295,7 @@ class TestGatedActuators:
                           return_value="Error: command not found: mcp-taiga"):
             with pytest.raises(RuntimeError, match="taiga_create_task failed"):
                 gated_actuators.execute_taiga_create({"payload": {
-                    "project": "amebo", "subject": "x", "due_date": "2026-06-20",
+                    "project": "amebo", "subject": "x", "due_date": "2099-01-15",
                 }})
 
     def test_taiga_create_executor_is_registered(self):

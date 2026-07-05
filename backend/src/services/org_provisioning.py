@@ -70,6 +70,19 @@ def provision_org(
     name = (name or "").strip()
     if not slug or not name:
         raise ValueError("slug and name are required")
+
+    # Hard precondition (Fable review): the env-credential fallback must be
+    # SCOPED to the designated legacy org before another org exists, or a new
+    # org's missing manifest could break the legacy org / risk misroute. Refuse
+    # to provision until LEGACY_ENV_ORG_ID pins the legacy org (unset it only at
+    # the WP17 cutover, when everyone fails closed).
+    import os
+    if not os.getenv("LEGACY_ENV_ORG_ID"):
+        raise RuntimeError(
+            "LEGACY_ENV_ORG_ID is not set. Pin the legacy org (the one still "
+            "using env credentials, e.g. linkedtrust's org_id) before provisioning "
+            "additional orgs, so the credential fallback is scoped and new orgs "
+            "fail closed on a missing manifest (arch §5, I1).")
     members = members or []
     aliases = aliases or []
 

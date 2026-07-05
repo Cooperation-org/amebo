@@ -172,12 +172,16 @@ def execute_taiga_create(action: Dict[str, Any]) -> str:
 
 
 def _valid_due_date(value: str) -> bool:
-    from datetime import datetime
+    """A well-formed YYYY-MM-DD date that is NOT in the past. Rejecting past
+    deadlines is defense-in-depth for the 'model doesn't know today' bug (Fable
+    live finding #1): even if the prompt's date hint is ignored, a due_date in
+    the past never reaches Taiga."""
+    from datetime import datetime, date
     try:
-        datetime.strptime(value, "%Y-%m-%d")
-        return True
-    except ValueError:
+        d = datetime.strptime(value, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
         return False
+    return d >= date.today()
 
 
 def taiga_create_task_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
