@@ -59,7 +59,19 @@ def _is_readonly(command: str) -> bool:
         return False
     cmd = os.path.basename(toks[0])
     if cmd == "git":
-        return len(toks) > 1 and toks[1] in _GIT_READONLY
+        # Find the git subcommand, skipping global options (e.g. -C <path>,
+        # -c <k=v>) so `git -C /repo log` is recognized as the read `log`.
+        _takes_value = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
+        i = 1
+        while i < len(toks):
+            t = toks[i]
+            if t in _takes_value:
+                i += 2
+            elif t.startswith("-"):
+                i += 1
+            else:
+                return t in _GIT_READONLY
+        return False
     return cmd in _READONLY_CMDS
 
 

@@ -10,7 +10,7 @@ from src.tools.shell_tool import _is_readonly, shell_impl, register_shell_tool_i
 class TestReadonlyClassification:
     @pytest.mark.parametrize("cmd", [
         "ls -la", "cat foo.txt", "git status", "git log --oneline -5",
-        "rg TODO src", "pwd", "git diff HEAD~1",
+        "rg TODO src", "pwd", "git diff HEAD~1", "git -C /some/repo log --oneline", "git -c x=y status",
     ])
     def test_readonly(self, cmd):
         assert _is_readonly(cmd) is True
