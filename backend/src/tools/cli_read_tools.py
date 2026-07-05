@@ -138,9 +138,24 @@ def _conn(context: Any, tool_key: str):
 
 
 def _conn_env(context: Any, tool_key: str) -> Optional[Dict[str, str]]:
-    """The org's subprocess env for a tool (None = fall back to process env)."""
+    """The org's subprocess env for a tool (None = fall back to process env).
+    Raises ToolNotConfigured / ManifestInvalid for a non-legacy org with a
+    missing/broken manifest — never misroutes to the legacy env creds."""
     c = _conn(context, tool_key)
     return c.as_subprocess_env() if c is not None else None
+
+
+def _routed_env(context: Any, tool_key: str):
+    """(env, error_message). error_message is a friendly string when the org has
+    no such tool connected (or a broken manifest) — the tool returns it instead
+    of running, so a non-legacy org NEVER misroutes to the legacy org's creds."""
+    from src.credentials.connections import ToolNotConfigured, ManifestInvalid
+    try:
+        return _conn_env(context, tool_key), None
+    except ToolNotConfigured:
+        return None, f"This org doesn't have {tool_key} connected."
+    except ManifestInvalid as exc:
+        return None, f"This org's {tool_key} config is invalid: {exc}"
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +172,10 @@ def odoo_search_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str
     # search verb is `contact-search <query>` — searches contacts by name,
     # email, or catcode. odoo-cli exposes no separate "leads" search, so there
     # is no model to choose: a single read-only contact search.
-    return run_cli(["odoo-cli", "contact-search", query], env=_conn_env(context, "crm"))
+    env, err = _routed_env(context, "crm")
+    if err:
+        return err
+    return run_cli(["odoo-cli", "contact-search", query], env=env)
 
 
 ODOO_SEARCH_SCHEMA = {
@@ -192,7 +210,10 @@ def crm_read_latest_email_impl(tool_input: Dict[str, Any], context: Dict[str, An
     if sender is None:
         return "Error: sender is required (email address or contact identifier)."
     # Read-only: contact's full message/note history (recent chatter/emails).
-    return run_cli(["odoo-cli", "comms", sender], env=_conn_env(context, "crm"))
+    env, err = _routed_env(context, "crm")
+    if err:
+        return err
+    return run_cli(["odoo-cli", "comms", sender], env=env)
 
 
 CRM_READ_LATEST_EMAIL_SCHEMA = {
@@ -566,7 +587,13 @@ def abra_search_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str
     if mode not in ("search", "about"):
         return "Error: mode must be 'search' or 'about'."
     # abra search "<query>"  /  abra about <name>  (per CLAUDE.md + next-steps.md)
-    conn = _conn(context, "knowledge")
+    from src.credentials.connections import ToolNotConfigured, ManifestInvalid
+    try:
+        conn = _conn(context, "knowledge")
+    except ToolNotConfigured:
+        return "This org doesn't have knowledge (abra) connected."
+    except ManifestInvalid as exc:
+        return f"This org's knowledge config is invalid: {exc}"
     env = conn.as_subprocess_env() if conn is not None else None
     argv = ["abra", mode, query]
     # Apply the org's abra scope from its manifest (arch §5, §7). Only 'about'
@@ -608,7 +635,10 @@ def taiga_list_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
     project = _require(tool_input, "project")
     if project is None:
         return "Error: project is required (a Taiga project slug/name)."
-    return run_cli(["mcp-taiga", "list", project], env=_conn_env(context, "tasks"))
+    env, err = _routed_env(context, "tasks")
+    if err:
+        return err
+    return run_cli(["mcp-taiga", "list", project], env=env)
 
 
 TAIGA_LIST_SCHEMA = {

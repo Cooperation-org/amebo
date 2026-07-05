@@ -261,3 +261,56 @@ class TestLegacyFallbackScoping:
 
     def test_no_org_context_is_untouched_legacy_path(self):
         assert _conn({}, "crm") is None
+
+
+# --- SECURITY e2e: cross-tenant credential isolation ------------------------
+import src.tools.cli_read_tools as _clir2
+from src.tools.cli_read_tools import odoo_search_impl, taiga_list_impl, abra_search_impl
+
+
+@pytest.fixture
+def org_without_manifest():
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("INSERT INTO organizations (org_name, org_slug) "
+                        "VALUES ('OrgB', 'orgb-' || md5(random()::text)) RETURNING org_id")
+            oid = cur.fetchone()[0]
+            conn.commit()
+    finally:
+        DatabaseConnection.return_connection(conn)
+    yield oid
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM organizations WHERE org_id = %s", (oid,))
+            conn.commit()
+    finally:
+        DatabaseConnection.return_connection(conn)
+
+
+class TestCrossTenantIsolation:
+    """The process env holds the LEGACY org's creds. A non-legacy org with no
+    manifest must NEVER reach a subprocess with them — it gets a friendly
+    'not connected' message, and run_cli is never called."""
+
+    def test_non_legacy_org_never_runs_cli_with_env_creds(self, org_without_manifest, monkeypatch):
+        monkeypatch.setenv("LEGACY_ENV_ORG_ID", "1")  # linkedtrust is legacy, org B is not
+        calls = []
+        monkeypatch.setattr(_clir2, "run_cli",
+                            lambda argv, **kw: calls.append((argv, kw.get("env"))) or "SHOULD NOT RUN")
+        ctx = {"org_id": org_without_manifest}
+        # every routed read must refuse, not misroute
+        assert "connected" in odoo_search_impl({"query": "acme"}, ctx).lower()
+        assert "connected" in taiga_list_impl({"project": "x"}, ctx).lower()
+        assert "connected" in abra_search_impl({"query": "x", "mode": "about"}, ctx).lower()
+        assert calls == []   # NO subprocess ran — no chance to use legacy creds
+
+    def test_legacy_org_does_fall_back_to_env(self, monkeypatch):
+        # org 1 (linkedtrust) with no manifest IS allowed the env fallback
+        monkeypatch.setenv("LEGACY_ENV_ORG_ID", "1")
+        calls = []
+        monkeypatch.setattr(_clir2, "run_cli",
+                            lambda argv, **kw: calls.append((argv, kw.get("env"))) or "ok")
+        odoo_search_impl({"query": "acme"}, {"org_id": 1})
+        assert len(calls) == 1 and calls[0][1] is None  # ran, with process env (env overlay None)
