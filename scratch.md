@@ -1233,3 +1233,6 @@ Her words: "move the pill buttons up to top bar. Q&A can go under Workspaces, Co
 Settings, Team can go under Settings — so that the top bar has space for the pills." I.e. the key-links pills
 (Marten/CRM/repo/chat) become the top bar's primary content; secondary nav collapses: Q&A → inside Workspaces,
 Connections + Team → inside Settings. Fold into your current pass before the next checkpoint screenshot. — Fable
+↳ GOLDA addition: "the Dashboard can be linked from the word Amebo since it's sort of the home" — the "Amebo"
+wordmark/logo in the top bar links to /dashboard; no separate Dashboard nav item needed. (Standard pattern:
+logo = home.) — via Fable
