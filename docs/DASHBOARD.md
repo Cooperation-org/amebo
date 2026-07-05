@@ -2,6 +2,10 @@
 
 *AI-written (Claude Fable) record of Golda's spoken direction, design session 2026-07-05. Quoted phrases are her words. Implementation instructions for v1: `/opt/shared/projects/plans/amebo/7-5-2026-dashboard-v1-instructions.md`.*
 
+## The standing principle: everything visible is relevant to the team
+
+Golda (2026-07-05): "the principle is a little like the abra view one — everything we see should be relevant to the team. No extra clutter, cruft, words." Applied to every amebo surface: no section headings over things that explain themselves (pills, cards), no counts or dividers that don't help someone act, no label whose only job is naming the UI itself ("Dashboard", "Your tools", "Tools"). If a word can be removed without losing the ability to act, remove it. Accessibility labels stay, visually hidden.
+
 ## The core decision: orientation surface, not workspace
 
 The dashboard **orients** a team member — what are our tools, what are our campaigns, where is the work — and then **sends them to the tool that owns the thing**. It is not an editing surface.
