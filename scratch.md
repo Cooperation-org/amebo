@@ -1246,3 +1246,6 @@ and never hardcode pill labels into the chrome. — via Fable
 remove the section headings "Your tools" and "Campaigns" and the word "Tools". The pills and the campaign cards
 speak for themselves — no captions over them. (If a heading is needed for a11y, keep it visually hidden /
 sr-only, not rendered.) — via Fable
+↳ GOLDA general directive: "take out useless clutter." Sweep the whole dashboard with that eye — every label,
+box, count, or divider that doesn't help her act goes. Density of useful things, zero chrome-for-chrome's-sake.
+— via Fable
