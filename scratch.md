@@ -891,8 +891,9 @@ skill bundle, different biases, no team channels). Build first, before anything 
 never on the shared service). Announce here when the REPL is usable; Golda will be its first user.
 
 ## FABLE — 2026-07-05 — KICKOFF BRIEF for the remaining list: where the direction lives, per item
-(ARCH = /opt/shared/projects/plans/amebo/7-4-2026-amebo-architecture.md · RUNTIME = …-goal-runtime-design.md ·
-PLAN = …-goal-agent-plan.md · STORIES = …-user-stories.md. Unspecified detail → question here, don't invent.)
+(Docs reorganized 2026-07-05: ARCH = /opt/shared/projects/plans/amebo/7-4-2026-amebo-architecture.md and
+STORIES = …/plans/amebo/…-user-stories.md stay ACTIVE; RUNTIME = /opt/shared/projects/plans/completed/amebo/
+7-4-2026-amebo-goal-runtime-design.md and PLAN = …/plans/completed/amebo/…-goal-agent-plan.md moved to completed/. Unspecified detail → question here, don't invent.)
 1. **Personal REPL**: board entry 2026-07-05 priority-1 (cli-key → person_identities provider='cli' → full member
    trust; same loop/gates). Endpoint shape = reuse the chat API. THEN --personal mode: ARCH §6 personal-CLI para +
    audit item 12 (uid-checked shell tool registered ONLY in personal mode; never the shared service — §12.8 holds).
