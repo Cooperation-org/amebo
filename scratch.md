@@ -889,3 +889,31 @@ skill bundle, different biases, no team channels). Build first, before anything 
 (provider='cli') → full member trust; same loop/gates/skills as every channel. THEN the `--personal` mode
 (instance run as the user's own unix account, localhost, shell tool registered only in that mode, uid-checked —
 never on the shared service). Announce here when the REPL is usable; Golda will be its first user.
+
+## FABLE — 2026-07-05 — KICKOFF BRIEF for the remaining list: where the direction lives, per item
+(ARCH = /opt/shared/projects/plans/amebo/7-4-2026-amebo-architecture.md · RUNTIME = …-goal-runtime-design.md ·
+PLAN = …-goal-agent-plan.md · STORIES = …-user-stories.md. Unspecified detail → question here, don't invent.)
+1. **Personal REPL**: board entry 2026-07-05 priority-1 (cli-key → person_identities provider='cli' → full member
+   trust; same loop/gates). Endpoint shape = reuse the chat API. THEN --personal mode: ARCH §6 personal-CLI para +
+   audit item 12 (uid-checked shell tool registered ONLY in personal mode; never the shared service — §12.8 holds).
+2. **Completion-criteria eval**: PLAN WP19(b) + RUNTIME §SDK-review item 2 — evaluate goals.target_criteria at
+   dispatch end (work-tier self-check), log verdict in dispatch_summary, transition; stop auto-completing.
+3. **Kaizen**: ARCH §7 (complete spec: verbatim capture to org feedback category incl. frustration moments,
+   weekly cron self-review goal proposing gated guidance.md/skill edits, on-demand trigger, org-data-only
+   boundary, name everything `kaizen`).
+4. **Admin gating**: ARCH §12.8 exact (env allowlist of OIDC subs = Golda's only, checked in the executor WITH
+   T2; claims are never authz). Plus wire OIDC login → person_identities(provider='oidc') per §3/§9.
+   INPUT NEEDED: Golda's OIDC sub value at deploy (env var, never committed).
+5. **provision_org completion**: ARCH §2.1 + §11.5-6 (scaffold minimal context repo when none, WRITE org.yaml
+   from declared tools, managed clone path) + admin-gated entrypoint per item 4's gate.
+6. **skills/ + patterns/ move**: board directives 2026-07-04 (repo root, same names as org-repo overlay, loader
+   path update, file_skill adds the abra name-binding). Pattern file CONTENT: decision-points + communication
+   tables are in RUNTIME §§1-2; kaizen.md from ARCH §7; prior-art from STORIES. Draft them, mark AI-written,
+   flag here for Golda review — do not invent beyond those sources.
+7. **Multi-socket runtime**: ARCH §6.1 + PLAN WP4 (socket per installed app from DB, hot-add, reconnect,
+   event→instance; team_id translation stays in the adapter — I11). Dedicated pass, announce first.
+   INPUT NEEDED: second Slack app/token to actually exercise it.
+8. **Small items**: rate limit (/public, per-IP) · ask_user timeout (config, wake with "no answer" — ARCH §8.2) ·
+   abra scope on search mode (mirror the about-mode fix) · dispatcher writes parent_event_id (mig 025 ready) ·
+   deferred tool schemas (mirror load_skill; PLAN WP19a) · conversational intake (PLAN WP14: parse "this week's
+   goals for <org>: …" → existing gated goals API) · escalate()/model_tiers (RUNTIME §model-tiering, exact seam).
