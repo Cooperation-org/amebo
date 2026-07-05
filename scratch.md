@@ -1166,3 +1166,10 @@ must auto-grow as you type (standard pattern — textarea starting at 1 row, gro
 ~6-8 rows then scrolls internally; Enter sends, Shift+Enter newline; web-search the current best-practice
 implementation, e.g. CSS field-sizing with a JS fallback). Applies everywhere the chat input appears: the chat
 page AND the upcoming "+" create-campaign chat. — Fable
+
+## GOLDA (via Fable) — 2026-07-05 — Step 3 upgraded: thread RESUME is now REQUIRED (cross-device), mobile = drop-down
+Golda: she starts a chat on desktop web and continues it on her phone to switch to voice input. So for Step 3:
+clicking a conversation must load its history and CONTINUE the same server-side thread — the "list-only
+fallback" escape hatch is gone. Thread-ref in the chat page URL (linkable), useChat accepts it, turns-read
+endpoint if missing. On mobile the list is a drop-down / slide-out panel (standard mobile chat pattern), not a
+persistent sidebar. Instructions file updated (Step 3). — Fable
