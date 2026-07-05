@@ -12,6 +12,8 @@ import {
 import { apiClient } from '@/src/lib/api';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/src/store/useAuthStore';
+import { useChatThreads } from '@/src/hooks/useChatThreads';
+import { History, Plus, X as CloseIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -32,6 +34,8 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [speakReplies, setSpeakReplies] = useState(false);
   const [resumeSession, setResumeSession] = useState<string | undefined>(undefined);
+  const [listOpen, setListOpen] = useState(false);
+  const { data: threads } = useChatThreads();
 
   const { turns, send, sending, error, reset } = useChat(instance, resumeSession);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -126,13 +130,29 @@ export default function ChatPage() {
     <div className="flex h-[100dvh] flex-col bg-background text-foreground">
       {/* Header */}
       <header className="flex items-center justify-between gap-2 border-b border-border px-4 py-1.5">
-        <div className="flex min-w-0 items-baseline gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setListOpen((v) => !v)}
+            aria-label="Conversations"
+            className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted"
+          >
+            <History className="h-4 w-4" />
+          </button>
           <a href="/dashboard" className="shrink-0 text-sm font-semibold text-foreground hover:opacity-70">
             Amebo
           </a>
           {instanceName && instanceName.toLowerCase() !== 'amebo' && (
             <h1 className="truncate text-sm text-muted-foreground">{instanceName}</h1>
           )}
+          <nav className="ml-4 hidden items-center gap-1 sm:flex">
+            <a href="/dashboard/workspaces" className="rounded-md px-2.5 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
+              Workspaces
+            </a>
+            <a href="/dashboard/settings" className="rounded-md px-2.5 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
+              Settings
+            </a>
+          </nav>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {speechSynthesisSupported() && (
@@ -185,6 +205,38 @@ export default function ChatPage() {
           </DropdownMenu>
         </div>
       </header>
+
+      {/* Conversations pop-out: overlays from the left, never occupies layout */}
+      {listOpen && (
+        <div className="relative z-30">
+          <div
+            className="fixed inset-0 top-[41px] bg-black/20"
+            onClick={() => setListOpen(false)}
+          />
+          <div className="fixed left-0 top-[41px] bottom-0 w-72 overflow-y-auto border-r border-border bg-background p-2 shadow-lg">
+            <button
+              type="button"
+              onClick={() => { setListOpen(false); window.location.href = '/chat'; }}
+              className="mb-1 flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm font-medium hover:bg-muted"
+            >
+              <Plus className="h-4 w-4" /> New chat
+            </button>
+            {(threads ?? []).map((t) => (
+              <button
+                key={t.session_id}
+                type="button"
+                onClick={() => {
+                  setListOpen(false);
+                  window.location.href = `/chat?session=${encodeURIComponent(t.session_id)}`;
+                }}
+                className="block w-full rounded-md px-3 py-2 text-left hover:bg-muted"
+              >
+                <p className="line-clamp-2 text-sm text-foreground">{t.title || t.snippet || 'Conversation'}</p>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <main className="flex-1 overflow-y-auto px-4 py-4">
