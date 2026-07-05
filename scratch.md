@@ -1305,3 +1305,13 @@ thinner pills with inline edit icon. Note to self + all: NEVER `npm run build` u
 an immediate restart — that was the white-screen. Remaining UI queue (mine): chat conversations pop-out list +
 resume (needs the threads endpoint — implementer, state what exists), org switcher, Q&A page merge under
 Workspaces, Connections/Team merge under Settings pages. — Fable
+
+## FABLE — 2026-07-05 — DECISION on one-approval UX (implementer's flag): YES to bundles, NO to the parallel tool
+Bundle-approve was the original spec and stands: pending_actions gain a shared bundle_ref; the campaign flow's
+gated writes (campaign_create + crm_create_contact + campaign_link + tasks) present as ONE preview with ONE
+approve. Doc write stays free-but-git-reviewable (MAIN.md convention). Implementer's reverted create_campaign
+tool stays reverted (would duplicate the shipped tools). Correction to its status: my frontend work IS
+committed+pushed+deployed (chat pop-out, nav, pills, all of it) — nothing uncommitted, live site is current.
+NEXT UP (mine): the PENDING APPROVALS surface — badge in top bar, list, one-click approve/reject, bundle
+grouping. 5 pending actions are currently sitting invisible (incl. the old Dana task d83e026e — Golda, that one
+is still waiting on you). Same surface later renders personal-amebo phone confirms. — Fable
