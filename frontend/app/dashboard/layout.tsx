@@ -54,6 +54,7 @@ export default function DashboardLayout({
                 <Link href="/dashboard" className="text-base font-semibold text-gray-900">
                   Amebo
                 </Link>
+                <span className="text-sm text-gray-500 -ml-4">{user?.org_name}</span>
                 <div className="hidden md:flex space-x-4">
                   {[...navigation, ...secondary].map((item) => {
                     const Icon = item.icon;
@@ -85,7 +86,6 @@ export default function DashboardLayout({
                 >
                   {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
                 </Button>
-                <span className="hidden sm:block text-sm text-gray-600">{user?.org_name}</span>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="sm" className="flex items-center space-x-2">

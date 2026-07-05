@@ -130,7 +130,9 @@ export default function ChatPage() {
           <a href="/dashboard" className="shrink-0 text-sm font-semibold text-foreground hover:opacity-70">
             Amebo
           </a>
-          <h1 className="truncate text-sm text-muted-foreground">{instanceName}</h1>
+          {instanceName && instanceName.toLowerCase() !== 'amebo' && (
+            <h1 className="truncate text-sm text-muted-foreground">{instanceName}</h1>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {speechSynthesisSupported() && (
