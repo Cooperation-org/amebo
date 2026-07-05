@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { User, Settings, LogOut, MessageSquare, Building2, Users, Menu, X, Link2 } from 'lucide-react';
 import { usePermissions } from '@/src/hooks/usePermissions';
+import { usePendingActions } from '@/src/hooks/usePendingActions';
 
 export default function DashboardLayout({
   children,
@@ -25,6 +26,8 @@ export default function DashboardLayout({
   const { user, logout } = useAuthStore();
   const { canInviteUsers } = usePermissions();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const { data: pendingActions } = usePendingActions();
+  const pendingCount = pendingActions?.length ?? 0;
 
   // Thin fixed chrome (docs/DASHBOARD.md): wordmark = home; only the few
   // top-level places live here. Q&A/Connections/Team are secondary — they sit
@@ -77,6 +80,14 @@ export default function DashboardLayout({
                 </div>
               </div>
               <div className="flex items-center space-x-4">
+                {pendingCount > 0 && (
+                  <Link
+                    href="/dashboard/approvals"
+                    className="flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200"
+                  >
+                    {pendingCount} to approve
+                  </Link>
+                )}
                 {/* Mobile hamburger button */}
                 <Button
                   variant="ghost"

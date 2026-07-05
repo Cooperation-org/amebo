@@ -405,6 +405,22 @@ class ApiClient {
     return this.request('/api/organizations/board');
   }
 
+  // Pending gated actions (drafts awaiting human approval)
+  async getPendingActions(): Promise<PendingAction[]> {
+    return this.request('/api/pending-actions/');
+  }
+
+  async approvePendingAction(id: string): Promise<PendingAction> {
+    return this.request(`/api/pending-actions/${id}/approve`, { method: 'POST' });
+  }
+
+  async rejectPendingAction(id: string, reason?: string): Promise<PendingAction> {
+    return this.request(`/api/pending-actions/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ reason: reason || 'rejected from dashboard' }),
+    });
+  }
+
   // The user's own web conversations (for the dashboard chat list)
   async getChatThreads(): Promise<ChatThreadSummary[]> {
     return this.request('/api/chat/threads');
@@ -413,6 +429,16 @@ class ApiClient {
   async getChatThreadTurns(sessionId: string): Promise<ChatTurnOut[]> {
     return this.request(`/api/chat/threads/${encodeURIComponent(sessionId)}/turns`);
   }
+}
+
+export interface PendingAction {
+  id: string;
+  action_type: string;
+  target?: string | null;
+  status: string;
+  preview?: string | null;
+  created_by?: string | null;
+  error?: string | null;
 }
 
 export interface OrgLink {
