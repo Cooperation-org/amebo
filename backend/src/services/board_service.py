@@ -232,6 +232,10 @@ def _parse_main_md(path: Path, slug: str, dir_name: str, repo_root: str) -> Dict
         "crm_ref": _clean_value(fields.get("crm_campaign", "")),
         "taiga": _clean_value(fields.get("taiga", "")),
         "main_md_url": _main_md_url(repo_root, rel),
+        # ref_path is the doc's repo-relative path — a generic key an optional,
+        # config-selected enricher (e.g. the Odoo leaf) uses to attach crm_url.
+        "ref_path": rel,
+        "crm_url": None,
         "docs_links": _parse_docs_links(text),
     }
 

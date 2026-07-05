@@ -418,8 +418,10 @@ export interface BoardItem {
   status: string;
   owner: string;
   crm_ref: string;
+  crm_url: string | null;
   taiga: string;
   main_md_url: string | null;
+  ref_path: string;
   docs_links: OrgLink[];
 }
 

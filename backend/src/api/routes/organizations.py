@@ -406,8 +406,13 @@ async def get_org_board(current_user: dict = Depends(get_current_user)):
         return {"items": []}
 
     from src.services.board_service import read_board
+    from src.services.crm_board_links import enrich_crm_links
     try:
-        return read_board(org_id, board_cfg)
+        result = read_board(org_id, board_cfg)
+        # optional, config-selected CRM link enrichment (vendor leaf; no-op if
+        # config.board has no 'crm' key or the enricher is unknown/unavailable)
+        enrich_crm_links(result.get("items", []), board_cfg.get("crm"))
+        return result
     except Exception as e:
         logger.error(f"Board assembly error: {e}", exc_info=True)
         return {"items": []}

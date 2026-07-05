@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ExternalLink } from 'lucide-react';
 import { useOrgBoard } from '@/src/hooks/useOrgBoard';
-import { useOrgLinks } from '@/src/hooks/useOrgLinks';
 import type { BoardItem } from '@/src/lib/api';
 
 const STATUS_STYLES: Record<string, string> = {
@@ -40,11 +39,11 @@ function isUrl(v: string) {
   return /^https?:\/\//.test(v);
 }
 
-function CampaignCard({ item, crmBase }: { item: BoardItem; crmBase?: string }) {
-  // CRM per-campaign deep-linking isn't wired yet (would need the Odoo id, which
-  // isn't in MAIN.md); link to the org's CRM campaigns list when we have a CRM
-  // base configured. The campaign name is shown as text either way.
-  const crmUrl = crmBase ? `${crmBase.replace(/\/$/, '')}/web#model=utm.campaign&view_type=list` : undefined;
+function CampaignCard({ item }: { item: BoardItem }) {
+  // crm_url (when present) is the campaign's own record in the CRM, resolved by
+  // the backend; we only link when we have that specific record (never the
+  // generic CRM). taiga only when it's a real URL.
+  const crmUrl = item.crm_url || undefined;
   const taigaUrl = isUrl(item.taiga) ? item.taiga : undefined;
 
   return (
@@ -64,7 +63,7 @@ function CampaignCard({ item, crmBase }: { item: BoardItem; crmBase?: string }) 
         )}
         <div className="mt-auto flex flex-wrap gap-x-4 gap-y-1.5 pt-1">
           {item.main_md_url && <LinkChip href={item.main_md_url}>MAIN.md</LinkChip>}
-          {item.crm_ref && crmUrl && <LinkChip href={crmUrl}>CRM</LinkChip>}
+          {crmUrl && <LinkChip href={crmUrl}>CRM</LinkChip>}
           {taigaUrl && <LinkChip href={taigaUrl}>Taiga</LinkChip>}
         </div>
       </CardContent>
@@ -80,13 +79,10 @@ function CampaignCard({ item, crmBase }: { item: BoardItem; crmBase?: string }) 
  */
 export function CampaignsBoard() {
   const { data, isLoading } = useOrgBoard();
-  const { data: links } = useOrgLinks();
 
   if (isLoading) return null;
   const items = data?.items ?? [];
   if (items.length === 0) return null;
-
-  const crmBase = links?.find((l) => /crm/i.test(l.label))?.url;
 
   return (
     <section aria-label="Campaigns" className="mt-8">
@@ -95,7 +91,7 @@ export function CampaignsBoard() {
       </h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
         {items.map((item) => (
-          <CampaignCard key={item.slug} item={item} crmBase={crmBase} />
+          <CampaignCard key={item.slug} item={item} />
         ))}
       </div>
     </section>
