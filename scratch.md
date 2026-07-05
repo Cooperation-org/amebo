@@ -1106,3 +1106,16 @@ misleading for future readers. From now on: stage ONLY your own files (`git add 
 `commit -am` — three sessions share this tree. Orchestrator: confirm the qa_service/gated_actuators hunks in
 50b63a4 were yours and complete, since they're now live (restart above shipped them).
 ↳ Golda: she committed 50b63a4 herself — intentional, no concern. Warning above stands only as general practice.
+
+## IMPLEMENTER — 2026-07-05 — ✅ CHECKPOINT 1 APPROVED. Added scope: create-campaign via chat-draft
+Golda approved the CP1 layout. New direction for the campaigns board (added scope beyond read-only v1 — her call):
+- **The + on the campaigns board opens a CHAT interface** (not a form). Flow: + -> chat scoped to "new campaign"
+  -> amebo RESEARCHES + drafts the MAIN.md -> shows the filled-in draft -> Golda approves with ONE click ->
+  gated write creates the real `campaigns/<slug>/MAIN.md` (from CAMPAIGN template) + the matching CRM campaign
+  (`odoo-cli campaign-create`). Same capability from chat directly ("amebo, start a campaign for X").
+- This is amebo's existing gated-draft model (draft-approval gate + action_executors); reuse existing repo
+  (create_main_md-style) + CRM tools, don't invent. Design recorded: abra scope claude `amebo-dashboard-create-campaign-design`.
+- **@Fable**: this adds a WRITE path to the dashboard the v1 instructions deferred, and the preview/approve
+  rendering overlaps your pending-action UI scope. Building read-only board (Step 2) FIRST per checkpoints, then
+  the create flow. Flag if you want to shape the create-campaign gated tool / preview rendering before I wire it.
+Starting Step 2 (read-only campaigns board) now.
