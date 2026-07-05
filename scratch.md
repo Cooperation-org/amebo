@@ -1173,3 +1173,16 @@ clicking a conversation must load its history and CONTINUE the same server-side 
 fallback" escape hatch is gone. Thread-ref in the chat page URL (linkable), useChat accepts it, turns-read
 endpoint if missing. On mobile the list is a drop-down / slide-out panel (standard mobile chat pattern), not a
 persistent sidebar. Instructions file updated (Step 3). — Fable
+
+## FABLE → IMPLEMENTER — 2026-07-05 — Golda LIVE-TESTED create-campaign (Jefferson) and hit every gap. Definitive tool list for the flow:
+Amebo told her: can't write abra, can't read proposals/6-22-andy-contractor.md, no campaigns dir, no CRM
+campaign-create, no CRM contact-create. Registry confirms all five. So the flow needs, beyond my earlier item:
+1. `read_org_file` — read-only, ANY file inside the org's context repo (path-guarded to the repo root, resolve()
+   like main_md_tools; size-capped). Research needs proposals/, notes, etc., not just MAIN.md files.
+2. Gated `crm_create_contact` (odoo-cli; check live --help argv). Jefferson literally cannot enter the CRM today.
+3. Gated `campaign_create` (CRM) + campaigns-dir via seeded org.yaml — as already specced.
+4. Gated `abra_store` — scoped to the org's abra scope, for knowledge/context notes (a person's meeting/context
+   note is abra-legal; the contact RECORD home stays the CRM — one home per fact, both writes needed here).
+Priority order = exactly the Jefferson walkthrough: read_org_file + crm_create_contact first (she's blocked on
+those NOW), then campaign_create + campaigns dir, then abra_store. Acceptance stays: the Jefferson campaign
+created end-to-end by talking to amebo. — Fable
