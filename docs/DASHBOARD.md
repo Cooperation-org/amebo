@@ -22,6 +22,10 @@ Everything on it links out. No edit-in-place anywhere in v1.
 
 Campaigns-board is **one template, not amebo's UI**. "I don't know that that is always going to be what amebo users want... it would be nice if that's a template that can be the front end of amebo, but it can also completely change its front end to something else." Core stays campaign-ignorant (I3): the board endpoint reads a per-instance config (what kind of board, which repo dir it binds to); "campaign" is vocabulary that lives in the LinkedTrust template and the org's own repo convention. Another org's template could be cases, clients, or no board at all.
 
+## Data entry: chat is the entry path (Golda, 2026-07-05)
+
+"Anytime I see something, I am gonna want to enter data." The answer is not edit-forms on the dashboard — it's chat + gated drafts: tell amebo what you saw, it drafts the write into the *correct home* (CRM note, task, campaign log line), you approve. The create-campaign "+" flow is the first instance of this pattern (chat-scoped draft → one-click approve → gated writes to repo + CRM). If capture friction shows up, the future affordance is a one-tap "note this" on any card that pre-fills chat — a thin ribbon over the same gated path, never a direct write.
+
 ## Recorded for later (NOT in v1 — deliberate deferrals)
 
 - **Suggested next steps (the judgment layer).** Amebo-generated per-campaign suggestions ("what's the next contact"), overridable by the user, whose word always wins. An *accepted* suggestion graduates into the owning tool — a next-contact becomes an Odoo activity (`crm_schedule` exists), a work item becomes a Marten task. Amebo keeps only the transient draft, never the accepted fact.
