@@ -90,6 +90,12 @@ def _default_notifier(channel: str, message: str) -> bool:
     return True
 
 
+# Guardrail kinds that bound a single dispatch's resources rather than
+# flagging misbehavior. Tripping one re-arms the goal for a later dispatch;
+# everything else (not_allowed, write_once, unknown_tool) fails the goal.
+_RETRYABLE_GUARDRAILS = {"max_tool_rounds", "wall_clock", "max_cost_usd"}
+
+
 def _is_recurring(goal: Dict[str, Any]) -> bool:
     """
     True if the goal's trigger fires repeatedly (a cron schedule). Recurring
@@ -215,6 +221,34 @@ class GoalDispatcher:
                 )
             except Exception:
                 logger.exception("Failed to record guardrail event")
+            # Resource caps (rounds / cost / wall clock) bound ONE dispatch,
+            # not the goal: re-arm to pending so the next dispatch resumes
+            # from the carryover. Policy trips (not_allowed, write_once, …)
+            # mean the claw tried something it must not — those stay fatal.
+            if exc.which in _RETRYABLE_GUARDRAILS:
+                try:
+                    self._goal_repo.append_event(
+                        goal_id=goal_id, actor_type="claw",
+                        action="dispatch_summary",
+                        result_summary=(
+                            f"Dispatch stopped by {exc.which} budget "
+                            f"({exc.reason}) — partial progress is in the "
+                            "tool_call events above; resume from there."),
+                        metadata={"guardrail": exc.which},
+                    )
+                except Exception:
+                    logger.exception("Failed to record partial dispatch_summary")
+                try:
+                    self._engine.rearm(
+                        goal_id,
+                        summary=f"re-armed after guardrail:{exc.which}")
+                except InvalidTransitionError:
+                    pass
+                return DispatchResult(
+                    goal_id=goal_id, status="pending",
+                    error=f"guardrail:{exc.which}",
+                    summary=exc.reason,
+                )
             try:
                 self._engine.fail(goal_id, reason=f"guardrail:{exc.which}: {exc.reason}")
             except InvalidTransitionError:
@@ -436,6 +470,18 @@ class GoalDispatcher:
         criteria = goal.get("target_criteria")
         if criteria:
             lines.append("## Target criteria\n" + str(criteria))
+        # Budget awareness: without this the model spends every round
+        # researching and trips max_tool_rounds with nothing to show
+        # (seen live 2026-07-05: 5 rounds of searches, zero actions).
+        max_rounds = int((goal.get("config") or {}).get("max_tool_rounds", 5))
+        lines.append(
+            f"## Budget\nYou have at most {max_rounds} tool rounds this "
+            "dispatch. The goal description and the progress log below may "
+            "already contain the human's answer — read them before searching. "
+            "Prefer completing one concrete action over further research; if "
+            "the budget runs out mid-way, your progress log is what the next "
+            "dispatch resumes from."
+        )
         brief = self._carryover_brief(goal.get("id"))
         if brief:
             lines.append(brief)

@@ -584,9 +584,9 @@ def abra_search_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str
     if query is None:
         return "Error: query is required."
     mode = (tool_input.get("mode") or "search").strip()
-    if mode not in ("search", "about"):
-        return "Error: mode must be 'search' or 'about'."
-    # abra search "<query>"  /  abra about <name>  (per CLAUDE.md + next-steps.md)
+    if mode not in ("search", "about", "read"):
+        return "Error: mode must be 'search', 'about', or 'read'."
+    # abra search "<query>" / abra about <name> / abra read <name>
     from src.credentials.connections import ToolNotConfigured, ManifestInvalid
     try:
         conn = _conn(context, "knowledge")
@@ -610,12 +610,13 @@ ABRA_SEARCH_SCHEMA = {
     "properties": {
         "query": {
             "type": "string",
-            "description": "Search text, or the name to look up when mode='about'.",
+            "description": "Search text, or the name to look up when mode='about'/'read'.",
         },
         "mode": {
             "type": "string",
-            "description": "'search' for full-text (default) or 'about' for a name.",
-            "enum": ["search", "about"],
+            "description": "'search' for full-text (default), 'about' for a "
+                           "name's bindings, 'read' for a note's full content.",
+            "enum": ["search", "about", "read"],
         },
     },
     "required": ["query"],

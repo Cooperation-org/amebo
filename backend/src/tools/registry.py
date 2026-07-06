@@ -883,7 +883,8 @@ register_tool(Tool(
     name="abra_search",
     description=(
         "Search the team knowledge base (abra), read only: mode='search' for "
-        "full-text, mode='about' for everything known about a name. Thin "
+        "full-text, mode='about' for everything known about a name, "
+        "mode='read' for a note's full content by name. Thin "
         "wrapper; for who/related/hot/refs use the 'abra' tool."
     ),
     input_schema=ABRA_SEARCH_SCHEMA,

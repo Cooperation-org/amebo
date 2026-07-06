@@ -269,7 +269,7 @@ class TestWriteOnce:
 
 
 class TestRoundCap:
-    def test_loop_stops_at_cap(self, engine, test_org_id, fake_tools):
+    def test_loop_stops_at_cap_and_rearms(self, engine, test_org_id, fake_tools):
         g = engine.create_goal(
             test_org_id, "Infinite loop",
             config={
@@ -279,7 +279,7 @@ class TestRoundCap:
         )
 
         client = MagicMock()
-        # Always return tool_use; never end. Loop should fail after 2 rounds.
+        # Always return tool_use; never end. Loop should stop after 2 rounds.
         client.messages.create.side_effect = [
             _tool_use_resp([_tu("list_projects", {}, f"u{i}")])
             for i in range(20)
@@ -287,5 +287,12 @@ class TestRoundCap:
         dispatcher = GoalDispatcher(anthropic_client=client)
         result = dispatcher.dispatch(g["id"])
 
-        assert result.status == "failed"
+        # A resource cap bounds ONE dispatch, not the goal: it re-arms to
+        # pending so a later dispatch resumes from the carryover.
+        assert result.status == "pending"
         assert "max_tool_rounds" in (result.error or "")
+        assert engine.get(g["id"])["status"] == "pending"
+
+        # Partial progress is summarized for the next dispatch's carryover.
+        actions = [e["action"] for e in engine.events(g["id"])]
+        assert "dispatch_summary" in actions
