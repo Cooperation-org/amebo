@@ -259,9 +259,12 @@ class TestLifecycleOps:
         # config rides through the response so the queue can sort/label
         assert body["config"]["short_name"] == "t-answer"
 
+        # A background dispatch may append further events after the answer,
+        # so assert on presence, not position.
         events = client.get(f"/api/goals/{g['id']}/events").json()
-        assert [e["action"] for e in events][-1] == "user_answered"
-        assert events[-1]["result_summary"] == "the first one"
+        answered = [e for e in events if e["action"] == "user_answered"]
+        assert len(answered) == 1
+        assert answered[0]["result_summary"] == "the first one"
 
     def test_answer_when_not_waiting_409(self, client, auth_as):
         created = client.post("/api/goals/", json={"title": "X"}).json()

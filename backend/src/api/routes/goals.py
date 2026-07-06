@@ -28,7 +28,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from src.api.middleware.auth import get_service_or_user
@@ -250,14 +250,33 @@ async def resume_goal(
     return _to_goal_response(resumed)
 
 
+def _dispatch_in_background(goal_id: str) -> None:
+    """Run one dispatch after an answer lands, so the answer immediately
+    becomes work instead of waiting for a scheduler edge or a human nudge.
+    Errors are logged, never surfaced — the answer itself is already saved."""
+    try:
+        anthropic_client = None
+        api_key = os.getenv("ANTHROPIC_API_KEY")
+        if api_key:
+            from anthropic import Anthropic
+            anthropic_client = Anthropic(api_key=api_key)
+        result = GoalDispatcher(anthropic_client=anthropic_client).dispatch(goal_id)
+        logger.info("Post-answer dispatch for %s finished: %s",
+                    goal_id, result.status)
+    except Exception:
+        logger.exception("Post-answer dispatch for %s raised", goal_id)
+
+
 @router.post("/{goal_id}/answer", response_model=GoalResponse)
 async def answer_goal(
     goal_id: str,
     req: GoalAnswerRequest,
+    background_tasks: BackgroundTasks,
     client: dict = Depends(get_service_or_user),
 ):
     """Record a human answer on a waiting_user goal (WP12). The goal re-arms
-    to pending and the answer rides the carryover into the next dispatch."""
+    to pending, the answer rides the carryover, and one dispatch is kicked
+    off in the background so the answer is acted on right away."""
     engine = _get_engine()
     _load_or_404(engine, goal_id, client["org_id"])
     try:
@@ -269,6 +288,7 @@ async def answer_goal(
     except InvalidTransitionError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     logger.info("Goal answered: id=%s org=%s", goal_id, client["org_id"])
+    background_tasks.add_task(_dispatch_in_background, goal_id)
     return _to_goal_response(answered)
 
 
