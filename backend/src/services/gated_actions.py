@@ -57,6 +57,9 @@ FREE_ACTIONS: Set[str] = {
     # lookups; safe to run unsupervised.
     "odoo_search",
     "crm_read_latest_email",
+    "crm_recent_activity",
+    "crm_list_leads",
+    "crm_list_contacts",
     "abra_search",
     "taiga_list",
     # Internal, reversible write (lands uncommitted; human reviews git diff)
