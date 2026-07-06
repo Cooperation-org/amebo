@@ -52,6 +52,7 @@ FREE_ACTIONS: Set[str] = {
     "list_hot_tags",
     "list_projects",
     "read_main_md",
+    "read_org_file",     # reads a file from the org's context repo (read-only)
     # Read tools — Amebo's "eyes" (cli_read_tools.py). Side-effect-free CLI
     # lookups; safe to run unsupervised.
     "odoo_search",
@@ -60,6 +61,12 @@ FREE_ACTIONS: Set[str] = {
     "taiga_list",
     # Internal, reversible write (lands uncommitted; human reviews git diff)
     "edit_main_md",
+    # ask_user pauses the goal (waiting_user) and puts the question on the
+    # human's needs-input page — it IS the act of deferring to a human, so
+    # gating it behind human approval defeats its purpose (seen live
+    # 2026-07-06: claw's question became an approval draft nobody saw and
+    # the goal completed unasked).
+    "ask_user",
 }
 
 
