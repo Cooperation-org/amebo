@@ -421,6 +421,19 @@ class ApiClient {
     });
   }
 
+  // Goals (claws) — the needs-input queue is goals in waiting_user status
+  async getGoals(status?: string): Promise<Goal[]> {
+    const q = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request(`/api/goals/${q}`);
+  }
+
+  async answerGoal(id: string, answer: string): Promise<Goal> {
+    return this.request(`/api/goals/${encodeURIComponent(id)}/answer`, {
+      method: 'POST',
+      body: JSON.stringify({ answer }),
+    });
+  }
+
   // The user's own web conversations (for the dashboard chat list)
   async getChatThreads(): Promise<ChatThreadSummary[]> {
     return this.request('/api/chat/threads');
@@ -439,6 +452,23 @@ export interface PendingAction {
   preview?: string | null;
   created_by?: string | null;
   error?: string | null;
+}
+
+export interface Goal {
+  id: string;
+  org_id: number;
+  title: string;
+  description?: string | null;
+  status: string;
+  config?: {
+    short_name?: string;
+    score?: number | null;
+    week?: string;
+    kind?: string;
+    [key: string]: unknown;
+  } | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface OrgLink {

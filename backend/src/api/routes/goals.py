@@ -14,6 +14,7 @@ Endpoints:
     GET    /api/goals/{goal_id}/events  audit-trail events
     POST   /api/goals/{goal_id}/pause   pause a goal
     POST   /api/goals/{goal_id}/resume  resume a paused goal
+    POST   /api/goals/{goal_id}/answer  answer a waiting_user goal
     POST   /api/goals/{goal_id}/dispatch-now  manually trigger one tick
 
 No PATCH for full updates yet — keep the surface minimal. We can add an
@@ -64,9 +65,14 @@ class GoalResponse(BaseModel):
     status: str
     trigger_config: Optional[Dict[str, Any]] = None
     notify_channel: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
+
+
+class GoalAnswerRequest(BaseModel):
+    answer: str = Field(..., min_length=1, max_length=20000)
 
 
 class GoalEventResponse(BaseModel):
@@ -120,6 +126,7 @@ def _to_goal_response(goal: Dict[str, Any]) -> GoalResponse:
         status=goal["status"],
         trigger_config=goal.get("trigger_config"),
         notify_channel=goal.get("notify_channel"),
+        config=goal.get("config"),
         created_at=goal["created_at"],
         updated_at=goal["updated_at"],
         completed_at=goal.get("completed_at"),
@@ -241,6 +248,28 @@ async def resume_goal(
     except InvalidTransitionError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     return _to_goal_response(resumed)
+
+
+@router.post("/{goal_id}/answer", response_model=GoalResponse)
+async def answer_goal(
+    goal_id: str,
+    req: GoalAnswerRequest,
+    client: dict = Depends(get_service_or_user),
+):
+    """Record a human answer on a waiting_user goal (WP12). The goal re-arms
+    to pending and the answer rides the carryover into the next dispatch."""
+    engine = _get_engine()
+    _load_or_404(engine, goal_id, client["org_id"])
+    try:
+        answered = engine.answer(
+            goal_id,
+            answer=req.answer,
+            actor_user_id=client.get("user_id"),
+        )
+    except InvalidTransitionError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    logger.info("Goal answered: id=%s org=%s", goal_id, client["org_id"])
+    return _to_goal_response(answered)
 
 
 @router.post("/{goal_id}/dispatch-now", response_model=DispatchResultResponse)

@@ -244,6 +244,31 @@ class TestLifecycleOps:
         resp = client.post(f"/api/goals/{created['id']}/resume")
         assert resp.status_code == 409
 
+    def test_answer_waiting_goal(self, client, auth_as, test_org_id):
+        engine = GoalEngine(GoalRepo())
+        g = engine.create_goal(test_org_id, "needs input",
+                               config={"short_name": "t-answer"})
+        engine.activate(g["id"])
+        engine.await_user(g["id"], question="which one?")
+
+        resp = client.post(f"/api/goals/{g['id']}/answer",
+                           json={"answer": "the first one"})
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["status"] == "pending"
+        # config rides through the response so the queue can sort/label
+        assert body["config"]["short_name"] == "t-answer"
+
+        events = client.get(f"/api/goals/{g['id']}/events").json()
+        assert [e["action"] for e in events][-1] == "user_answered"
+        assert events[-1]["result_summary"] == "the first one"
+
+    def test_answer_when_not_waiting_409(self, client, auth_as):
+        created = client.post("/api/goals/", json={"title": "X"}).json()
+        resp = client.post(f"/api/goals/{created['id']}/answer",
+                           json={"answer": "too early"})
+        assert resp.status_code == 409
+
 
 class TestDispatchNow:
     def test_dispatch_now_invokes_dispatcher(self, client, auth_as, test_org_id):

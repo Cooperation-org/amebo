@@ -13,9 +13,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { User, Settings, LogOut, MessageSquare, Building2, Users, Menu, X, Link2 } from 'lucide-react';
+import { User, Settings, LogOut, MessageSquare, Building2, Users, Menu, X, Link2, Inbox } from 'lucide-react';
 import { usePermissions } from '@/src/hooks/usePermissions';
 import { usePendingActions } from '@/src/hooks/usePendingActions';
+import { useNeedsInput } from '@/src/hooks/useNeedsInput';
 
 export default function DashboardLayout({
   children,
@@ -28,12 +29,15 @@ export default function DashboardLayout({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const { data: pendingActions } = usePendingActions();
   const pendingCount = pendingActions?.length ?? 0;
+  const { data: needsInput } = useNeedsInput();
+  const needsInputCount = needsInput?.length ?? 0;
 
   // Thin fixed chrome (docs/DASHBOARD.md): wordmark = home; only the few
   // top-level places live here. Q&A/Connections/Team are secondary — they sit
   // in the account dropdown until their pages merge under Workspaces/Settings.
   const navigation = [
     { name: 'Chat', href: '/chat', icon: MessageSquare },
+    { name: 'Needs input', href: '/dashboard/needs-input', icon: Inbox },
     { name: 'Workspaces', href: '/dashboard/workspaces', icon: Building2 },
     { name: 'Settings', href: '/dashboard/settings', icon: Settings },
   ];
@@ -80,6 +84,14 @@ export default function DashboardLayout({
                 </div>
               </div>
               <div className="flex items-center space-x-4">
+                {needsInputCount > 0 && (
+                  <Link
+                    href="/dashboard/needs-input"
+                    className="flex items-center gap-1.5 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 hover:bg-blue-200"
+                  >
+                    {needsInputCount} need input
+                  </Link>
+                )}
                 {pendingCount > 0 && (
                   <Link
                     href="/dashboard/approvals"
