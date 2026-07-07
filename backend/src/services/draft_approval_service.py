@@ -29,6 +29,7 @@ org's pending action.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional
 
@@ -51,16 +52,39 @@ Notifier = Callable[[str, str], bool]
 
 def _default_notifier(channel: Optional[str], message: str) -> bool:
     """
-    Fallback notifier: log it. A real channel adapter (Slack DM to the org's
-    approver, email, etc.) plugs in at construction time.
+    Default notifier: post the approval request to Slack when a channel is
+    known — the explicit per-action channel if the payload named one, else
+    the AMEBO_APPROVALS_CHANNEL env setting — and fall back to logging when
+    no channel is configured or the post fails. A different adapter (email,
+    DM router) can still be injected at construction time.
 
-    TODO(notify): wire this to the existing notify channel used by
-    GoalDispatcher (_default_notifier / the Slack adapter passed at dispatcher
-    construction) so an approval request reaches a human the same way a goal
-    completion notification does. Until then it logs, which is safe: the
-    pending_action row is the durable source of truth and the API surfaces it.
+    Returns True only when a human-visible notification actually went out
+    (or when running log-only with no channel configured, preserving the
+    pre-wiring contract). The pending_action row remains the durable source
+    of truth either way; the API/dashboard surfaces it.
+
+    History: before 2026-07-07 this was a log-only stub — claws drafted
+    correct gated actions for weeks (deadline pings, pipeline digests) that
+    no human ever saw. Do not revert to log-only silently.
     """
-    logger.info("[draft-approval-notify] %s :: %s", channel, message)
+    target = (channel or "").strip() or (os.getenv("AMEBO_APPROVALS_CHANNEL") or "").strip()
+    if target:
+        try:
+            # Local import: slack_tools pulls in requests/credential lookups;
+            # keep this module import-light for tests and non-Slack deploys.
+            from src.tools.slack_tools import slack_post_impl
+
+            result = slack_post_impl({"channel": target, "text": message}, {})
+            if result.startswith("Posted to"):
+                return True
+            logger.warning(
+                "[draft-approval-notify] slack post to %s failed: %s", target, result
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("[draft-approval-notify] slack post to %s raised", target)
+        logger.info("[draft-approval-notify] %s :: %s", target, message)
+        return False
+    logger.info("[draft-approval-notify] (no channel configured) :: %s", message)
     return True
 
 
