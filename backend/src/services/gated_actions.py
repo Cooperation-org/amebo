@@ -47,6 +47,8 @@ FREE_ACTIONS: Set[str] = {
     "lookup_contact",
     "abra",
     "http_fetch",
+    "web_search",     # external search query only; no org data leaves
+    "web_research",   # same — You.com research with citations
     "list_goals",
     "get_goal_events",
     "list_hot_tags",

@@ -525,6 +525,40 @@ from src.tools.goal_introspection import (
     get_goal_events, GET_GOAL_EVENTS_SCHEMA,
 )
 from src.tools.hot_tags import list_hot_tags, LIST_HOT_TAGS_SCHEMA
+from src.tools.web_tools import (
+    web_search, WEB_SEARCH_SCHEMA,
+    web_research, WEB_RESEARCH_SCHEMA,
+)
+
+
+register_tool(Tool(
+    name="web_search",
+    description=(
+        "Search the web (You.com Search API): returns titles, URLs, and "
+        "snippets for web and news results. Use when you need to FIND pages, "
+        "current facts, or recent coverage; follow up with http_fetch to read "
+        "a specific result. Supports a freshness filter for recent items."
+    ),
+    input_schema=WEB_SEARCH_SCHEMA,
+    execute=web_search,
+    is_read_only=True,
+    category="web",
+))
+
+
+register_tool(Tool(
+    name="web_research",
+    description=(
+        "Ask the You.com Research API a question and get a synthesized, "
+        "cited answer (slower and costlier than web_search). Use for genuine "
+        "research questions needing multiple sources; prefer web_search + "
+        "http_fetch for simple lookups. Requires YDC_API_KEY on the server."
+    ),
+    input_schema=WEB_RESEARCH_SCHEMA,
+    execute=web_research,
+    is_read_only=True,
+    category="web",
+))
 
 
 register_tool(Tool(
