@@ -30,14 +30,15 @@ def main() -> None:
     if re.search(r"\bgit\s+push\b.*(\s--force\b|\s-f\b|\+\S*:)", cmd):
         block("Force push is forbidden.")
 
-    # systemctl: amebo's own services only (this is a shared VM).
+    # systemctl: our own services only (this is a shared VM). amebo-* is ours;
+    # (tmp-)govkit-* is the GovKit demo we deploy (Golda authorized, 2026-07-09).
     m = re.search(r"\bsystemctl\b\s+(?:--\S+\s+)*(\w[\w-]*)\s+(\S+)", cmd)
     if m and m.group(1) not in ("status", "show", "list-units", "list-timers",
                                 "is-active", "is-enabled", "cat", "daemon-reload"):
         unit = m.group(2)
-        if not re.match(r"^(tmp-)?amebo[\w.-]*$", unit):
-            block(f"systemctl {m.group(1)} on '{unit}' is forbidden: only amebo-* services "
-                  "may be managed from amebo sessions (shared VM).")
+        if not re.match(r"^(tmp-)?(amebo|govkit)[\w.-]*$", unit):
+            block(f"systemctl {m.group(1)} on '{unit}' is forbidden: only amebo/govkit "
+                  "services may be managed from amebo sessions (shared VM).")
 
     if "--dangerously-skip-permissions" in cmd:
         block("Nested dangerously-skip-permissions sessions are forbidden.")
