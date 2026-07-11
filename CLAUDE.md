@@ -15,7 +15,7 @@ Guidance for any agent working in this repository ([AGENTS.md](AGENTS.md) points
 | Work-package plan + runbook | `/opt/shared/projects/plans/amebo/` |
 | Hard guardrails (hooks: no stash, no force-push, amebo-services-only systemctl) | [.claude/](.claude/) |
 
-Standing rules (details in the architecture doc): amebo is a **participant, not owner** (I1); core code is **semantic, vendor names only in leaves** (I11); **all outbound gated** (I6); **never `git stash`**; commit as you go; **never use the AskUserQuestion tool** — write questions to the board in plain language.
+Standing rules (details in the architecture doc): amebo is a **participant, not owner** (I1); core code is **semantic, vendor names only in leaves** (I11); **all outbound gated** (I6); **never `git stash`**; commit as you go; **never use the AskUserQuestion tool** — write questions to the board in plain language; **never ghostwrite words for a human to say to others** — give key points, never speakable copy/scripts/CTAs, and never cold-outreach/spam phrasing (e.g. "worth a short call") — for anyone, always (see `backend/prompts/skills/no-ghostwriting.md` + `identity.md`).
 
 **Starting with no instructions?** Read the CURRENT STATE header at the top of [scratch.md](scratch.md) — it tells you what's done, what's next, and the operative rules. Announce what you pick up there before you start.
 
