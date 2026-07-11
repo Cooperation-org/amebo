@@ -855,3 +855,153 @@ CAMPAIGN_LINK_SCHEMA = {
 register_executor("crm_create_contact", execute_crm_create_contact)
 register_executor("campaign_create", execute_campaign_create)
 register_executor("campaign_link", execute_campaign_link)
+
+
+# ---------------------------------------------------------------------------
+# linkedtrust_create_commitment — record a commitment attestation (GATED)
+#
+# The Earned Governance Accelerator wall (linkedtrust.us/earnedgov) renders
+# COMMITS_TO claims live from LinkedTrust. This actuator lets the team add a
+# commitment from chat: "<person> committed as <role>, here are their words".
+# The claim API base and effort URI are leaf configuration (env), not core
+# constants — another org/effort points them elsewhere.
+# ---------------------------------------------------------------------------
+
+COMMITMENT_ROLES = {"advisor", "mentor", "partner", "founder", "supporter"}
+
+
+def execute_linkedtrust_commitment(action: Dict[str, Any]) -> str:
+    """POST the COMMITS_TO claim. Single side effect for draft + approval paths."""
+    import requests as _requests
+
+    payload = action.get("payload") or {}
+    api_base = payload.get("api_base") or "https://live.linkedtrust.us"
+    body = payload.get("claim_body") or {}
+    if not body.get("subject") or not body.get("statement"):
+        return "Error: cannot record commitment — payload missing subject or statement."
+    resp = _requests.post(f"{api_base}/api/claims", json=body, timeout=30)
+    if resp.status_code >= 300:
+        raise RuntimeError(
+            f"linkedtrust_create_commitment failed: HTTP {resp.status_code} {resp.text[:300]}"
+        )
+    claim = (resp.json() or {}).get("claim") or {}
+    cid = claim.get("id")
+    return (
+        f"Commitment recorded: {api_base}/claims/{cid} — it will appear on the "
+        f"wall within a minute."
+    )
+
+
+def _slug(text: str) -> str:
+    import re
+    s = re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
+    return s or "person"
+
+
+def linkedtrust_create_commitment_impl(
+    tool_input: Dict[str, Any], context: Dict[str, Any]
+) -> str:
+    """
+    Draft a commitment attestation for the accelerator wall.
+
+    HARD RULE: ``statement`` must be the person's VERBATIM words (or the
+    relayer's honest report of them). Never compose or improve the statement —
+    if you don't have their words, ask for them.
+    """
+    import os
+    from datetime import date as _date
+
+    person_name = (tool_input.get("person_name") or "").strip()
+    statement = (tool_input.get("statement") or "").strip()
+    role = (tool_input.get("role") or "supporter").strip().lower()
+    if not person_name:
+        return "Error: person_name is required."
+    if not statement:
+        return (
+            "Error: statement is required — the person's actual words. Do not "
+            "invent them; ask the user for what was actually said."
+        )
+    if role not in COMMITMENT_ROLES:
+        return f"Error: role must be one of {sorted(COMMITMENT_ROLES)}."
+
+    effort_uri = os.environ.get(
+        "EARNEDGOV_EFFORT_URI", "https://linkedtrust.us/earnedgov"
+    )
+    api_base = os.environ.get("LINKEDTRUST_API_URL", "https://live.linkedtrust.us")
+
+    person_link = (tool_input.get("person_link") or "").strip()
+    if person_link and not person_link.startswith(("http://", "https://")):
+        person_link = "https://" + person_link
+    if not person_link:
+        person_link = f"{effort_uri}#{_slug(person_name)}"
+
+    how_known = (tool_input.get("how_known") or "SECOND_HAND").strip().upper()
+    if how_known not in {"FIRST_HAND", "SECOND_HAND"}:
+        return "Error: how_known must be FIRST_HAND or SECOND_HAND."
+    source_uri = (tool_input.get("source_uri") or "").strip() or person_link
+
+    claim_body = {
+        "subject": person_link,
+        "claim": "COMMITS_TO",
+        "object": effort_uri,
+        "statement": statement,
+        "aspect": role,
+        "name": person_name,
+        "subjectEntityType": "PERSON",
+        "howKnown": how_known,
+        "sourceURI": source_uri,
+        "effectiveDate": _date.today().isoformat(),
+        "confidence": 1.0,
+    }
+    if (tool_input.get("video_url") or "").strip():
+        claim_body["videoUrl"] = tool_input["video_url"].strip()
+
+    quote = statement if len(statement) <= 140 else statement[:137] + "..."
+    preview = (
+        f"Record commitment on the accelerator wall: {person_name} as {role} "
+        f"({how_known.replace('_', ' ').lower()}): \"{quote}\""
+    )
+
+    return _route_through_gate(
+        action_type="linkedtrust_create_commitment",
+        context=context,
+        target=person_link,
+        payload={"api_base": api_base, "claim_body": claim_body},
+        preview=preview,
+        executor=execute_linkedtrust_commitment,
+    )
+
+
+LINKEDTRUST_CREATE_COMMITMENT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "person_name": {"type": "string", "description": "Who is committing."},
+        "person_link": {
+            "type": "string",
+            "description": "Their URL (LinkedIn/site). Identifies the person; omit only if none exists.",
+        },
+        "role": {
+            "type": "string",
+            "description": "advisor | mentor | partner | founder | supporter",
+        },
+        "statement": {
+            "type": "string",
+            "description": "The person's VERBATIM words about their commitment. NEVER composed or embellished — if you don't have their words, ask.",
+        },
+        "how_known": {
+            "type": "string",
+            "description": "FIRST_HAND if the person is speaking for themselves; SECOND_HAND (default) when a team member relays what the person told them.",
+        },
+        "source_uri": {
+            "type": "string",
+            "description": "For SECOND_HAND: the relayer's URL (who heard it).",
+        },
+        "video_url": {
+            "type": "string",
+            "description": "Optional LinkedTrust-hosted video URL already uploaded via the API.",
+        },
+    },
+    "required": ["person_name", "role", "statement"],
+}
+
+register_executor("linkedtrust_create_commitment", execute_linkedtrust_commitment)

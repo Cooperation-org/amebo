@@ -785,6 +785,7 @@ from src.tools.gated_actuators import (
     campaign_create_impl, CAMPAIGN_CREATE_SCHEMA,
     campaign_link_impl, CAMPAIGN_LINK_SCHEMA,
     slack_post_impl as slack_post_gated_impl, SLACK_POST_SCHEMA as SLACK_POST_GATED_SCHEMA,
+    linkedtrust_create_commitment_impl, LINKEDTRUST_CREATE_COMMITMENT_SCHEMA,
 )
 
 
@@ -955,6 +956,23 @@ register_tool(Tool(
     is_read_only=False,
     needs_confirmation=True,
     category="tasks",
+))
+
+register_tool(Tool(
+    name="linkedtrust_create_commitment",
+    description=(
+        "Record a commitment attestation on the accelerator wall "
+        "(a public COMMITS_TO claim on LinkedTrust). OUTBOUND and PUBLIC: "
+        "drafts a pending action a human must approve (owner directing live "
+        "executes immediately). statement must be the person's VERBATIM "
+        "words - never composed. Use when the team says someone committed "
+        "to the effort (advisor/mentor/partner/founder/supporter)."
+    ),
+    input_schema=LINKEDTRUST_CREATE_COMMITMENT_SCHEMA,
+    execute=linkedtrust_create_commitment_impl,
+    is_read_only=False,
+    needs_confirmation=True,
+    category="outreach",
 ))
 
 register_tool(Tool(

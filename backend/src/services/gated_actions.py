@@ -92,6 +92,7 @@ GATED_ACTIONS: Set[str] = {
     "send_email",        # sends email (outbound)
     "odoo_cli",          # writes to the CRM (destructive/outbound side effects)
     "mcp_taiga",         # writes to Taiga task management (destructive/outbound)
+    "linkedtrust_create_commitment",  # actuator — publishes a public attestation (outbound)
     "open_pr",           # opens a pull request (outbound)
     "merge_pr",          # merges a pull request (irreversible)
 }
