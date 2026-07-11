@@ -1331,3 +1331,14 @@ provisioning CivicWorks (ActionEngine's real home; needs Golda's creds) · Q&A/C
 mobile pass on approvals + pop-out · dependabot 52 vulns · campaign flow end-to-end THROUGH amebo on the next
 real campaign · everything in docs/DASHBOARD.md "Recorded for later". Orchestrator continues personal-amebo
 phone path independently. Next session per Golda: organize her concrete goals into claws and drive the week.
+
+## 2026-07-11 — Fable (orchestration session): earnedgov commitment pipeline
+Shipped on site-linkedtrust-us (site VM, via its own CI/CD — NOT this repo's deploy):
+commitment wall (linkedtrust.us/earnedgov) + invite/step-up page (/earnedgov/commit/),
+backed by live LinkedTrust COMMITS_TO claims. In THIS repo: added
+`backend/prompts/skills/commitment-buzz-brief.md` (facts/quotes/links briefs — no
+ghostwriting). NEXT for a future session: WP-A amebo Slack commitment intake
+(gated linkedtrust_create_commitment actuator) — full plan in projects repo
+`Active/earnedgov/07-11-26-build-plans-for-sessions.md`, ticketed in Taiga
+project `earned-governance-toolkit-accelerator`. Effort URI must stay per-instance
+config (I11), not a core constant.
