@@ -4,6 +4,39 @@
 -- PostgreSQL 14+
 
 -- ============================================================================
+-- ORGANIZATIONS + PLATFORM USERS (must precede FK references below)
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS organizations (
+    org_id SERIAL PRIMARY KEY,
+    org_name VARCHAR(255) NOT NULL,
+    org_slug VARCHAR(100) UNIQUE,
+    subscription_plan VARCHAR(50) DEFAULT 'free',
+    subscription_status VARCHAR(50) DEFAULT 'active',
+    aliases TEXT[] DEFAULT '{}',
+    context_repo TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS platform_users (
+    user_id SERIAL PRIMARY KEY,
+    org_id INT REFERENCES organizations(org_id) ON DELETE SET NULL,
+    email VARCHAR(255) UNIQUE,
+    password_hash TEXT,
+    full_name VARCHAR(255),
+    role VARCHAR(50) DEFAULT 'member',
+    is_active BOOLEAN DEFAULT true,
+    email_verified BOOLEAN DEFAULT false,
+    auth_provider VARCHAR(50),
+    auth_provider_id VARCHAR(255),
+    avatar_url TEXT,
+    last_login_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+-- ============================================================================
 -- MULTI-TENANT CORE
 -- ============================================================================
 
