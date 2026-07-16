@@ -57,7 +57,15 @@ PUBLIC_PREFIXES = (
                       # these with the signing secret, verified in the handler; they
                       # carry no platform JWT, so they must skip this gate.
 )
-PUBLIC_EXACT = frozenset({"/", "/health"})
+PUBLIC_EXACT = frozenset({
+    "/",
+    "/health",
+    # S2S org provisioning self-gates on the static AMEBO_S2S_TOKEN bearer
+    # (constant-time compare in routes/org_provision.py; 403 when the token is
+    # not configured) — it is not a session-JWT/API-key endpoint, so the gate
+    # must pass it through like /slack/ webhooks.
+    "/api/orgs/provision",
+})
 
 
 def _is_public(path: str) -> bool:
