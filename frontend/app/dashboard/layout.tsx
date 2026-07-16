@@ -13,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { User, Settings, LogOut, MessageSquare, Building2, Users, Menu, X, Link2, Inbox } from 'lucide-react';
+import { User, Settings, LogOut, MessageSquare, Building2, Users, Menu, X, Link2, Inbox, PenLine } from 'lucide-react';
 import { usePermissions } from '@/src/hooks/usePermissions';
 import { usePendingActions } from '@/src/hooks/usePendingActions';
 import { useNeedsInput } from '@/src/hooks/useNeedsInput';
@@ -37,6 +37,7 @@ export default function DashboardLayout({
   // in the account dropdown until their pages merge under Workspaces/Settings.
   const navigation = [
     { name: 'Chat', href: '/chat', icon: MessageSquare },
+    { name: 'Whiteboard', href: '/dashboard/whiteboard', icon: PenLine },
     { name: 'Needs input', href: '/dashboard/needs-input', icon: Inbox },
     { name: 'Workspaces', href: '/dashboard/workspaces', icon: Building2 },
     { name: 'Settings', href: '/dashboard/settings', icon: Settings },

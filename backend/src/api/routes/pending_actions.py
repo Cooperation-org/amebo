@@ -16,6 +16,7 @@ Endpoints:
     GET    /api/pending-actions/{action_id}      action detail
     POST   /api/pending-actions/{action_id}/approve  approve (does NOT execute)
     POST   /api/pending-actions/{action_id}/reject   reject (terminal)
+    POST   /api/pending-actions/{action_id}/feedback decline with guidance; goal redrafts
 
 Registration is deferred to the OAuth/SSO session owners — see
 docs/DRAFT_APPROVAL_GATE.md. This file does not edit src/api/main.py.
@@ -48,6 +49,10 @@ logger = logging.getLogger(__name__)
 
 class RejectRequest(BaseModel):
     reason: Optional[str] = Field(None, max_length=2000)
+
+
+class FeedbackRequest(BaseModel):
+    feedback: str = Field(..., min_length=1, max_length=2000)
 
 
 class PendingActionResponse(BaseModel):
@@ -206,4 +211,30 @@ async def reject_pending_action(
             raise HTTPException(status_code=404, detail="Pending action not found")
         raise HTTPException(status_code=409, detail="Action is not pending")
     logger.info("Pending action rejected: id=%s org=%s", action_id, client["org_id"])
+    return _to_response(updated)
+
+
+@router.post("/{action_id}/feedback", response_model=PendingActionResponse)
+async def feedback_pending_action(
+    action_id: str,
+    req: FeedbackRequest,
+    client: dict = Depends(get_service_or_user),
+):
+    """Decline this draft with guidance instead of a bare reject: the feedback
+    lands in the goal's event trail and the goal is re-armed to redraft."""
+    svc = _service()
+    try:
+        updated = svc.feedback(
+            action_id, approver=_approver_identity(client),
+            org_id=client["org_id"], feedback=req.feedback,
+        )
+    except PendingActionNotFound:
+        try:
+            svc.get(action_id, client["org_id"])
+        except PendingActionNotFound:
+            raise HTTPException(status_code=404, detail="Pending action not found")
+        raise HTTPException(status_code=409, detail="Action is not pending")
+    logger.info(
+        "Pending action feedback: id=%s org=%s", action_id, client["org_id"]
+    )
     return _to_response(updated)

@@ -1342,3 +1342,20 @@ ghostwriting). NEXT for a future session: WP-A amebo Slack commitment intake
 `Active/earnedgov/07-11-26-build-plans-for-sessions.md`, ticketed in Taiga
 project `earned-governance-toolkit-accelerator`. Effort URI must stay per-instance
 config (I11), not a core constant.
+
+## 2026-07-16 (Fable session, per Golda in-session)
+- **Whiteboard shipped** (input surface, chatter-log): migration 027 (applied), `/api/whiteboard/`
+  (list/add/processed), dashboard page + nav. Design + filing-pass plan: `docs/WHITEBOARD.md`.
+  Filing claw itself = goal-loop work (WP12–16), not built.
+- **Approvals: feedback verb added** (Golda: "not just accept/reject"): `POST /api/pending-actions/{id}/feedback`
+  → draft rejected + `draft_feedback` goal event + goal re-armed, so the next dispatch redrafts with the
+  human's words in the carryover brief. UI: feedback box on /dashboard/approvals.
+- **Projects link added** to whatscookin `instances.config.links` → govkit projects tracker
+  (new optional govkit app, merged + live: demos.linkedtrust.us/govkit/o/whatscookin/projects/).
+- **MiniMax key stored** in backend/.env (MINIMAX_API_KEY + MINIMAX_ANTHROPIC_BASE_URL). Verified working
+  (M2/M3 respond; Anthropic-compatible endpoint OK). NOT wired into conversation code — model routing is
+  its own task (AMEBO_PREFERENCES §6).
+- Slack finding: zero `app_mention` events in 7 days while `message` events flow; bot is not_in_channel
+  for many channels. Mentions in channels the bot isn't in are never delivered → invite @amebo, or check
+  the app's event subscriptions.
+- Both services restarted + healthy; frontend rebuilt.

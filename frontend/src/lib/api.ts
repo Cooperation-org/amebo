@@ -421,6 +421,25 @@ class ApiClient {
     });
   }
 
+  async feedbackPendingAction(id: string, feedback: string): Promise<PendingAction> {
+    return this.request(`/api/pending-actions/${id}/feedback`, {
+      method: 'POST',
+      body: JSON.stringify({ feedback }),
+    });
+  }
+
+  // Whiteboard — the org's input surface (a chatter log amebo files facts from)
+  async getWhiteboard(limit = 50): Promise<WhiteboardEntry[]> {
+    return this.request(`/api/whiteboard/?limit=${limit}`);
+  }
+
+  async addWhiteboardEntry(text: string): Promise<WhiteboardEntry> {
+    return this.request('/api/whiteboard/', {
+      method: 'POST',
+      body: JSON.stringify({ text }),
+    });
+  }
+
   // Goals (claws) — the needs-input queue is goals in waiting_user status
   async getGoals(status?: string): Promise<Goal[]> {
     const q = status ? `?status=${encodeURIComponent(status)}` : '';
@@ -442,6 +461,18 @@ class ApiClient {
   async getChatThreadTurns(sessionId: string): Promise<ChatTurnOut[]> {
     return this.request(`/api/chat/threads/${encodeURIComponent(sessionId)}/turns`);
   }
+}
+
+
+export interface WhiteboardEntry {
+  id: number;
+  org_id: number;
+  user_id: number | null;
+  author: string;
+  text: string;
+  created_at: string;
+  processed_at: string | null;
+  filed: Array<Record<string, unknown>> | null;
 }
 
 export interface PendingAction {

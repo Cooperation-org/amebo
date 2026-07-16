@@ -27,3 +27,13 @@ export function useApproveAction() {
 export function useRejectAction() {
   return useDecide((id) => apiClient.rejectPendingAction(id));
 }
+
+/** Decline with guidance: the goal re-arms and redrafts with the feedback in view. */
+export function useFeedbackAction() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, feedback }: { id: string; feedback: string }) =>
+      apiClient.feedbackPendingAction(id, feedback),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['pending-actions'] }),
+  });
+}

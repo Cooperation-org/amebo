@@ -253,6 +253,44 @@ class DraftApprovalService:
             )
         return updated
 
+    def feedback(
+        self, action_id: str, approver: str, org_id: int, feedback: str
+    ) -> Dict[str, Any]:
+        """Decline a draft WITH guidance: pending → rejected, but the feedback is
+        written to the goal's event trail (draft_feedback) and the goal is re-armed,
+        so the next dispatch sees the human's words in its carryover brief and can
+        redraft — a revision loop, not a dead end. The draft itself never executes.
+        """
+        updated = self._repo.set_decision(
+            action_id, org_id, to_status="rejected",
+            approver=approver, decision_reason=f"feedback: {feedback}",
+        )
+        if updated is None:
+            raise PendingActionNotFound(action_id)
+
+        if updated.get("goal_id"):
+            self._safe_event(
+                updated["goal_id"], "draft_feedback", approver,
+                action_id, updated["action_type"],
+                summary=f"Human feedback on the draft (revise accordingly): {feedback}",
+            )
+            # Re-arm so the scheduler redrafts; a goal not currently 'active'
+            # (already pending, waiting_user, …) just keeps its state.
+            try:
+                from src.services.goal_engine import GoalEngine
+
+                GoalEngine().rearm(
+                    updated["goal_id"],
+                    summary=f"re-armed after human feedback on draft {action_id}",
+                    actor_type="human",
+                )
+            except Exception:
+                logger.info(
+                    "feedback: goal %s not re-armed (not in a re-armable state)",
+                    updated["goal_id"],
+                )
+        return updated
+
     # ------------------------------------------------------------- Execution
 
     def mark_executed(self, action_id: str, org_id: int) -> Dict[str, Any]:
