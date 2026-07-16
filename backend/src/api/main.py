@@ -13,7 +13,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 import logging
 import time
 
-from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces, dev_auth, team, bindings, chat, embeddings, goals, connections, digest, intentions, pending_actions
+from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces, dev_auth, team, bindings, chat, embeddings, goals, connections, digest, intentions, pending_actions, org_provision
 from src.api.middleware.rate_limit import RateLimitMiddleware
 from src.api.middleware.auth_gate import AuthGateMiddleware
 from src.db.connection import DatabaseConnection
@@ -201,6 +201,9 @@ import os
 if os.getenv("DEV_AUTH_ENABLED", "false").lower() == "true":
     app.include_router(dev_auth.router, prefix="/api/dev-auth", tags=["Development Auth"])
 app.include_router(organizations.router, prefix="/api/organizations", tags=["Organizations"])
+# S2S org provisioning (GovKit accept, earnkit add-team) — self-gated by the
+# static AMEBO_S2S_TOKEN, not user JWTs. See routes/org_provision.py.
+app.include_router(org_provision.router, prefix="/api/orgs", tags=["Org Provisioning (S2S)"])
 app.include_router(workspaces.router, prefix="/api/workspaces", tags=["Workspaces"])
 app.include_router(documents.router, prefix="/api/documents", tags=["Documents"])
 app.include_router(qa.router, prefix="/api/qa", tags=["Q&A"])
