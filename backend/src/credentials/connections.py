@@ -38,6 +38,21 @@ MANIFEST_TTL_S = 60           # honor "other people edit this file" (arch §2.1)
 SUPPORTED_SCHEMA = 1
 
 
+def env_credentials_shared() -> bool:
+    """Whether this DEPLOYMENT declares its process-env credentials shared by
+    ALL orgs (env ENV_CREDENTIALS_SHARED, operator-set).
+
+    Two deployment shapes exist (Golda, 2026-07-16):
+      - the team instance: orgs are separate tenants; env credentials belong to
+        the one legacy org (LEGACY_ENV_ORG_ID pin), everyone else fails closed
+        on a missing manifest — the cross-tenant-leak guard stands (arch §5 I1);
+      - a cohort VM (earnkit): every team org intentionally runs on the VM's
+        shared keys. There is no tenant boundary to leak across, so the env
+        fallback is open to all orgs and provisioning needs no legacy pin.
+    """
+    return os.getenv("ENV_CREDENTIALS_SHARED", "").strip().lower() in ("1", "true", "yes")
+
+
 class ToolNotConfigured(LookupError):
     """The org has no connection for this tool_key (or its secret is missing).
     This is also how an absent capability (email/Discord/…) presents — uniformly."""

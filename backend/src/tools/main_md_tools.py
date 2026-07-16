@@ -57,8 +57,10 @@ def _projects_root(context: Any = None, area: Optional[str] = None) -> Path:
                 f"named area '{area}' requires an org context (org.yaml named_dirs)"
             )
         return ACTIVE_PROJECTS_ROOT
+    from src.credentials.connections import env_credentials_shared
     legacy = os.getenv("LEGACY_ENV_ORG_ID", "")
-    is_legacy_org = legacy != "" and str(org_id) == legacy
+    # Shared-env deployments (cohort VMs): every org may use the shared root.
+    is_legacy_org = env_credentials_shared() or (legacy != "" and str(org_id) == legacy)
     from src.credentials.connections import (
         resolve, ToolNotConfigured, ManifestInvalid,
     )

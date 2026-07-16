@@ -119,8 +119,11 @@ def _conn(context: Any, tool_key: str):
     if org_id is None:
         # No org in context at all: legacy direct paths (pre-OrgContext) only.
         return None
+    from src.credentials.connections import env_credentials_shared
     legacy = _os.getenv("LEGACY_ENV_ORG_ID", "")
-    is_legacy_org = legacy != "" and str(org_id) == legacy
+    # Shared-env deployments (cohort VMs) fall back for every org — one
+    # credential pool by declaration, no tenant boundary. See connections.py.
+    is_legacy_org = env_credentials_shared() or (legacy != "" and str(org_id) == legacy)
     try:
         from src.credentials.connections import (
             resolve, ToolNotConfigured, ManifestInvalid,

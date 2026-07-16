@@ -250,3 +250,42 @@ class TestProvision:
         assert _db_one(
             "SELECT org_name, aliases FROM organizations WHERE org_id = %s",
             (org_id,)) == ("Keep Me", ["km"])
+
+
+class TestSharedEnvCredentialsMode:
+    """Cohort-VM shape (Golda 2026-07-16): ENV_CREDENTIALS_SHARED=true declares
+    the process-env credentials shared by all orgs — provisioning must work
+    with NO legacy pin, and the fallback scope helper must report shared."""
+
+    def test_provision_works_without_legacy_pin_when_shared(
+            self, client, cleanup, monkeypatch):
+        monkeypatch.delenv("LEGACY_ENV_ORG_ID", raising=False)
+        monkeypatch.setenv("ENV_CREDENTIALS_SHARED", "true")
+        slug = f"s2s-shared-{_uid()}"
+        cleanup.append(slug)
+        r = client.post("/api/orgs/provision",
+                        json={"slug": slug, "name": "Shared Env Team"},
+                        headers=_auth())
+        assert r.status_code == 200
+        assert r.json()["created"] is True
+
+    def test_without_shared_mode_missing_pin_still_refuses(
+            self, client, cleanup, monkeypatch):
+        monkeypatch.delenv("LEGACY_ENV_ORG_ID", raising=False)
+        monkeypatch.delenv("ENV_CREDENTIALS_SHARED", raising=False)
+        slug = f"s2s-nopin-{_uid()}"
+        cleanup.append(slug)
+        r = client.post("/api/orgs/provision",
+                        json={"slug": slug, "name": "No Pin"},
+                        headers=_auth())
+        assert r.status_code == 503
+        assert "LEGACY_ENV_ORG_ID" in r.json()["detail"]
+
+    def test_env_scope_helper_parses_operator_values(self, monkeypatch):
+        from src.credentials.connections import env_credentials_shared
+        for raw, expect in [("true", True), ("1", True), ("YES", True),
+                            ("false", False), ("", False), ("0", False)]:
+            monkeypatch.setenv("ENV_CREDENTIALS_SHARED", raw)
+            assert env_credentials_shared() is expect, raw
+        monkeypatch.delenv("ENV_CREDENTIALS_SHARED")
+        assert env_credentials_shared() is False

@@ -34,6 +34,11 @@ def _require_legacy_pin() -> None:
     org's missing manifest could break the legacy org / risk misroute. Refuse
     to provision until LEGACY_ENV_ORG_ID pins the legacy org (unset it only at
     the WP17 cutover, when everyone fails closed)."""
+    from src.credentials.connections import env_credentials_shared
+    if env_credentials_shared():
+        # Cohort-VM shape: env credentials are declared shared by every org,
+        # so there is no legacy org to pin and nothing to misroute.
+        return
     if not os.getenv("LEGACY_ENV_ORG_ID"):
         raise RuntimeError(
             "LEGACY_ENV_ORG_ID is not set. Pin the legacy org (the one still "
