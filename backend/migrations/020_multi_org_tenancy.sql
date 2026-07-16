@@ -78,13 +78,7 @@ COMMENT ON COLUMN instances.org_id IS
     'DEPRECATED (mig 020): an instance serves N orgs via instance_orgs. Retained + '
     'still written for back-compat reads. Do not add new readers.';
 
--- org_workspaces: a row means "this workspace's DEFAULT org for that org", NOT
--- exclusive ownership. The existing UNIQUE(org_id, workspace_id) already lets a
--- single workspace map to multiple orgs (a shared workspace), so no schema
--- change is needed here — only the clarified meaning.
-COMMENT ON TABLE org_workspaces IS
-    'Org<->Slack-workspace link. A row = that workspace''s default-org hint for '
-    'the org, NOT exclusive ownership; a workspace may map to several orgs.';
+-- org_workspaces: table does not exist yet; comment deferred until creation.
 
 -- ---------------------------------------------------------------------------
 -- Transitional sync triggers. While the old single-org columns are still
