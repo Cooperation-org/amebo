@@ -524,18 +524,19 @@ class AnthropicScorer:
             except Exception:
                 self.client = None
                 return
-            api_key = os.getenv("ANTHROPIC_API_KEY")
-            self.client = Anthropic(api_key=api_key) if api_key else None
+            from src.services.llm_client import get_llm_client
+            self.client = get_llm_client()
 
     def score(
         self, candidates: Sequence[Task], rubric: Rubric
     ) -> Sequence[ScoredOpportunity]:
         if self.client is None:
-            return self._fallback(candidates, "[no ANTHROPIC_API_KEY — order preserved]")
+            return self._fallback(candidates, "[no LLM API key — order preserved]")
         prompt = self._build_prompt(candidates, rubric)
         try:
+            from src.services.llm_client import resolve_model
             resp = self.client.messages.create(
-                model=self.model,
+                model=resolve_model(self.model),
                 max_tokens=1024,
                 system=_SCORER_SYSTEM,
                 messages=[{"role": "user", "content": prompt}],

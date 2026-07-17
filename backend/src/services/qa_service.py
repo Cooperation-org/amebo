@@ -11,6 +11,7 @@ from typing import List, Dict, Optional, Tuple, Union
 from anthropic import Anthropic
 
 from src.services.query_service import QueryService
+from src.services.llm_client import get_llm_client, resolve_model
 
 logger = logging.getLogger(__name__)
 
@@ -165,13 +166,10 @@ class QAService:
         except Exception as e:
             logger.warning(f"Could not initialize binding service: {e}")
 
-        # Initialize Anthropic client
-        api_key = os.getenv('ANTHROPIC_API_KEY')
-        if api_key:
-            self.client = Anthropic(api_key=api_key)
-        else:
-            logger.warning("ANTHROPIC_API_KEY not set - using mock responses")
-            self.client = None
+        # Initialize LLM client (provider + key chosen by llm_client)
+        self.client = get_llm_client()
+        if self.client is None:
+            logger.warning("No LLM API key configured - using mock responses")
 
     def answer_question(
         self,
@@ -666,7 +664,7 @@ Answer the question based on this context. Be comprehensive and include all rele
 
         try:
             response = self.client.messages.create(
-                model="claude-sonnet-4-6",
+                model=resolve_model("claude-sonnet-4-6"),
                 max_tokens=1000,
                 system=system_prompt,
                 messages=[
@@ -796,7 +794,7 @@ Answer the question based on this context. Be comprehensive and include all rele
             # Model is config-by-instance, never a hardcoded id (a stale hardcoded
             # model id once 404'd the whole QA path). Set AMEBO_QA_MODEL to use a
             # smarter model on an instance.
-            qa_model = os.getenv("AMEBO_QA_MODEL", "claude-sonnet-4-6")
+            qa_model = resolve_model(os.getenv("AMEBO_QA_MODEL", "claude-sonnet-4-6"))
             MAX_TOOL_ROUNDS = 8
             tool_round = 0
             logger.info(f"[qa] model={qa_model} tools={[t['name'] for t in tools]}")

@@ -66,12 +66,11 @@ def run_repl(in_stream=None, out=print) -> int:
 
     tools = [_tool_to_schema(get_tool(n)) for n in _PERSONAL_TOOLS if get_tool(n)]
 
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        out("No ANTHROPIC_API_KEY set."); return 1
-    from anthropic import Anthropic
-    client = Anthropic(api_key=api_key)
-    model = os.getenv("AMEBO_QA_MODEL", "claude-sonnet-4-6")
+    from src.services.llm_client import get_llm_client, resolve_model
+    client = get_llm_client()
+    if client is None:
+        out("No LLM API key configured."); return 1
+    model = resolve_model(os.getenv("AMEBO_QA_MODEL", "claude-sonnet-4-6"))
 
     reader = in_stream or sys.stdin
     out("amebo personal — type 'exit' to quit. Shell: "

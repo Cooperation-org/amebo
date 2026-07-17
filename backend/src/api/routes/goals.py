@@ -255,11 +255,8 @@ def _dispatch_in_background(goal_id: str) -> None:
     becomes work instead of waiting for a scheduler edge or a human nudge.
     Errors are logged, never surfaced — the answer itself is already saved."""
     try:
-        anthropic_client = None
-        api_key = os.getenv("ANTHROPIC_API_KEY")
-        if api_key:
-            from anthropic import Anthropic
-            anthropic_client = Anthropic(api_key=api_key)
+        from src.services.llm_client import get_llm_client
+        anthropic_client = get_llm_client()
         result = GoalDispatcher(anthropic_client=anthropic_client).dispatch(goal_id)
         logger.info("Post-answer dispatch for %s finished: %s",
                     goal_id, result.status)
@@ -306,11 +303,8 @@ async def dispatch_goal_now(
 
     # Same client sourcing as QAService: without it every dispatch silently
     # ran the [no-llm] stub (found live 2026-07-04 running the Dana story).
-    anthropic_client = None
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if api_key:
-        from anthropic import Anthropic
-        anthropic_client = Anthropic(api_key=api_key)
+    from src.services.llm_client import get_llm_client
+    anthropic_client = get_llm_client()
 
     dispatcher = GoalDispatcher(anthropic_client=anthropic_client)
     result = dispatcher.dispatch(goal_id)

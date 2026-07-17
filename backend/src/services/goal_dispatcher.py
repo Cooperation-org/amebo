@@ -552,9 +552,11 @@ class GoalDispatcher:
             get_all_tools, get_tool, _tool_to_schema,
         )
 
+        from src.services.llm_client import resolve_model
         model = "claude-sonnet-4-6"
         if goal.get("config") and goal["config"].get("model"):
             model = goal["config"]["model"]
+        model = resolve_model(model)
 
         # Build the tool catalog Claude will see. The goal's allowed_tools
         # gates this — Claude is only ever offered what the goal permits.

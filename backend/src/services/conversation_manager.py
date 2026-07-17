@@ -261,14 +261,14 @@ class ConversationManager:
 
     def _generate_summary(self, conversation_text: str) -> Optional[str]:
         """Use Claude to summarize old conversation turns."""
-        api_key = os.getenv('ANTHROPIC_API_KEY')
-        if not api_key:
+        from src.services.llm_client import get_llm_client, resolve_model
+        client = get_llm_client()
+        if client is None:
             return conversation_text[:SUMMARY_MAX_TOKENS * CHARS_PER_TOKEN]
 
         try:
-            client = Anthropic(api_key=api_key)
             response = client.messages.create(
-                model="claude-sonnet-4-6",
+                model=resolve_model("claude-sonnet-4-6"),
                 max_tokens=SUMMARY_MAX_TOKENS,
                 messages=[{
                     "role": "user",

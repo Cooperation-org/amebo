@@ -130,8 +130,8 @@ class IntentionsService:
         if anthropic_client is not None:
             self.client = anthropic_client
         else:
-            api_key = os.getenv("ANTHROPIC_API_KEY")
-            self.client = Anthropic(api_key=api_key) if api_key else None
+            from src.services.llm_client import get_llm_client
+            self.client = get_llm_client()
 
     # ---- propose ---------------------------------------------------------
 
@@ -155,8 +155,9 @@ class IntentionsService:
             return self._mock_proposal(text, scope, name)
 
         try:
+            from src.services.llm_client import resolve_model
             resp = self.client.messages.create(
-                model="claude-sonnet-4-6",
+                model=resolve_model("claude-sonnet-4-6"),
                 max_tokens=1024,
                 system=_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_message}],
