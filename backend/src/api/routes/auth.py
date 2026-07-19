@@ -2,7 +2,7 @@
 Authentication routes - signup, login, token refresh, password management
 """
 
-from fastapi import APIRouter, HTTPException, status, Depends, Request
+from fastapi import APIRouter, HTTPException, Query, status, Depends, Request, Response
 from fastapi.responses import RedirectResponse
 from psycopg2 import extras
 import logging
@@ -28,7 +28,8 @@ from src.api.auth_utils import (
     create_access_token,
     create_refresh_token,
     decode_token,
-    get_current_user
+    get_current_user,
+    set_session_cookie,
 )
 from src.db.connection import DatabaseConnection
 from src.services.email_service import email_service
@@ -257,9 +258,13 @@ async def login(request: UserLoginRequest):
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(request: RefreshTokenRequest):
+async def refresh_token(request: RefreshTokenRequest, response: Response):
     """
-    Refresh access token using refresh token
+    Refresh access token using refresh token.
+
+    Also re-sets the HttpOnly session cookie with the new access token so
+    browser embeds (credentials:'include') stay authenticated alongside
+    the SPA's localStorage flow.
     """
     try:
         # Decode refresh token
@@ -307,6 +312,7 @@ async def refresh_token(request: RefreshTokenRequest):
                     "role": user['role']
                 }
                 access_token = create_access_token(token_data)
+                set_session_cookie(response, access_token)
 
                 return TokenResponse(
                     access_token=access_token,
@@ -755,14 +761,54 @@ def _front(path: str) -> str:
     return f"{FRONTEND_URL}{path}"
 
 
+def _safe_next_url(next_value: Optional[str]) -> Optional[str]:
+    """
+    Validate a post-login ``next`` redirect target against the allowlist.
+
+    Accepted:
+      * a same-site path (``/something``, not protocol-relative ``//host``)
+        → resolved against FRONTEND_URL;
+      * an absolute ``https`` URL whose origin is FRONTEND_URL's origin or is
+        listed in the ``OIDC_NEXT_ALLOWED_ORIGINS`` env (comma-separated) —
+        e.g. the cohort dash origins. No origins are hardcoded here.
+
+    Anything else returns None (caller falls back to the default redirect).
+    Never returns a target that would receive amebo tokens — callers redirect
+    to it WITHOUT the token fragment; the session cookie is the credential.
+    """
+    if not next_value:
+        return None
+    if next_value.startswith("/") and not next_value.startswith("//"):
+        return _front(next_value)
+    from urllib.parse import urlparse
+    parsed = urlparse(next_value)
+    if parsed.scheme != "https" or not parsed.netloc:
+        return None
+    origin = f"{parsed.scheme}://{parsed.netloc}"
+    allowed = {
+        o.strip().rstrip("/")
+        for o in os.getenv("OIDC_NEXT_ALLOWED_ORIGINS", "").split(",")
+        if o.strip()
+    }
+    front = urlparse(FRONTEND_URL)
+    if front.scheme and front.netloc:
+        allowed.add(f"{front.scheme}://{front.netloc}")
+    return next_value if origin in allowed else None
+
+
 @router.get("/oidc/login")
-async def oidc_login(invite: str = None):
+async def oidc_login(invite: str = None, next_url: str = Query(None, alias="next")):
     """
     Begin LinkedTrust OIDC login: redirect the browser to the IdP.
 
     An optional ``invite`` token (from an SSO invite link) rides along in the
     signed tx cookie; the callback consumes it to admit the user into the
     inviting org. The invite link is just this endpoint with ``?invite=<token>``.
+
+    An optional ``next`` parameter (allowlisted — see _safe_next_url) rides
+    along the same way; after the session cookie is set the callback redirects
+    there instead of the SPA default, so a dash sign-in chip can chain logins
+    across apps. Invalid/absent ``next`` keeps today's behavior.
     """
     cfg = OidcConfig.from_env()
     state, nonce = new_state_nonce()
@@ -771,6 +817,10 @@ async def oidc_login(invite: str = None):
     tx_claims = {"oidc_state": state, "oidc_nonce": nonce, "oidc_verifier": verifier}
     if invite:
         tx_claims["oidc_invite"] = invite
+    if _safe_next_url(next_url):
+        # Store the raw value; the callback re-validates before redirecting
+        # (the allowlist env could change between the two requests).
+        tx_claims["oidc_next"] = next_url
     # Window must cover a real first-time login at the IdP: account chooser,
     # provider consent, and possibly a couple of method retries (Google/Bluesky/
     # GitHub). 10 min was too short — a slow first login dropped the invite and
@@ -958,10 +1008,21 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
     finally:
         DatabaseConnection.return_connection(conn)
 
-    # Hand tokens to the SPA via URL fragment (kept out of server logs).
-    resp = RedirectResponse(
-        _front(f"/auth/callback#access_token={access_token}&refresh_token={refresh_token}"),
-        status_code=302,
-    )
+    # Allowlisted ``next`` (login chaining): the session cookie is the
+    # credential, so redirect there WITHOUT the token fragment — amebo tokens
+    # are never handed to another origin. Otherwise, hand tokens to the SPA
+    # via URL fragment (kept out of server logs) as before.
+    next_target = _safe_next_url(payload.get("oidc_next"))
+    if next_target:
+        resp = RedirectResponse(next_target, status_code=302)
+    else:
+        resp = RedirectResponse(
+            _front(f"/auth/callback#access_token={access_token}&refresh_token={refresh_token}"),
+            status_code=302,
+        )
+    # Establish the HttpOnly session cookie so cross-origin embeds
+    # (credentials:'include' from CORS-allowlisted origins) authenticate
+    # without localStorage. The SPA fragment flow is unchanged.
+    set_session_cookie(resp, access_token)
     resp.delete_cookie(OIDC_TX_COOKIE, path="/api/auth/oidc")
     return resp

@@ -35,7 +35,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from src.api.auth_utils import decode_token
+from src.api.auth_utils import SESSION_COOKIE_NAME, decode_token
 from src.api.middleware.auth import _validate_api_key
 
 logger = logging.getLogger(__name__)
@@ -73,7 +73,8 @@ def _is_public(path: str) -> bool:
 
 
 def _authenticated(request: Request) -> bool:
-    """True if the request carries a valid session JWT or a valid service API key."""
+    """True if the request carries a valid session JWT (header or session
+    cookie) or a valid service API key."""
     auth = request.headers.get("authorization", "")
     if auth.startswith("Bearer "):
         try:
@@ -81,12 +82,24 @@ def _authenticated(request: Request) -> bool:
             request.state.user = payload  # available to downstream handlers
             return True
         except Exception:
-            pass  # fall through to API-key check / 401
+            pass  # fall through to API-key check / cookie check / 401
     api_key = request.headers.get("x-api-key")
     if api_key:
         try:
             request.state.service_client = _validate_api_key(api_key)
             return True
+        except Exception:
+            pass
+    # Session-cookie fallback: browser embeds on CORS-allowlisted origins
+    # fetch with credentials:'include' and no Authorization header. The
+    # cookie carries the same session JWT (set at OIDC callback / refresh).
+    cookie_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if cookie_token:
+        try:
+            payload = decode_token(cookie_token)
+            if payload.get("type") == "access":
+                request.state.user = payload
+                return True
         except Exception:
             pass
     return False

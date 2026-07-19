@@ -7,68 +7,23 @@ Also provides service-to-service API key authentication.
 import hashlib
 from datetime import datetime, timezone
 
-from fastapi import HTTPException, status, Depends
+from fastapi import HTTPException, status, Depends, Request
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, APIKeyHeader
 import logging
 from typing import Optional
 
-from src.api.auth_utils import decode_token
+from src.api.auth_utils import SESSION_COOKIE_NAME, user_from_session_token
 from src.db.connection import DatabaseConnection
 from psycopg2 import extras
 
 logger = logging.getLogger(__name__)
-security = HTTPBearer(auto_error=True)
 security_optional = HTTPBearer(auto_error=False)
 
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> dict:
-    """
-    Authenticate user from JWT token
-
-    Args:
-        credentials: HTTP Bearer token from Authorization header
-
-    Returns:
-        User dict with user_id, org_id, email, role
-
-    Raises:
-        HTTPException 401: If token is missing, invalid, or expired
-    """
-    if not credentials:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
+def _validate_session_token(token: str) -> dict:
+    """Validate a session JWT, normalizing unexpected errors to 401."""
     try:
-        token = credentials.credentials
-        payload = decode_token(token)
-
-        # Verify token type
-        if payload.get("type") != "access":
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token type"
-            )
-
-        # Extract user info
-        user_id = payload.get("user_id")
-        org_id = payload.get("org_id")
-
-        if user_id is None or org_id is None:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid token payload"
-            )
-
-        return {
-            "user_id": user_id,
-            "org_id": org_id,
-            "email": payload.get("email"),
-            "role": payload.get("role", "member")
-        }
-
+        return user_from_session_token(token)
     except HTTPException:
         raise
     except Exception as e:
@@ -80,19 +35,49 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         )
 
 
+async def get_current_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
+) -> dict:
+    """
+    Authenticate user from a session JWT.
+
+    Credential resolution order:
+      1. ``Authorization: Bearer <jwt>`` header (always wins)
+      2. the HttpOnly session cookie (fallback, for browser embeds
+         fetching with credentials:'include' — see auth_utils)
+
+    Returns:
+        User dict with user_id, org_id, email, role
+
+    Raises:
+        HTTPException 401: If no credential is present or it is invalid
+    """
+    if credentials:
+        return _validate_session_token(credentials.credentials)
+
+    cookie_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if cookie_token:
+        return _validate_session_token(cookie_token)
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+
+
 async def get_current_user_optional(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional)
 ) -> Optional[dict]:
     """
-    Optional authentication - returns None if no valid token provided
+    Optional authentication - returns None if no valid credential provided
 
     Useful for endpoints that work differently for authenticated vs anonymous users
     """
-    if not credentials:
-        return None
-
     try:
-        return await get_current_user(credentials)
+        return await get_current_user(request, credentials)
     except HTTPException:
         return None
 
@@ -173,30 +158,39 @@ async def get_service_client(api_key: str = Depends(api_key_header)) -> dict:
 
 
 async def get_service_or_user(
+    request: Request,
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_optional),
     api_key: Optional[str] = Depends(api_key_header_optional),
 ) -> dict:
     """
-    Accept either a user JWT (Authorization: Bearer ...) or a service
-    X-API-Key. Both produce a dict carrying `org_id` so downstream code
-    (which reads `client["org_id"]`) works unchanged.
+    Accept a user JWT (Authorization: Bearer ...), a service X-API-Key,
+    or (fallback) the HttpOnly session cookie. All produce a dict carrying
+    `org_id` so downstream code (which reads `client["org_id"]`) works
+    unchanged.
+
+    Credential resolution order: Bearer header, X-API-Key, session cookie.
 
     Distinguished by the `auth` key:
-      Bearer JWT  → {"org_id", "user_id", "email", "role", "auth": "user"}
-      X-API-Key   → {"org_id", "key_name", "permissions", "auth": "service"}
+      Bearer JWT / session cookie → {"org_id", "user_id", "email", "role", "auth": "user"}
+      X-API-Key                   → {"org_id", "key_name", "permissions", "auth": "service"}
 
-    Use this on endpoints that should be reachable from either an
-    end-user session (via the view-server proxy carrying a per-user JWT)
-    or from a service-to-service caller.
+    Use this on endpoints that should be reachable from an end-user
+    session (per-user JWT or browser session cookie) or from a
+    service-to-service caller.
     """
     if credentials:
-        user = await get_current_user(credentials)
+        user = _validate_session_token(credentials.credentials)
         user["auth"] = "user"
         return user
     if api_key:
         svc = _validate_api_key(api_key)
         svc["auth"] = "service"
         return svc
+    cookie_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if cookie_token:
+        user = _validate_session_token(cookie_token)
+        user["auth"] = "user"
+        return user
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Authentication required (Bearer JWT or X-API-Key)",

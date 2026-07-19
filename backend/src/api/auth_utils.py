@@ -12,7 +12,7 @@ load_dotenv()
 
 from jose import JWTError, jwt
 import bcrypt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 # Configuration
@@ -26,8 +26,16 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour
 REFRESH_TOKEN_EXPIRE_DAYS = 30  # 30 days
 
-# HTTP Bearer token scheme
-bearer_scheme = HTTPBearer()
+# Session cookie: the session JWT mirrored into an HttpOnly cookie at OIDC
+# callback / token refresh so browser embeds on allowlisted origins
+# (credentials:'include') can authenticate cross-origin. The Authorization
+# header always takes precedence; the cookie is only a fallback credential.
+# SameSite=Lax limits CSRF exposure (cross-site POSTs never carry it).
+SESSION_COOKIE_NAME = os.getenv("AMEBO_SESSION_COOKIE", "amebo_session")
+
+# HTTP Bearer token scheme. auto_error=False so a missing Authorization
+# header falls through to the session-cookie fallback instead of a bare 403.
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def hash_password(password: str) -> str:
@@ -110,22 +118,35 @@ def decode_token(token: str) -> dict:
         )
 
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme)
-) -> dict:
+def set_session_cookie(response: Response, access_token: str) -> None:
     """
-    Dependency to get current authenticated user from JWT token
+    Mirror the session JWT into the HttpOnly session cookie.
 
-    Args:
-        credentials: HTTP Bearer credentials
+    Called wherever an access token is issued to a browser (OIDC callback,
+    token refresh). The SPA's localStorage flow is unchanged — the cookie
+    is an additional credential for cross-origin embeds fetching with
+    credentials:'include' from CORS-allowlisted origins.
+    """
+    response.set_cookie(
+        SESSION_COOKIE_NAME,
+        access_token,
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path="/",
+    )
 
-    Returns:
-        User payload dict with user_id, org_id, role
+
+def user_from_session_token(token: str) -> dict:
+    """
+    Validate a session (access) JWT and return the user dict.
+
+    Shared by the Authorization-header and session-cookie paths.
 
     Raises:
-        HTTPException: If token is invalid
+        HTTPException 401: invalid/expired token, wrong type, bad payload
     """
-    token = credentials.credentials
     payload = decode_token(token)
 
     # Verify token type
@@ -151,6 +172,37 @@ async def get_current_user(
         "email": payload.get("email"),
         "role": payload.get("role", "member")
     }
+
+
+async def get_current_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
+) -> dict:
+    """
+    Dependency to get current authenticated user from a session JWT.
+
+    Credential resolution order:
+      1. ``Authorization: Bearer <jwt>`` header (always wins)
+      2. the HttpOnly session cookie (fallback, for browser embeds)
+
+    Returns:
+        User payload dict with user_id, org_id, email, role
+
+    Raises:
+        HTTPException 401: no credential, or the credential is invalid
+    """
+    if credentials:
+        return user_from_session_token(credentials.credentials)
+
+    cookie_token = request.cookies.get(SESSION_COOKIE_NAME)
+    if cookie_token:
+        return user_from_session_token(cookie_token)
+
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Authentication required",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 def require_role(required_roles: list):

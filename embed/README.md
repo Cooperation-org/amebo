@@ -107,31 +107,30 @@ Page markup:
 ```
 
 Cross-origin direct (`data-up="https://amebo.<host>"`) is supported by
-the bundle and becomes the right shape when amebo moves to its own VM,
-but isn't needed now.
+the bundle and by the backend's session cookie (below) — the shape the
+cohort dash uses (see `PLAN-cohort-dash.md`).
 
 ## Auth
 
-Amebo authenticates users via Google OAuth (`POST /api/auth/google`,
-team recipe at `/opt/shared/cobox/oauth-login-pattern.md`) and issues a
-JWT used in `Authorization: Bearer ...`.
+Amebo authenticates users via LinkedTrust OIDC / Google OAuth (team
+recipe at `/opt/shared/cobox/oauth-login-pattern.md`) and issues a JWT
+used in `Authorization: Bearer ...` by the SPA (localStorage).
 
-For the same-origin embed on this VM, the simplest current path: the
-host page makes the user's amebo JWT available to the bundle (e.g.
-`window.AMEBO_JWT = "..."` or `<meta name="amebo-jwt" content="...">`),
-and the embed sends it. If you want, point the host's own Google
-sign-in at amebo's `/api/auth/google` once at login and store the
-returned JWT in the host's session — same Google account, same user
-identity in both apps.
+**Session cookie (cross-origin embeds).** At OIDC callback and token
+refresh the backend ALSO mirrors the session JWT into an
+`HttpOnly; Secure; SameSite=Lax` cookie on the amebo host. The bundle
+fetches with `credentials: 'include'`, so from any origin in the
+backend's `CORS_ORIGINS` allowlist the cookie authenticates the embed —
+no proxy, no token in the page. The Authorization header, when present,
+always takes precedence over the cookie. A component whose fetch gets a
+401 renders nothing (signed-out visitors just see fewer cards). The
+cookie carries the access JWT, so the embed session lasts as long as
+that token (60 min from the user's last amebo login/refresh).
 
 Endpoints:
-- `/api/qa/ask`, `/api/digest`, `/api/goals/*` — all accept Bearer JWT.
-  `/api/goals/*` also accepts `X-API-Key` for service-to-service
-  callers.
-
-The v0 bundle does not yet read `window.AMEBO_JWT`; add when needed.
-Today the bundle fetches with `credentials: 'include'` so anything the
-host has already set as a same-origin cookie also rides along.
+- `/api/qa/ask`, `/api/digest`, `/api/goals/*` — all accept Bearer JWT
+  or the session cookie. `/api/goals/*` and `/api/organizations/links`
+  also accept `X-API-Key` for service-to-service callers.
 
 ## Updating the bundle
 
