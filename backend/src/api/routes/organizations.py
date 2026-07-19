@@ -14,6 +14,7 @@ from src.api.models import (
     DashboardStats
 )
 from src.api.auth_utils import get_current_user, require_admin
+from src.api.middleware.auth import get_service_or_user
 from src.db.connection import DatabaseConnection
 from pydantic import BaseModel
 from typing import List
@@ -351,8 +352,15 @@ async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/links")
-async def get_org_links(current_user: dict = Depends(get_current_user)):
-    """Return the org's dashboard key links (empty list if none configured)."""
+async def get_org_links(client: dict = Depends(get_service_or_user)):
+    """Return the org's dashboard key links (empty list if none configured).
+
+    Accepts a user session (Bearer JWT or session cookie) or a service
+    X-API-Key; either way the org is resolved server-side from the
+    credential's own org_id — never from a client-supplied value. The
+    service path lets a doorway (e.g. workers.vc's server-side tools-row
+    fetch) use a real ``api_keys`` entry instead of a personal JWT.
+    """
     conn = DatabaseConnection.get_connection()
     try:
         with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
@@ -364,7 +372,7 @@ async def get_org_links(current_user: dict = Depends(get_current_user)):
                 ORDER BY id
                 LIMIT 1
                 """,
-                (current_user['org_id'],)
+                (client['org_id'],)
             )
             row = cur.fetchone()
             return {"links": (row['links'] if row and row['links'] else [])}
