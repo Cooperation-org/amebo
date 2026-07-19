@@ -114,25 +114,75 @@ server-side from identity, core stays use-case-ignorant.
 
 ### Work items (in order)
 
-1. **Session cookie for browser auth** — at OIDC callback (and refresh),
-   also set the session JWT as an `HttpOnly; Secure; SameSite=Lax`
-   cookie on the amebo host, and accept it in `get_current_user` as a
-   fallback when no `Authorization` header is present (header keeps
-   precedence; CSRF exposure is limited — state-changing embed calls are
-   the gated-goals ones, and Lax blocks cross-site POSTs). This makes
+1. **DONE (2026-07-19). Session cookie for browser auth** — at OIDC
+   callback and token refresh the session JWT is also set as an
+   `HttpOnly; Secure; SameSite=Lax` cookie (`amebo_session`, name
+   configurable via `AMEBO_SESSION_COOKIE`) on the amebo host, and
+   accepted as a fallback credential when no `Authorization` header is
+   present (header keeps precedence; CSRF exposure is limited —
+   state-changing embed calls are the gated-goals ones, and Lax blocks
+   cross-site POSTs). Wired through `get_current_user` (both
+   `api/auth_utils.py` and `api/middleware/auth.py`),
+   `get_service_or_user` (precedence: Bearer header, X-API-Key, cookie)
+   and the AuthGate (`api/middleware/auth_gate.py`), so
    `credentials:'include'` embeds work cross-origin exactly as the
    bundle already assumes. Frontend localStorage flow unchanged.
-2. **CORS origins** — document + support
+   - **Embed session length (for the dash side):** the cookie carries
+     the ACCESS JWT and its Max-Age matches that token's validity —
+     **60 minutes** (`ACCESS_TOKEN_EXPIRE_MINUTES`). Refresh (30-day
+     token) lives only in the SPA's localStorage; nothing on the dash
+     refreshes it. So the embed session dies ~60 min after the user's
+     last amebo login or SPA-driven refresh, and the cards render
+     nothing until the user signs in at amebo again (or via the dash
+     sign-in chip). No separate refresh mechanism was invented — if 60
+     min proves too short for the dash, the fix is a deliberate session
+     policy change, not a longer cookie on a dead token.
+   - **Login chaining (`next=`), added for the SSO-once flow:**
+     `GET /api/auth/oidc/login?next=<url>` carries `next` through the
+     signed tx cookie; after the callback sets the session cookie it
+     302s to `next` — WITHOUT the token fragment (amebo tokens are
+     never handed to another origin; the cookie is the credential).
+     `next` must be a same-site path or an `https` origin listed in
+     `OIDC_NEXT_ALLOWED_ORIGINS` (comma-separated env; FRONTEND_URL's
+     origin is always allowed; nothing hardcoded). Invalid/absent
+     `next` keeps the old SPA-fragment behavior.
+2. **DONE (2026-07-19). CORS origins** — documented + supported
    `CORS_ORIGINS=https://workers.vc,https://www.workers.vc,https://amebo.workers.vc`
-   for the cohort deployment (env change itself rides earnkit's
-   amebo.env.j2; add to `.env.production.example`). AuthGate must let a
-   cookie-authenticated request through the public edge — extend the
-   gate to accept the session cookie as a credential.
-3. **Service auth for links** — allow `get_service_or_user` on
-   `GET /api/organizations/links` (org resolved from the API key's
-   org_id) so workers.vc's server-side tools-row fetch uses a real
-   `api_keys` entry instead of a personal JWT. Provision a key for the
-   doorway.
+   (added to `.env.production.example` together with
+   `OIDC_NEXT_ALLOWED_ORIGINS`; the live env change itself rides
+   earnkit's amebo.env.j2). AuthGate now lets a cookie-authenticated
+   request through the public edge.
+3. **DONE (2026-07-19), key provisioning pending. Service auth for
+   links** — `GET /api/organizations/links` now takes
+   `get_service_or_user`; with an `X-API-Key` the org is resolved from
+   the key's own `org_id`, never from a client-supplied value. No live
+   key was provisioned (deliberate — deploy-time step). **Provisioning
+   the doorway key** (run by whoever holds amebo DB access, then put
+   the raw key in workers.vc's server env only):
+
+   ```bash
+   # 1. generate the key and its hash (raw key is shown ONCE — store it
+   #    only in workers.vc's server-side env, e.g. AMEBO_API_KEY)
+   python3 - <<'EOF'
+   import secrets, hashlib
+   key = "ak_live_" + secrets.token_urlsafe(32)
+   print("raw key   :", key)
+   print("key_hash  :", hashlib.sha256(key.encode()).hexdigest())
+   print("key_prefix:", key[:12])
+   EOF
+   # 2. insert the hash (amebo DB on VM 100; org_id = the team's org,
+   #    created_by = an existing admin platform_users.user_id)
+   INSERT INTO api_keys (org_id, key_name, key_hash, key_prefix, permissions, created_by)
+   VALUES (<org_id>, 'workersvc-doorway-links', '<key_hash>', '<key_prefix>', '["read"]', <admin_user_id>);
+   ```
+
+   workers.vc then calls `GET /api/organizations/links` with header
+   `X-API-Key: <raw key>` instead of a personal JWT.
+
+   Unit tests for all three items: `backend/tests/test_cohort_dash_auth.py`
+   (cookie set at callback/refresh, fallback + header precedence, `next=`
+   allowlist, AuthGate cookie pass, links via API key / JWT / cookie,
+   CORS origins from env).
 4. **`<amebo-board>` component** (phase 2, after a team org has a
    context repo): add to `embed/amebo.js` — renders
    `GET /api/organizations/board` items (name, one-liner, status, owner,

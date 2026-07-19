@@ -1359,3 +1359,22 @@ config (I11), not a core constant.
   for many channels. Mentions in channels the bot isn't in are never delivered → invite @amebo, or check
   the app's event subscriptions.
 - Both services restarted + healthy; frontend rebuilt.
+
+## COHORT DASH auth surface (PLAN-cohort-dash.md items 1-3) — DONE 2026-07-19
+
+- **Session cookie** (`amebo_session`, HttpOnly/Secure/Lax, Max-Age = access-JWT
+  60 min): set at OIDC callback + /api/auth/refresh; accepted as FALLBACK by
+  `get_current_user` (both variants), `get_service_or_user` (header > X-API-Key >
+  cookie) and the AuthGate public edge. SPA localStorage flow unchanged.
+- **OIDC login chaining**: `/api/auth/oidc/login?next=<url>` → after callback,
+  302 to `next` WITHOUT token fragment (cookie is the credential). Allowlist:
+  same-site paths + `OIDC_NEXT_ALLOWED_ORIGINS` env (FRONTEND_URL origin always
+  allowed, nothing hardcoded).
+- **Links service auth**: `GET /api/organizations/links` now `get_service_or_user`;
+  X-API-Key resolves org from the key's org_id. Doorway key NOT provisioned —
+  provisioning SQL documented in PLAN-cohort-dash.md (deploy-time step).
+- **CORS**: workers.vc origins documented in `.env.production.example`
+  (+ `OIDC_NEXT_ALLOWED_ORIGINS`); live env change rides earnkit's amebo.env.j2.
+- Tests: `backend/tests/test_cohort_dash_auth.py` (33). Full suite 771 passed,
+  11 pre-existing skips, 0 failed. NOT deployed/restarted — live amebo-backend
+  untouched; restart needed to pick this up when the deploy env lands.
