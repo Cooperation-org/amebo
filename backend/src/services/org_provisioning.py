@@ -77,7 +77,7 @@ def _upsert_org(slug: str, name: str, aliases: List[str],
                         context_repo = COALESCE(EXCLUDED.context_repo, organizations.context_repo)
                 RETURNING org_id
                 """,
-                (name, slug, extras.Json(list(aliases or [])), context_repo),
+                (name, slug, list(aliases or []), context_repo),
             )
             org_id = cur.fetchone()[0]
             conn.commit()
