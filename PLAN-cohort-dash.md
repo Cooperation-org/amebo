@@ -127,16 +127,25 @@ server-side from identity, core stays use-case-ignorant.
    and the AuthGate (`api/middleware/auth_gate.py`), so
    `credentials:'include'` embeds work cross-origin exactly as the
    bundle already assumes. Frontend localStorage flow unchanged.
-   - **Embed session length (for the dash side):** the cookie carries
-     the ACCESS JWT and its Max-Age matches that token's validity —
-     **60 minutes** (`ACCESS_TOKEN_EXPIRE_MINUTES`). Refresh (30-day
-     token) lives only in the SPA's localStorage; nothing on the dash
-     refreshes it. So the embed session dies ~60 min after the user's
-     last amebo login or SPA-driven refresh, and the cards render
-     nothing until the user signs in at amebo again (or via the dash
-     sign-in chip). No separate refresh mechanism was invented — if 60
-     min proves too short for the dash, the fix is a deliberate session
-     policy change, not a longer cookie on a dead token.
+   - **Embed session length (updated 2026-07-19, refresh-capable):**
+     a second HttpOnly cookie (`amebo_refresh`, name via
+     `AMEBO_REFRESH_COOKIE`) carries the refresh JWT, **path-scoped to
+     `/api/auth/refresh`** so no other endpoint ever sees it, Max-Age =
+     the token's real remaining validity. `/api/auth/refresh` accepts it
+     as a fallback when the body supplies no token (SPA body flow
+     unchanged, takes precedence) and on success re-sets BOTH cookies.
+     The embed bundle's shared fetch helper, on a 401, makes ONE empty
+     `POST {up}/api/auth/refresh` (`credentials:'include'`) and retries
+     the original request once — no loops; failure keeps the existing
+     render-nothing behavior. **Effective embed session = the SPA's: up
+     to 30 days from the user's last actual login.** The existing
+     refresh semantic is preserved exactly — the refresh token is NOT
+     rotated (verified: `/refresh` returns the same token; there is no
+     rotation or reuse detection to preserve), so the horizon is fixed
+     at login + 30 days (`REFRESH_TOKEN_EXPIRE_DAYS`), not sliding.
+     CSRF: SameSite=Lax means a cross-SITE page can never drive the
+     refresh POST with the cookie; same-site dash pages (shared
+     registrable domain) can, which is the intended contract.
    - **Login chaining (`next=`), added for the SSO-once flow:**
      `GET /api/auth/oidc/login?next=<url>` carries `next` through the
      signed tx cookie; after the callback sets the session cookie it

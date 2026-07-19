@@ -30,6 +30,8 @@ import httpx
 import pytest
 
 from src.api.auth_utils import (
+    REFRESH_COOKIE_NAME,
+    REFRESH_COOKIE_PATH,
     SESSION_COOKIE_NAME,
     create_access_token,
     create_refresh_token,
@@ -159,18 +161,23 @@ def two_orgs():
         DatabaseConnection.return_connection(conn)
 
 
-def _session_cookies(headers) -> dict:
-    """Parse the amebo session Set-Cookie (if any) into {value, attrs}."""
+def _set_cookie(headers, cookie_name: str) -> dict:
+    """Parse a named Set-Cookie from response headers into {value, attrs}."""
     for raw in headers.get_list("set-cookie"):
         first, _, rest = raw.partition(";")
         name, _, value = first.strip().partition("=")
-        if name == SESSION_COOKIE_NAME:
+        if name == cookie_name:
             attrs = {
                 p.strip().partition("=")[0].lower(): p.strip().partition("=")[2]
                 for p in rest.split(";") if p.strip()
             }
             return {"value": value, "attrs": attrs}
     return {}
+
+
+def _session_cookies(headers) -> dict:
+    """Parse the amebo session Set-Cookie (if any) into {value, attrs}."""
+    return _set_cookie(headers, SESSION_COOKIE_NAME)
 
 
 # ---------------------------------------------------------------------------
@@ -222,6 +229,18 @@ class TestSessionCookieIssued:
         assert payload["user_id"] == 7
         assert payload["org_id"] == 13
 
+        # The path-scoped refresh cookie is set alongside the session cookie.
+        refresh_cookie = _set_cookie(resp.headers, REFRESH_COOKIE_NAME)
+        assert refresh_cookie, "refresh cookie was not set at OIDC callback"
+        r_attrs = refresh_cookie["attrs"]
+        assert "httponly" in r_attrs
+        assert "secure" in r_attrs
+        assert r_attrs.get("samesite", "").lower() == "lax"
+        assert r_attrs.get("path") == REFRESH_COOKIE_PATH
+        r_payload = decode_token(refresh_cookie["value"])
+        assert r_payload["type"] == "refresh"
+        assert r_payload["user_id"] == 7
+
     def test_refresh_sets_session_cookie(self, client):
         user_row = {"user_id": 7, "org_id": 13, "email": "cookie@example.test",
                     "role": "member", "is_active": True}
@@ -240,6 +259,107 @@ class TestSessionCookieIssued:
         assert cookie, "session cookie was not set at token refresh"
         assert cookie["value"] == resp.json()["access_token"]
         assert "httponly" in cookie["attrs"]
+
+
+# ---------------------------------------------------------------------------
+# 1b'. Refresh cookie: /api/auth/refresh accepts it as fallback, re-sets both
+#      cookies, preserves the existing NO-ROTATION semantic
+# ---------------------------------------------------------------------------
+
+
+def _mock_refresh_db(user_row):
+    db = MagicMock()
+    cur = db.get_connection.return_value.cursor.return_value.__enter__.return_value
+    cur.fetchone.return_value = user_row
+    return db, cur
+
+
+REFRESH_USER = {"user_id": 7, "org_id": 13, "email": "cookie@example.test",
+                "role": "member", "is_active": True}
+
+
+class TestRefreshCookie:
+
+    def test_empty_body_falls_back_to_refresh_cookie(self, client):
+        """The browser-embed flow: POST with no body at all, refresh cookie
+        only → new access token, 200."""
+        db, _ = _mock_refresh_db(REFRESH_USER)
+        refresh = create_refresh_token({"user_id": 7})
+        with patch("src.api.routes.auth.DatabaseConnection", db):
+            resp = client.post(
+                "/api/auth/refresh",
+                cookies={REFRESH_COOKIE_NAME: refresh},
+            )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert decode_token(body["access_token"])["user_id"] == 7
+        # existing semantic preserved: the refresh token is NOT rotated
+        assert body["refresh_token"] == refresh
+
+    def test_body_takes_precedence_over_cookie(self, client):
+        """SPA flow unchanged: a body refresh token wins over the cookie."""
+        db, cur = _mock_refresh_db(REFRESH_USER)
+        body_refresh = create_refresh_token({"user_id": 7})
+        cookie_refresh = create_refresh_token({"user_id": 8})
+        with patch("src.api.routes.auth.DatabaseConnection", db):
+            resp = client.post(
+                "/api/auth/refresh",
+                json={"refresh_token": body_refresh},
+                cookies={REFRESH_COOKIE_NAME: cookie_refresh},
+            )
+        assert resp.status_code == 200
+        # the user looked up is the BODY token's user, not the cookie's
+        assert cur.execute.call_args[0][1] == (7,)
+        assert resp.json()["refresh_token"] == body_refresh
+
+    def test_refresh_resets_both_cookies_with_scoped_paths(self, client):
+        db, _ = _mock_refresh_db(REFRESH_USER)
+        refresh = create_refresh_token({"user_id": 7})
+        with patch("src.api.routes.auth.DatabaseConnection", db):
+            resp = client.post(
+                "/api/auth/refresh",
+                cookies={REFRESH_COOKIE_NAME: refresh},
+            )
+        assert resp.status_code == 200
+
+        session = _session_cookies(resp.headers)
+        assert session and session["value"] == resp.json()["access_token"]
+        assert session["attrs"].get("path") == "/"
+
+        rc = _set_cookie(resp.headers, REFRESH_COOKIE_NAME)
+        assert rc, "refresh cookie not re-set on refresh"
+        assert rc["value"] == refresh  # same token — no rotation exists
+        attrs = rc["attrs"]
+        assert "httponly" in attrs
+        assert "secure" in attrs
+        assert attrs.get("samesite", "").lower() == "lax"
+        # path-scoped: only ever sent back to the refresh route
+        assert attrs.get("path") == REFRESH_COOKIE_PATH
+        # Max-Age tracks the token's real remaining validity (~30 days for
+        # a fresh token; never longer than the token lives)
+        max_age = int(attrs["max-age"])
+        assert 29 * 24 * 3600 < max_age <= 30 * 24 * 3600
+
+    def test_no_body_and_no_cookie_is_401(self, client):
+        resp = client.post("/api/auth/refresh")
+        assert resp.status_code == 401
+
+    def test_access_token_in_refresh_cookie_rejected(self, client):
+        """Only refresh-type tokens refresh a session."""
+        db, _ = _mock_refresh_db(REFRESH_USER)
+        with patch("src.api.routes.auth.DatabaseConnection", db):
+            resp = client.post(
+                "/api/auth/refresh",
+                cookies={REFRESH_COOKIE_NAME: _token(13)},
+            )
+        assert resp.status_code == 401
+
+    def test_garbage_refresh_cookie_rejected(self, client):
+        resp = client.post(
+            "/api/auth/refresh",
+            cookies={REFRESH_COOKIE_NAME: "not-a-jwt"},
+        )
+        assert resp.status_code == 401
 
 
 # ---------------------------------------------------------------------------

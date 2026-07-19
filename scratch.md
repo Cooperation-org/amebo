@@ -1378,3 +1378,20 @@ config (I11), not a core constant.
 - Tests: `backend/tests/test_cohort_dash_auth.py` (33). Full suite 771 passed,
   11 pre-existing skips, 0 failed. NOT deployed/restarted — live amebo-backend
   untouched; restart needed to pick this up when the deploy env lands.
+
+## COHORT DASH: embed session now refresh-capable — 2026-07-19 (follow-up, approved)
+
+- Second HttpOnly cookie `amebo_refresh` (refresh JWT), **path-scoped to
+  /api/auth/refresh**, Max-Age = token's remaining validity; set at OIDC
+  callback + refresh. `/api/auth/refresh` accepts it as fallback when the body
+  has no token (SPA body flow unchanged, precedence kept) and re-sets BOTH
+  cookies. No new endpoints.
+- Verified before building: refresh tokens are stateless 30-day JWTs, **no
+  rotation / reuse detection exists** (`/refresh` returns the same token) —
+  semantic preserved exactly.
+- embed/amebo.js v1: shared jfetch core; on 401 → ONE empty POST
+  {up}/api/auth/refresh (credentials:'include') → one retry; failure = existing
+  render-nothing. Effective embed session = SPA's: up to 30 days from last
+  actual login (fixed horizon, not sliding).
+- Tests: +6 in test_cohort_dash_auth.py (39 total). Full suite 777 passed /
+  11 pre-existing skips / 0 failed. Live service still NOT restarted.
