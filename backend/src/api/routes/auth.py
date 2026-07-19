@@ -25,10 +25,12 @@ from src.api.models import (
 from src.api.auth_utils import (
     hash_password,
     verify_password,
+    REFRESH_COOKIE_NAME,
     create_access_token,
     create_refresh_token,
     decode_token,
     get_current_user,
+    set_refresh_cookie,
     set_session_cookie,
 )
 from src.db.connection import DatabaseConnection
@@ -258,17 +260,37 @@ async def login(request: UserLoginRequest):
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh_token(request: RefreshTokenRequest, response: Response):
+async def refresh_token(
+    request: Request,
+    response: Response,
+    body: Optional[RefreshTokenRequest] = None,
+):
     """
     Refresh access token using refresh token.
 
-    Also re-sets the HttpOnly session cookie with the new access token so
-    browser embeds (credentials:'include') stay authenticated alongside
-    the SPA's localStorage flow.
+    The refresh token comes from the JSON body (SPA flow, unchanged, takes
+    precedence) or — fallback — from the path-scoped HttpOnly refresh
+    cookie, so a browser embed can renew its session with an empty POST
+    (credentials:'include'; SameSite=Lax means a cross-SITE page can never
+    drive this with the cookie). Existing semantics are preserved exactly:
+    the refresh token is NOT rotated.
+
+    On success both cookies are (re-)set: the session cookie with the new
+    access token, the refresh cookie with the same refresh token (Max-Age
+    tracking its remaining validity).
     """
+    supplied_refresh = (
+        body.refresh_token if body and body.refresh_token
+        else request.cookies.get(REFRESH_COOKIE_NAME)
+    )
+    if not supplied_refresh:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Refresh token required (body or refresh cookie)",
+        )
     try:
         # Decode refresh token
-        payload = decode_token(request.refresh_token)
+        payload = decode_token(supplied_refresh)
 
         # Verify token type
         if payload.get("type") != "refresh":
@@ -313,10 +335,11 @@ async def refresh_token(request: RefreshTokenRequest, response: Response):
                 }
                 access_token = create_access_token(token_data)
                 set_session_cookie(response, access_token)
+                set_refresh_cookie(response, supplied_refresh)
 
                 return TokenResponse(
                     access_token=access_token,
-                    refresh_token=request.refresh_token,  # Keep same refresh token
+                    refresh_token=supplied_refresh,  # Keep same refresh token
                     token_type="bearer",
                     expires_in=3600
                 )
@@ -1022,7 +1045,10 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
         )
     # Establish the HttpOnly session cookie so cross-origin embeds
     # (credentials:'include' from CORS-allowlisted origins) authenticate
-    # without localStorage. The SPA fragment flow is unchanged.
+    # without localStorage, plus the path-scoped refresh cookie so the
+    # embed can renew that session at /api/auth/refresh for as long as
+    # the refresh token lives. The SPA fragment flow is unchanged.
     set_session_cookie(resp, access_token)
+    set_refresh_cookie(resp, refresh_token)
     resp.delete_cookie(OIDC_TX_COOKIE, path="/api/auth/oidc")
     return resp

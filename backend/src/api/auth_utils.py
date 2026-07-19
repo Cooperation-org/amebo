@@ -5,6 +5,7 @@ Authentication utilities - JWT, password hashing, token management
 from datetime import datetime, timedelta
 from typing import Optional
 import os
+import time
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -32,6 +33,15 @@ REFRESH_TOKEN_EXPIRE_DAYS = 30  # 30 days
 # header always takes precedence; the cookie is only a fallback credential.
 # SameSite=Lax limits CSRF exposure (cross-site POSTs never carry it).
 SESSION_COOKIE_NAME = os.getenv("AMEBO_SESSION_COOKIE", "amebo_session")
+
+# Refresh cookie: the refresh JWT in a second HttpOnly cookie, PATH-SCOPED to
+# the refresh route so the browser only ever sends it there — no other
+# endpoint sees it. Lets a browser embed renew its session cookie with an
+# empty POST to /api/auth/refresh (credentials:'include'). SameSite=Lax:
+# cross-SITE POSTs never carry it; same-site (*.workers.vc → amebo host)
+# POSTs do, which is the cohort-dash contract.
+REFRESH_COOKIE_NAME = os.getenv("AMEBO_REFRESH_COOKIE", "amebo_refresh")
+REFRESH_COOKIE_PATH = "/api/auth/refresh"
 
 # HTTP Bearer token scheme. auto_error=False so a missing Authorization
 # header falls through to the session-cookie fallback instead of a bare 403.
@@ -135,6 +145,39 @@ def set_session_cookie(response: Response, access_token: str) -> None:
         secure=True,
         samesite="lax",
         path="/",
+    )
+
+
+def set_refresh_cookie(response: Response, refresh_token: str) -> None:
+    """
+    Mirror the refresh JWT into the path-scoped HttpOnly refresh cookie.
+
+    Called wherever a refresh token is issued or accepted for a browser
+    (OIDC callback, token refresh). Max-Age tracks the token's real
+    remaining validity (from its ``exp`` claim), so the cookie dies with
+    the token it carries — never a live cookie around a dead token.
+
+    The token must be a valid JWT (call sites always hold a freshly minted
+    or just-validated one); an unverifiable token is not written.
+    """
+    try:
+        exp = decode_token(refresh_token).get("exp")
+    except HTTPException:
+        return  # never persist a token we can't verify
+    max_age = (
+        int(exp - time.time()) if exp
+        else REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600
+    )
+    if max_age <= 0:
+        return
+    response.set_cookie(
+        REFRESH_COOKIE_NAME,
+        refresh_token,
+        max_age=max_age,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path=REFRESH_COOKIE_PATH,
     )
 
 

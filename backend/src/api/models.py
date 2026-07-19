@@ -44,7 +44,10 @@ class TokenResponse(BaseModel):
 
 
 class RefreshTokenRequest(BaseModel):
-    refresh_token: str
+    # Optional: when absent, /api/auth/refresh falls back to the path-scoped
+    # HttpOnly refresh cookie (browser-embed flow); the SPA body flow is
+    # unchanged and takes precedence.
+    refresh_token: Optional[str] = None
 
 
 class ForgotPasswordRequest(BaseModel):
