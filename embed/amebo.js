@@ -1,4 +1,4 @@
-// amebo embed bundle v0
+// amebo embed bundle v1 — 401 → one refresh POST → one retry (cookie session)
 //
 // Registers web components for use inside other shells (abra view,
 // hosted demos, anything that wants amebo intelligence as a widget):
@@ -255,57 +255,63 @@
     return s.length > n ? s.slice(0, n - 1) + '…' : s;
   }
 
-  async function jget(url) {
-    let r;
+  // Session renewal (cohort dash contract — see PLAN-cohort-dash.md and
+  // embed/README.md): on a 401, try ONE empty POST to {up}/api/auth/refresh
+  // with credentials so the backend's path-scoped HttpOnly refresh cookie
+  // can mint a fresh session cookie, then retry the original request once.
+  // No loops, one attempt per component fetch; if the refresh or the retry
+  // fails, the original 401 flows through and the component renders nothing
+  // (existing signed-out behavior).
+  async function tryRefresh(url) {
+    const i = url.indexOf('/api/');
+    if (i < 0) return false;
     try {
-      r = await fetch(url, { credentials: 'include' });
+      const r = await fetch(url.slice(0, i) + '/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      return r.ok;
     } catch (e) {
-      console.error('[amebo] network error', { method: 'GET', url, error: e });
-      throw new Error('network error: ' + (e && e.message || e));
+      return false;
+    }
+  }
+
+  async function jfetch(method, url, init, payload) {
+    async function attempt() {
+      try {
+        return await fetch(url, init);
+      } catch (e) {
+        console.error('[amebo] network error', { method, url, error: e, payload });
+        throw new Error('network error: ' + (e && e.message || e));
+      }
+    }
+    let r = await attempt();
+    if (r.status === 401 && await tryRefresh(url)) {
+      r = await attempt(); // one retry after a successful refresh — never loops
     }
     if (!r.ok) {
       const body = await readBody(r);
-      console.error('[amebo] http error', { method: 'GET', url, status: r.status, body });
-      throw new HttpError('GET', url, r.status, body);
+      console.error('[amebo] http error', { method, url, status: r.status, body, payload });
+      throw new HttpError(method, url, r.status, body);
     }
-    return r.json();
+    return method === 'DELETE' ? null /* 204 No Content */ : r.json();
+  }
+
+  async function jget(url) {
+    return jfetch('GET', url, { credentials: 'include' });
   }
 
   async function jpost(url, payload) {
-    let r;
-    try {
-      r = await fetch(url, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload || {}),
-      });
-    } catch (e) {
-      console.error('[amebo] network error', { method: 'POST', url, error: e, payload });
-      throw new Error('network error: ' + (e && e.message || e));
-    }
-    if (!r.ok) {
-      const body = await readBody(r);
-      console.error('[amebo] http error', { method: 'POST', url, status: r.status, body, payload });
-      throw new HttpError('POST', url, r.status, body);
-    }
-    return r.json();
+    return jfetch('POST', url, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+    }, payload);
   }
 
   async function jdelete(url) {
-    let r;
-    try {
-      r = await fetch(url, { method: 'DELETE', credentials: 'include' });
-    } catch (e) {
-      console.error('[amebo] network error', { method: 'DELETE', url, error: e });
-      throw new Error('network error: ' + (e && e.message || e));
-    }
-    if (!r.ok) {
-      const body = await readBody(r);
-      console.error('[amebo] http error', { method: 'DELETE', url, status: r.status, body });
-      throw new HttpError('DELETE', url, r.status, body);
-    }
-    return null; // 204 No Content
+    return jfetch('DELETE', url, { method: 'DELETE', credentials: 'include' });
   }
 
   // ---- <amebo-ask> --------------------------------------------------------

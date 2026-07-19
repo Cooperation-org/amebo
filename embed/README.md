@@ -123,9 +123,20 @@ fetches with `credentials: 'include'`, so from any origin in the
 backend's `CORS_ORIGINS` allowlist the cookie authenticates the embed —
 no proxy, no token in the page. The Authorization header, when present,
 always takes precedence over the cookie. A component whose fetch gets a
-401 renders nothing (signed-out visitors just see fewer cards). The
-cookie carries the access JWT, so the embed session lasts as long as
-that token (60 min from the user's last amebo login/refresh).
+401 renders nothing (signed-out visitors just see fewer cards).
+
+**401 → refresh → retry (the renewal contract).** The OIDC callback also
+sets a second cookie carrying the refresh JWT, path-scoped to
+`/api/auth/refresh` (the browser only ever sends it there). When a
+bundle fetch gets a 401, the shared fetch helper makes ONE empty
+`POST {up}/api/auth/refresh` with `credentials: 'include'`; the backend
+reads the refresh cookie, re-sets both cookies (new access + same
+refresh — no rotation), and the helper retries the original request
+once. No loops — if the refresh or the retry fails, the original 401
+flows through and the component stays hidden. Effective embed session:
+as long as the SPA's — up to 30 days from the user's last actual login
+(the refresh token is not rotated, so the horizon is fixed at
+login + 30 days, not sliding).
 
 Endpoints:
 - `/api/qa/ask`, `/api/digest`, `/api/goals/*` — all accept Bearer JWT
