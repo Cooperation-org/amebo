@@ -42,8 +42,20 @@ app = FastAPI(
 # CORS Configuration
 # Configure allowed origins via CORS_ORIGINS environment variable (comma-separated)
 # Example: CORS_ORIGINS=http://localhost:3000,https://myapp.vercel.app
-cors_origins_env = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://localhost:3001,https://demos.linkedtrust.us")
-cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+# Cohort dash deployment (embeds fetching with credentials:'include' from the
+# dash — see PLAN-cohort-dash.md):
+#   CORS_ORIGINS=https://workers.vc,https://www.workers.vc,https://amebo.workers.vc
+# allow_credentials is True (session cookie rides along), so this list is an
+# auth boundary: explicit origins only, never "*".
+DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://localhost:3001,https://demos.linkedtrust.us"
+
+
+def parse_cors_origins(env_value: str) -> list:
+    """Split a comma-separated CORS_ORIGINS value into a clean origin list."""
+    return [origin.strip() for origin in (env_value or "").split(",") if origin.strip()]
+
+
+cors_origins = parse_cors_origins(os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS))
 
 # Global auth gate: external (nginx-edge) callers must authenticate; internal
 # loopback callers (Claude Code on the box) are trusted. Added BEFORE CORS so
