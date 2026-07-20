@@ -20,8 +20,8 @@ CREATE TABLE IF NOT EXISTS organizations (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_organizations_slug ON organizations(org_slug);
-CREATE INDEX idx_organizations_active ON organizations(is_active) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_organizations_slug ON organizations(org_slug);
+CREATE INDEX IF NOT EXISTS idx_organizations_active ON organizations(is_active) WHERE is_active = true;
 
 -- ============================================================================
 
@@ -40,9 +40,9 @@ CREATE TABLE IF NOT EXISTS platform_users (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_platform_users_org ON platform_users(org_id);
-CREATE INDEX idx_platform_users_email ON platform_users(email);
-CREATE INDEX idx_platform_users_role ON platform_users(org_id, role);
+CREATE INDEX IF NOT EXISTS idx_platform_users_org ON platform_users(org_id);
+CREATE INDEX IF NOT EXISTS idx_platform_users_email ON platform_users(email);
+CREATE INDEX IF NOT EXISTS idx_platform_users_role ON platform_users(org_id, role);
 
 -- ============================================================================
 
@@ -58,9 +58,9 @@ CREATE TABLE IF NOT EXISTS org_workspaces (
     UNIQUE(org_id, workspace_id)
 );
 
-CREATE INDEX idx_org_workspaces_org ON org_workspaces(org_id);
-CREATE INDEX idx_org_workspaces_workspace ON org_workspaces(workspace_id);
-CREATE INDEX idx_org_workspaces_primary ON org_workspaces(org_id, is_primary) WHERE is_primary = true;
+CREATE INDEX IF NOT EXISTS idx_org_workspaces_org ON org_workspaces(org_id);
+CREATE INDEX IF NOT EXISTS idx_org_workspaces_workspace ON org_workspaces(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_org_workspaces_primary ON org_workspaces(org_id, is_primary) WHERE is_primary = true;
 
 -- ============================================================================
 
@@ -83,10 +83,10 @@ CREATE TABLE IF NOT EXISTS documents (
     updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_documents_org ON documents(org_id);
-CREATE INDEX idx_documents_workspace ON documents(workspace_id);
-CREATE INDEX idx_documents_active ON documents(org_id, is_active) WHERE is_active = true;
-CREATE INDEX idx_documents_type ON documents(file_type);
+CREATE INDEX IF NOT EXISTS idx_documents_org ON documents(org_id);
+CREATE INDEX IF NOT EXISTS idx_documents_workspace ON documents(workspace_id);
+CREATE INDEX IF NOT EXISTS idx_documents_active ON documents(org_id, is_active) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_documents_type ON documents(file_type);
 
 -- ============================================================================
 
@@ -105,9 +105,9 @@ CREATE TABLE IF NOT EXISTS api_keys (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_api_keys_org ON api_keys(org_id);
-CREATE INDEX idx_api_keys_hash ON api_keys(key_hash);
-CREATE INDEX idx_api_keys_active ON api_keys(org_id, is_active) WHERE is_active = true;
+CREATE INDEX IF NOT EXISTS idx_api_keys_org ON api_keys(org_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(org_id, is_active) WHERE is_active = true;
 
 -- ============================================================================
 
@@ -122,9 +122,9 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_refresh_tokens_user ON refresh_tokens(user_id);
-CREATE INDEX idx_refresh_tokens_hash ON refresh_tokens(token_hash);
-CREATE INDEX idx_refresh_tokens_expires ON refresh_tokens(expires_at) WHERE is_revoked = false;
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user ON refresh_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_hash ON refresh_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires ON refresh_tokens(expires_at) WHERE is_revoked = false;
 
 -- ============================================================================
 
@@ -138,8 +138,8 @@ CREATE TABLE IF NOT EXISTS oauth_states (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_oauth_states_token ON oauth_states(state_token);
-CREATE INDEX idx_oauth_states_expires ON oauth_states(expires_at);
+CREATE INDEX IF NOT EXISTS idx_oauth_states_token ON oauth_states(state_token);
+CREATE INDEX IF NOT EXISTS idx_oauth_states_expires ON oauth_states(expires_at);
 
 -- ============================================================================
 
@@ -157,10 +157,10 @@ CREATE TABLE IF NOT EXISTS audit_logs (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_audit_logs_org ON audit_logs(org_id, created_at DESC);
-CREATE INDEX idx_audit_logs_user ON audit_logs(user_id, created_at DESC);
-CREATE INDEX idx_audit_logs_action ON audit_logs(action);
-CREATE INDEX idx_audit_logs_resource ON audit_logs(resource_type, resource_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_org ON audit_logs(org_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_resource ON audit_logs(resource_type, resource_id);
 
 -- ============================================================================
 
@@ -176,8 +176,8 @@ CREATE TABLE IF NOT EXISTS usage_metrics (
     UNIQUE(org_id, metric_type, period_start)
 );
 
-CREATE INDEX idx_usage_metrics_org ON usage_metrics(org_id, period_start DESC);
-CREATE INDEX idx_usage_metrics_type ON usage_metrics(metric_type);
+CREATE INDEX IF NOT EXISTS idx_usage_metrics_org ON usage_metrics(org_id, period_start DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_metrics_type ON usage_metrics(metric_type);
 
 -- ============================================================================
 -- HELPER FUNCTIONS
@@ -214,8 +214,8 @@ CREATE TABLE IF NOT EXISTS password_reset_tokens (
     created_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_password_reset_tokens_hash ON password_reset_tokens(token_hash);
-CREATE INDEX idx_password_reset_tokens_user ON password_reset_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_hash ON password_reset_tokens(token_hash);
+CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user ON password_reset_tokens(user_id);
 
 -- ============================================================================
 -- DEFAULT DATA
