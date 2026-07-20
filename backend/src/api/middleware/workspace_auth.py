@@ -56,11 +56,14 @@ def verify_workspace_access(workspace_id: str, org_id: int) -> None:
                 detail=f"Workspace {workspace_id} not found"
             )
 
-        # Check if org has access to this workspace
+        # Check if org has access to this workspace. The org<->workspace
+        # mapping lives in org_workspaces — workspaces has no org_id column.
         cur.execute(
             """
-            SELECT 1 FROM workspaces
-            WHERE org_id = %s AND workspace_id = %s AND is_active = true
+            SELECT 1
+            FROM org_workspaces ow
+            JOIN workspaces w ON w.workspace_id = ow.workspace_id
+            WHERE ow.org_id = %s AND ow.workspace_id = %s AND w.is_active = true
             """,
             (org_id, workspace_id)
         )
@@ -88,12 +91,14 @@ def get_workspace_ids_for_org(org_id: int) -> list[str]:
     try:
         cur = conn.cursor()
 
-        # Use workspaces table directly with org_id column
+        # The org<->workspace mapping lives in org_workspaces — workspaces
+        # has no org_id column (that query 500'd on every call).
         cur.execute(
             """
-            SELECT workspace_id
-            FROM workspaces
-            WHERE org_id = %s AND is_active = true
+            SELECT ow.workspace_id
+            FROM org_workspaces ow
+            JOIN workspaces w ON w.workspace_id = ow.workspace_id
+            WHERE ow.org_id = %s AND w.is_active = true
             """,
             (org_id,)
         )

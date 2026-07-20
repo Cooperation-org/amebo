@@ -64,14 +64,14 @@ def world():
         with conn.cursor() as cur:
             cur.execute(
                 "INSERT INTO organizations (org_name, org_slug, aliases) "
-                "VALUES (%s, %s, %s::jsonb) RETURNING org_id",
-                ("Raise the Voices E2E", f"rtv-{slug}", '["rtv-e2e"]'),
+                "VALUES (%s, %s, %s) RETURNING org_id",
+                ("Raise the Voices E2E", f"rtv-{slug}", ["rtv-e2e"]),
             )
             rtv = cur.fetchone()[0]
             cur.execute(
                 "INSERT INTO organizations (org_name, org_slug, aliases) "
-                "VALUES (%s, %s, %s::jsonb) RETURNING org_id",
-                ("CivicWorks E2E", f"cw-{slug}", '["cw-e2e"]'),
+                "VALUES (%s, %s, %s) RETURNING org_id",
+                ("CivicWorks E2E", f"cw-{slug}", ["cw-e2e"]),
             )
             cw = cur.fetchone()[0]
             # person lives in RTV (trigger mirrors -> org_members RTV)

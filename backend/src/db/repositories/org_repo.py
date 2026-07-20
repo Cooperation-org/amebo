@@ -19,7 +19,7 @@ class OrgRepo:
 
     def metadata(self, org_ids: List[int]) -> List[Dict]:
         """For the given org ids, return {org_id, slug, name, aliases} rows.
-        aliases is always a Python list (JSONB '[]' -> [])."""
+        aliases is always a Python list (TEXT[] NULL/'{}' -> [])."""
         if not org_ids:
             return []
         conn = DatabaseConnection.get_connection()
@@ -30,7 +30,7 @@ class OrgRepo:
                     SELECT org_id,
                            org_slug AS slug,
                            org_name AS name,
-                           COALESCE(aliases, '[]'::jsonb) AS aliases
+                           COALESCE(aliases, '{}') AS aliases
                     FROM organizations
                     WHERE org_id = ANY(%s)
                     ORDER BY org_id
@@ -54,9 +54,11 @@ class OrgRepo:
         conn = DatabaseConnection.get_connection()
         try:
             with conn.cursor() as cur:
+                # aliases is TEXT[] (schema.sql / migration 029) — a plain
+                # Python list adapts to a Postgres array; Json() wrote jsonb.
                 cur.execute(
                     "UPDATE organizations SET aliases = %s WHERE org_id = %s",
-                    (extras.Json(list(aliases)), org_id),
+                    (list(aliases), org_id),
                 )
                 conn.commit()
         finally:

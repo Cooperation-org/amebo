@@ -96,7 +96,7 @@ async def ask_question(
             sources=sources,
             question=request.question,
             processing_time_ms=processing_time,
-            intent=result['intent']
+            intent=result.get('intent')
         )
 
     except HTTPException:
