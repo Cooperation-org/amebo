@@ -22,10 +22,11 @@ import logging
 import os
 from typing import List, Literal, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
 
 from src.services.org_provisioning import provision_org_s2s
+from src.services.team_stack_runner import trigger_add_team
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -95,6 +96,7 @@ class ProvisionResponse(BaseModel):
 @router.post("/provision", response_model=ProvisionResponse)
 async def provision(
     request: ProvisionRequest,
+    background_tasks: BackgroundTasks,
     _token: None = Depends(require_s2s_token),
 ) -> ProvisionResponse:
     """Create/update an org and its members. Idempotent — re-POSTing the same
@@ -115,4 +117,14 @@ async def provision(
         logger.error("S2S provision unavailable: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
+
+    # A BRAND-NEW org arriving from a GovKit accept is a founder's venture: GovKit
+    # created its own org at accept, and the rest of the team stack (Odoo DB, Taiga
+    # project, instance row, Caddy route) comes from earnkit add-team — which the
+    # earnkit runner executes on this VM. Only on created=True (idempotent re-posts
+    # and add-team's own self-registration report created=False and never re-fire).
+    # After the response, never blocking it; trigger_add_team never raises.
+    if result["created"] and request.source == "govkit-accept":
+        background_tasks.add_task(
+            trigger_add_team, request.slug, request.name or request.slug)
     return ProvisionResponse(**result)

@@ -252,6 +252,56 @@ class TestProvision:
             (org_id,)) == ("Keep Me", ["km"])
 
 
+class TestTeamStackTrigger:
+    """A BRAND-NEW org from a GovKit accept queues the earnkit runner (add-team
+    for the rest of the team stack); everything else must never fire it."""
+
+    @pytest.fixture
+    def calls(self, monkeypatch):
+        made = []
+        monkeypatch.setattr(
+            org_provision, "trigger_add_team",
+            lambda slug, name: made.append((slug, name)))
+        return made
+
+    def test_new_org_from_govkit_accept_fires(self, client, cleanup, calls):
+        slug = f"s2s-trig-{_uid()}"
+        cleanup.append(slug)
+        r = client.post("/api/orgs/provision",
+                        json={"slug": slug, "name": "Trig Org",
+                              "source": "govkit-accept"},
+                        headers=_auth())
+        assert r.status_code == 200 and r.json()["created"] is True
+        assert calls == [(slug, "Trig Org")]
+
+    def test_repost_does_not_refire(self, client, cleanup, calls):
+        slug = f"s2s-retrig-{_uid()}"
+        cleanup.append(slug)
+        payload = {"slug": slug, "name": "Once Org", "source": "govkit-accept"}
+        client.post("/api/orgs/provision", json=payload, headers=_auth())
+        client.post("/api/orgs/provision", json=payload, headers=_auth())
+        assert calls == [(slug, "Once Org")]
+
+    def test_add_team_source_never_fires(self, client, cleanup, calls):
+        # add-team.yml registers the org it is provisioning; firing the runner
+        # from that would loop.
+        slug = f"s2s-noloop-{_uid()}"
+        cleanup.append(slug)
+        r = client.post("/api/orgs/provision",
+                        json={"slug": slug, "name": "Playbook Org",
+                              "source": "add-team"},
+                        headers=_auth())
+        assert r.status_code == 200 and r.json()["created"] is True
+        assert calls == []
+
+    def test_sourceless_post_never_fires(self, client, cleanup, calls):
+        slug = f"s2s-nosrc-{_uid()}"
+        cleanup.append(slug)
+        client.post("/api/orgs/provision",
+                    json={"slug": slug, "name": "No Source"}, headers=_auth())
+        assert calls == []
+
+
 class TestSharedEnvCredentialsMode:
     """Cohort-VM shape (Golda 2026-07-16): ENV_CREDENTIALS_SHARED=true declares
     the process-env credentials shared by all orgs — provisioning must work
