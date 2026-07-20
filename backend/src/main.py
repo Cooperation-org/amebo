@@ -391,6 +391,43 @@ class SlackHelperApp:
         logger.info("=" * 70)
 
 
+SHUTDOWN_GRACE_SECONDS = 12.0
+
+
+def _force_exit_report():
+    """
+    Absolute shutdown backstop, run from a daemon threading.Timer so it fires
+    no matter what state the event loop is in. Graceful shutdown normally ends
+    the process long before this; if anything hangs (a gather that never
+    completes, a blocked executor join), name what is still alive in the log —
+    so the next journal read shows the culprit — and end the process. Without
+    this, a hung shutdown sat in `deactivating` until systemd's SIGKILL.
+    """
+    import os
+    import threading
+
+    threads = [
+        f"{t.name}{'(daemon)' if t.daemon else ''}"
+        for t in threading.enumerate()
+        if t is not threading.main_thread()
+    ]
+    logger.warning(
+        "Shutdown grace of %ss expired; forcing exit. Live threads: %s",
+        SHUTDOWN_GRACE_SECONDS, threads or "none",
+    )
+    try:
+        tasks = [
+            t.get_name()
+            for t in asyncio.all_tasks(loop=asyncio.get_event_loop_policy().get_event_loop())
+            if not t.done()
+        ]
+        logger.warning("Pending asyncio tasks: %s", tasks or "none")
+    except Exception:
+        pass
+    logging.shutdown()
+    os._exit(0)
+
+
 async def main():
     """
     Main entry point - creates app and handles signals.
@@ -402,10 +439,22 @@ async def main():
 
     # Setup signal handlers for graceful shutdown
     loop = asyncio.get_running_loop()
+    pending = {}
 
     def signal_handler(signum):
         logger.info(f"Received signal {signum}")
-        asyncio.create_task(app.shutdown())
+        if pending:
+            # Second signal: the operator means it. Report and exit now.
+            _force_exit_report()
+        # Keep strong references: an unreferenced Task can be GC'd mid-flight,
+        # and a plain call_later timer dies with the loop — the threading
+        # Timer is the one backstop that survives every hang mode.
+        import threading
+        pending['shutdown'] = asyncio.create_task(app.shutdown())
+        timer = threading.Timer(SHUTDOWN_GRACE_SECONDS, _force_exit_report)
+        timer.daemon = True
+        timer.start()
+        pending['timer'] = timer
 
     # Register signal handlers
     for sig in (signal.SIGTERM, signal.SIGINT):
