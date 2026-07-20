@@ -338,12 +338,16 @@ class SlackHelperApp:
         try:
             await asyncio.gather(*tasks)
         except Exception as e:
-            logger.error(f"Service failed: {e}")
+            logger.error(f"Service failed: {e}", exc_info=True)
             # Cancel all tasks on failure
             for task in tasks:
                 if not task.done():
                     task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
+            # A service dying is fatal: re-raise so the process exits
+            # non-zero and systemd's Restart=on-failure actually restarts
+            # us. Swallowing this exited 0 and left amebo down for days.
+            raise
 
     async def shutdown(self):
         """
@@ -422,10 +426,37 @@ if __name__ == "__main__":
     """
     Entry point when running: python -m src.main
     """
+    exit_code = 0
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
         pass
-    except Exception as e:
+    except SystemExit as e:
+        exit_code = e.code if isinstance(e.code, int) else 1
+    except BaseException as e:
         logger.error(f"Failed to start: {e}", exc_info=True)
-        sys.exit(1)
+        exit_code = 1
+    finally:
+        # Library code (APScheduler executors, SDK helpers) can leave
+        # non-daemon threads behind; they must not keep a stopping service
+        # alive — that turned `systemctl restart` into a hang that needed a
+        # forced kill. Give them a moment, name the survivors in the log so
+        # the leak stays diagnosable, then end the process for real.
+        import os
+        import threading
+        lingering = [
+            t for t in threading.enumerate()
+            if t is not threading.main_thread() and not t.daemon
+        ]
+        for t in lingering:
+            t.join(timeout=5.0 / len(lingering))
+        survivors = [
+            t.name for t in threading.enumerate()
+            if t is not threading.main_thread() and not t.daemon and t.is_alive()
+        ]
+        if survivors:
+            logger.warning(
+                "Exiting with non-daemon threads still alive: %s", survivors
+            )
+        logging.shutdown()
+        os._exit(exit_code)
