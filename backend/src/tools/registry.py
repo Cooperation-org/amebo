@@ -115,6 +115,21 @@ def get_all_tool_schemas(exclude_categories=("personal",)) -> List[Dict]:
             if t.category not in set(exclude_categories)]
 
 
+def _admin_defaults_to_everything() -> bool:
+    """Whether an admin of an org that has declared no admin_tools still gets
+    the full registry. True only where the deployment declares one shared
+    credential pool (cohort VM) — there is no tenant boundary there, so
+    withholding tools protects nothing and would silently break a working
+    install on deploy. False on the team instance, where orgs are real tenants.
+    """
+    try:
+        from src.credentials.connections import env_credentials_shared
+        return env_credentials_shared()
+    except Exception:
+        logger.exception("could not read deployment credential shape")
+        return False
+
+
 def get_tools_for_instance(instance: Optional[Dict] = None,
                            admin: bool = False) -> List[Dict]:
     """
@@ -135,7 +150,18 @@ def get_tools_for_instance(instance: Optional[Dict] = None,
             config = json.loads(config)
         allowed.update(config.get('allowed_tools', []))
         if admin:
-            allowed.update(config.get('admin_tools', []))
+            admin_extra = config.get('admin_tools')
+            if admin_extra:
+                allowed.update(admin_extra)
+            elif _admin_defaults_to_everything():
+                # Shared-credential deployment (cohort VM): every org org runs on
+                # the VM's own keys by declaration, so there is no tenant
+                # boundary for per-org scoping to protect, and an admin there
+                # keeps the full suite until the org declares admin_tools.
+                # On the team instance this is False and an unconfigured org
+                # gets no elevation at all — that is the point.
+                return [_tool_to_schema(t) for t in _TOOLS.values()
+                        if t.category != "personal"]
 
     tools = []
     seen = set()
