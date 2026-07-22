@@ -116,6 +116,24 @@ def _skill_catalog() -> str:
     return "\n".join(lines)
 
 
+def _serialize_blocks(content) -> List[Dict]:
+    """SDK content blocks -> plain dicts for the next API call. Text and tool_use
+    only: those are the block kinds an assistant turn may carry back into a
+    request, and every tool_use here must be answered by a tool_result."""
+    out = []
+    for block in content:
+        if block.type == "tool_use":
+            out.append({
+                "type": "tool_use",
+                "id": block.id,
+                "name": block.name,
+                "input": block.input,
+            })
+        elif block.type == "text":
+            out.append({"type": "text", "text": block.text})
+    return out
+
+
 class QAService:
     """
     Q&A service that answers questions using RAG:
@@ -791,11 +809,17 @@ Answer the question based on this context. Be comprehensive and include all rele
             system_blocks, cached_messages = apply_cache_control(system_prompt, conv_messages)
 
             # --- Agentic loop (Claude Code pattern) ---
-            # Model is config-by-instance, never a hardcoded id (a stale hardcoded
-            # model id once 404'd the whole QA path). Set AMEBO_QA_MODEL to use a
-            # smarter model on an instance.
+            # Model is config, never a hardcoded id (a stale hardcoded model id
+            # once 404'd the whole QA path). AMEBO_QA_MODEL names the model we
+            # WANT; resolve_model maps it onto whatever the configured provider
+            # actually serves, so under AMEBO_LLM_PROVIDER=minimax the request
+            # resolves to MINIMAX_MODEL and AMEBO_QA_MODEL has no effect until
+            # the provider is switched back. Process-global env, not per-instance.
             qa_model = resolve_model(os.getenv("AMEBO_QA_MODEL", "claude-sonnet-4-6"))
-            MAX_TOOL_ROUNDS = 8
+            # Tool-round budget. The last round is never spent on a tool: when the
+            # budget runs out the loop makes one final tool-free call so the user
+            # always gets an answer instead of the model's mid-work narration.
+            MAX_TOOL_ROUNDS = int(os.getenv("AMEBO_QA_MAX_TOOL_ROUNDS", "16"))
             tool_round = 0
             logger.info(f"[qa] model={qa_model} tools={[t['name'] for t in tools]}")
 
@@ -835,25 +859,24 @@ Answer the question based on this context. Be comprehensive and include all rele
                             "content": result
                         })
 
+                # Budget awareness: without this the model spends every round
+                # researching and trips the cap still mid-plan, and the user gets
+                # its "I'll go check..." narration as the answer (seen live
+                # 2026-07-21). Same fix the claw loop already carries.
+                remaining = MAX_TOOL_ROUNDS - tool_round
+                tool_results.append({
+                    "type": "text",
+                    "text": (
+                        f"[budget] {remaining} tool round(s) left, then you must "
+                        "answer. Prefer answering with what you already have over "
+                        "one more lookup. If you run out, say what you did not check."
+                    ),
+                })
+
                 # Append assistant response + tool results to messages
-                # Serialize SDK content blocks to dicts for the next API call
-                assistant_content = []
-                for block in response.content:
-                    if block.type == "tool_use":
-                        assistant_content.append({
-                            "type": "tool_use",
-                            "id": block.id,
-                            "name": block.name,
-                            "input": block.input
-                        })
-                    elif block.type == "text":
-                        assistant_content.append({
-                            "type": "text",
-                            "text": block.text
-                        })
                 cached_messages.append({
                     "role": "assistant",
-                    "content": assistant_content
+                    "content": _serialize_blocks(response.content)
                 })
                 cached_messages.append({
                     "role": "user",
@@ -870,6 +893,47 @@ Answer the question based on this context. Be comprehensive and include all rele
                 )
                 logger.info(f"[qa] round {tool_round} stop_reason={response.stop_reason}")
 
+            # Budget exhausted with the model still asking for tools. Do NOT run
+            # them — spend the reserved step on an answer instead. Every tool_use
+            # block must still be answered by a tool_result block for the request
+            # to be valid, so the pending calls get an explicit "not executed"
+            # result, and tool_choice=none makes another tool call structurally
+            # impossible rather than merely discouraged.
+            if response.stop_reason == "tool_use":
+                pending = [b for b in response.content if b.type == "tool_use"]
+                logger.warning(
+                    "[qa] budget exhausted at round %s/%s with %s pending tool call(s): %s "
+                    "— forcing a tool-free final answer",
+                    tool_round, MAX_TOOL_ROUNDS, len(pending), [b.name for b in pending],
+                )
+                closing = [{
+                    "type": "tool_result",
+                    "tool_use_id": b.id,
+                    "content": "Not executed: the tool-round budget for this turn is spent.",
+                } for b in pending]
+                closing.append({
+                    "type": "text",
+                    "text": (
+                        "[budget] No tool rounds left. Answer now with what you already "
+                        "have. Be explicit about what you could not check, so the person "
+                        "can ask a narrower follow-up."
+                    ),
+                })
+                cached_messages.append({
+                    "role": "assistant",
+                    "content": _serialize_blocks(response.content)
+                })
+                cached_messages.append({"role": "user", "content": closing})
+                response = self.client.messages.create(
+                    model=qa_model,
+                    max_tokens=2000,
+                    system=system_blocks,
+                    messages=cached_messages,
+                    tools=tools,
+                    tool_choice={"type": "none"},
+                )
+                logger.info(f"[qa] final tool-free call stop_reason={response.stop_reason}")
+
             # Extract final text response
             answer_text = ""
             for block in response.content:
@@ -883,11 +947,9 @@ Answer the question based on this context. Be comprehensive and include all rele
                     "[qa] empty answer: stop_reason=%s rounds=%s/%s blocks=%s",
                     response.stop_reason, tool_round, MAX_TOOL_ROUNDS, block_types,
                 )
-                if response.stop_reason == "tool_use":
-                    answer_text = ("I ran out of tool-use steps before I could finish. "
-                                   "Try narrowing the question.")
-                else:
-                    answer_text = "I wasn't able to generate an answer. Try rephrasing your question."
+                # Reaching here means even the reserved tool-free call produced no
+                # text, so this is a model/provider failure, not a spent budget.
+                answer_text = "I wasn't able to generate an answer. Try rephrasing your question."
 
             # Clean up for Slack formatting
             answer_text = re.sub(r':?\w*:?\s*\*?\*?Confidence:\s*\d+%\s*\*?\*?\s*[-–]\s*.+?(?:\n|$)',
