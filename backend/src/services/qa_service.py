@@ -761,9 +761,7 @@ Answer the question based on this context. Be comprehensive and include all rele
         Loop: call Claude with tools → if tool_use, execute and loop → stop on text.
         """
         from src.services.conversation_manager import ConversationManager, apply_cache_control
-        from src.tools.registry import (
-            get_tools_for_instance, get_all_tool_schemas, execute_tool,
-        )
+        from src.tools.registry import get_tools_for_instance, execute_tool
 
         try:
             mgr = ConversationManager(
@@ -796,13 +794,15 @@ Answer the question based on this context. Be comprehensive and include all rele
             # trust gate is a second, independent guard when a principal is set.
             if not allow_tools:
                 tools = []
-            elif getattr(self, "full_tools", False):
-                # Recognized owner/admin: the full powerful suite (shell excluded —
-                # it only lives in a personal process). Trust + draft gates still
-                # apply per tool.
-                tools = get_all_tool_schemas()
             else:
-                tools = get_tools_for_instance(mgr._instance)
+                # Admin elevation stays INSIDE the org: the instance's own
+                # config.admin_tools on top of its allowed_tools. This used to
+                # call get_all_tool_schemas() and hand every registered tool to
+                # any org's admin, including the CLI passthroughs that run on
+                # the legacy org's credentials.
+                tools = get_tools_for_instance(
+                    mgr._instance, admin=getattr(self, "full_tools", False)
+                )
             logger.info(f"Available tools: {[t['name'] for t in tools]}")
 
             # Apply prompt caching

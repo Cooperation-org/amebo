@@ -20,7 +20,7 @@ No changes needed anywhere else.
 
 import json
 import logging
-import subprocess
+import shlex
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
@@ -102,20 +102,30 @@ def get_read_only_tools() -> List[Tool]:
 
 
 def get_all_tool_schemas(exclude_categories=("personal",)) -> List[Dict]:
-    """Every registered tool's schema — the full/powerful set offered to an
-    admin (recognized owner) in the chat. Excludes 'personal' tools (shell), which
-    only ever live in a personal process anyway. The trust gate + draft gate still
-    apply per tool; allowed_tools is only a scoping convenience (arch §4.3)."""
+    """Every registered tool's schema, excluding 'personal' tools (shell).
+
+    NOT a tool-offer path: introspection/admin-UI only. The chat path offers
+    get_tools_for_instance(..., admin=) so elevation stays per-org. Do not
+    reintroduce this as an offer — it ignores which org is asking, and the
+    gates do not make that safe: the CLI passthroughs are direct-exec (no
+    draft gate) and their 'write' class clears at T2, which any logged-in web
+    user has.
+    """
     return [_tool_to_schema(t) for t in _TOOLS.values()
             if t.category not in set(exclude_categories)]
 
 
-def get_tools_for_instance(instance: Optional[Dict] = None) -> List[Dict]:
+def get_tools_for_instance(instance: Optional[Dict] = None,
+                           admin: bool = False) -> List[Dict]:
     """
     Get tool definitions for an instance, respecting allowed_tools config.
     Returns list of tool schemas ready for the Claude API tools parameter.
 
-    This is the same interface as before — callers don't need to change.
+    ``admin`` adds the instance's ``config.admin_tools`` on top. Elevation is
+    per-org and declared by the org: an admin of org B gets B's extra tools,
+    never the whole registry. The chat path used to hand admins every
+    registered tool regardless of instance, which is how unscoped tools
+    reached orgs that had never configured them.
     """
     allowed = set(DEFAULT_TOOLS)
 
@@ -123,8 +133,9 @@ def get_tools_for_instance(instance: Optional[Dict] = None) -> List[Dict]:
         config = instance['config']
         if isinstance(config, str):
             config = json.loads(config)
-        extra = config.get('allowed_tools', [])
-        allowed.update(extra)
+        allowed.update(config.get('allowed_tools', []))
+        if admin:
+            allowed.update(config.get('admin_tools', []))
 
     tools = []
     seen = set()
@@ -331,42 +342,45 @@ def _exec_lookup_contact(tool_input: Dict, context: Dict) -> str:
     return "\n".join(parts)
 
 
-def _exec_cli_tool(command: str, args: str = "", timeout: int = 10) -> str:
-    """Run a CLI tool as subprocess with timeout. Shared by abra, odoo, taiga."""
-    cmd = [command]
-    if args:
-        cmd.extend(args.split())
+def _passthrough_cli(binary: str, tool_key: str,
+                     tool_input: Dict, context: Dict) -> str:
+    """General CLI passthrough (abra / odoo-cli / mcp-taiga).
 
+    Credential routing follows the SAME rule as the fine-grained tools
+    (cli_read_tools._routed_env, arch §5): run under the acting org's own
+    connection, and REFUSE a non-legacy org that has no manifest rather than
+    falling back to the process env — that env holds the legacy org's
+    credentials, so a silent fallback routes org B's call through org A's
+    accounts. These three tools predated that rule and ran unscoped: any org
+    reaching them got the legacy org's abra, CRM and Taiga.
+
+    argv is built with shlex.split so quoted arguments survive as single
+    arguments; run_cli's contract forbids pre-joining and naive word-splitting.
+    """
+    from src.tools.cli_read_tools import run_cli, _routed_env
+    env, err = _routed_env(context, tool_key)
+    if err:
+        return err
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout
-        )
-        output = result.stdout.strip()
-        if result.returncode != 0 and result.stderr:
-            output += f"\n[stderr: {result.stderr.strip()[:200]}]"
-        return output if output else "(no output)"
-    except subprocess.TimeoutExpired:
-        return f"Command timed out after {timeout}s"
-    except FileNotFoundError:
-        return f"Tool '{command}' not found in PATH"
+        argv = [binary, *shlex.split(tool_input.get("command", ""))]
+        args = tool_input.get("args", "")
+        if args:
+            argv.extend(shlex.split(args))
+    except ValueError as exc:  # unbalanced quotes in model-supplied input
+        return f"Could not parse command: {exc}"
+    return run_cli(argv, env=env)
 
 
 def _exec_abra(tool_input: Dict, context: Dict) -> str:
-    cmd = tool_input["command"]
-    args = tool_input.get("args", "")
-    return _exec_cli_tool("abra", f"{cmd} {args}".strip())
+    return _passthrough_cli("abra", "knowledge", tool_input, context)
 
 
 def _exec_odoo_cli(tool_input: Dict, context: Dict) -> str:
-    cmd = tool_input["command"]
-    args = tool_input.get("args", "")
-    return _exec_cli_tool("odoo-cli", f"{cmd} {args}".strip())
+    return _passthrough_cli("odoo-cli", "crm", tool_input, context)
 
 
 def _exec_mcp_taiga(tool_input: Dict, context: Dict) -> str:
-    cmd = tool_input["command"]
-    args = tool_input.get("args", "")
-    return _exec_cli_tool("mcp-taiga", f"{cmd} {args}".strip())
+    return _passthrough_cli("mcp-taiga", "tasks", tool_input, context)
 
 
 # ---------------------------------------------------------------------------

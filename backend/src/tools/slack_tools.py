@@ -44,10 +44,29 @@ def _workspace_from_context(context) -> Optional[str]:
     return context.get("workspace_id")
 
 
+def _org_id_from_context(context) -> Optional[int]:
+    if not isinstance(context, dict):
+        return None
+    oc = context.get("org_context")
+    oc_org = getattr(oc, "org_id", None)
+    if oc_org is not None:
+        return oc_org
+    return context.get("org_id")
+
+
 def _bot_token(context=None) -> str:
     """The Slack bot token for the acting workspace (WP4): resolved from the
     per-workspace credential store (set at install), falling back to the env
-    SLACK_BOT_TOKEN for the legacy single-workspace deployment until cutover."""
+    SLACK_BOT_TOKEN for the legacy single-workspace deployment until cutover.
+
+    The env fallback is allowed ONLY for the designated legacy org (or a
+    deployment that declares one shared credential pool) — the same rule
+    cli_read_tools._conn enforces for the CLI tools. For any other org,
+    falling back would post into the LEGACY org's Slack under its bot: an
+    outbound action attributed to the wrong tenant. A web venue
+    (workspace ``web-<slug>``) has no Slack credential of its own by
+    construction, so it is exactly the case that used to reach the fallback.
+    """
     ws = _workspace_from_context(context)
     if ws and not ws.startswith("web-"):
         try:
@@ -57,6 +76,21 @@ def _bot_token(context=None) -> str:
                 return creds["bot_token"]
         except Exception:
             logger.exception("per-workspace slack token lookup failed for %s", ws)
+
+    from src.credentials.connections import env_credentials_shared
+    org_id = _org_id_from_context(context)
+    legacy = os.getenv("LEGACY_ENV_ORG_ID", "")
+    # org_id None = legacy direct path from before OrgContext existed; those
+    # callers keep working, same allowance as _conn makes.
+    may_use_env = (
+        env_credentials_shared()
+        or org_id is None
+        or (legacy != "" and str(org_id) == legacy)
+    )
+    if not may_use_env:
+        raise SlackPostError(
+            "refusing to post: this org has no Slack workspace connected, and "
+            "the token in the environment belongs to a different org.")
     token = os.getenv("SLACK_BOT_TOKEN")
     if not token:
         raise SlackPostError(
