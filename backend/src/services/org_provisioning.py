@@ -62,6 +62,25 @@ def _get_org(slug: str) -> Optional[Dict[str, Any]]:
         DatabaseConnection.return_connection(conn)
 
 
+def team_stack_provisioned(slug: str) -> bool:
+    """True once the team's tool stack has been stood up for `slug`.
+
+    The `instances` row is add-team.yml's own output (it INSERTs it), and nothing
+    else writes it — the accept ping only touches `organizations`. So its presence
+    is the honest "stack is up" marker, independent of whether the organizations
+    row already existed. This is what makes add-team retryable: a failed run that
+    never reached the instance step leaves no row, so the next accept re-fires it;
+    a finished stack has the row, so a later member-join does not re-provision.
+    """
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM instances WHERE slug = %s LIMIT 1", (slug,))
+            return cur.fetchone() is not None
+    finally:
+        DatabaseConnection.return_connection(conn)
+
+
 def _upsert_org(slug: str, name: str, aliases: List[str],
                 context_repo: Optional[str]) -> int:
     conn = DatabaseConnection.get_connection()

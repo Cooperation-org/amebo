@@ -25,7 +25,7 @@ from typing import List, Literal, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field, model_validator
 
-from src.services.org_provisioning import provision_org_s2s
+from src.services.org_provisioning import provision_org_s2s, team_stack_provisioned
 from src.services.team_stack_runner import sync_members, trigger_add_team
 
 router = APIRouter()
@@ -118,13 +118,18 @@ async def provision(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc))
 
-    # A BRAND-NEW org arriving from a GovKit accept is a founder's venture: GovKit
-    # created its own org at accept, and the rest of the team stack (Odoo DB, Taiga
-    # project, instance row, Caddy route) comes from earnkit add-team — which the
-    # earnkit runner executes on this VM. Only on created=True (idempotent re-posts
-    # and add-team's own self-registration report created=False and never re-fire).
+    # A GovKit accept whose team stack is not up yet is a founder's venture to
+    # bootstrap: GovKit created its own org at accept, and the rest (Odoo DB, Taiga
+    # project, instance row, Caddy route) comes from earnkit add-team, which the
+    # earnkit runner executes on this VM. Gate on the STACK MARKER, not created:
+    # `created` only tells us the organizations row was new, which is false on any
+    # retry after a failed run — so a first accept that failed could never be
+    # retried. team_stack_provisioned() checks the instances row (add-team's own
+    # output), so a run that never finished re-fires on the next accept, while a
+    # finished stack does not re-provision on a later member-join. add-team is
+    # idempotent, so re-firing an incomplete stack is safe.
     # After the response, never blocking it; trigger_add_team never raises.
-    if result["created"] and request.source == "govkit-accept":
+    if request.source == "govkit-accept" and not team_stack_provisioned(request.slug):
         background_tasks.add_task(
             trigger_add_team, request.slug, request.name or request.slug)
     elif result["members"] and request.source != "add-team":
