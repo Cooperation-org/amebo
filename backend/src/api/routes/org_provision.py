@@ -26,7 +26,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, 
 from pydantic import BaseModel, Field, model_validator
 
 from src.services.org_provisioning import provision_org_s2s
-from src.services.team_stack_runner import trigger_add_team
+from src.services.team_stack_runner import sync_members, trigger_add_team
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -127,4 +127,14 @@ async def provision(
     if result["created"] and request.source == "govkit-accept":
         background_tasks.add_task(
             trigger_add_team, request.slug, request.name or request.slug)
+    elif result["members"] and request.source != "add-team":
+        # An invite accept into an ALREADY-EXISTING org: reconcile that org's
+        # Odoo CRM + Taiga membership NOW instead of waiting up to 5 min for the
+        # earnkit-sync-members timer. Fire-and-forget after the response;
+        # sync_members never raises, and the timer is the safety net if the
+        # runner is down. Deliberately NOT the founder-bootstrap path above
+        # (add-team already runs a full member sync as part of its playbook) nor
+        # add-team's own self-registration POST (same reason) — those would only
+        # queue a redundant sync.
+        background_tasks.add_task(sync_members, request.slug)
     return ProvisionResponse(**result)

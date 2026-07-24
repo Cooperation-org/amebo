@@ -75,3 +75,61 @@ def trigger_add_team(slug: str, name: str) -> None:
             slug,
             exc_info=True,
         )
+
+
+def sync_members(slug: str) -> None:
+    """Ask the earnkit runner to reconcile org `slug`'s CRM + Taiga membership now.
+
+    This is a latency optimization on invite accept: the earnkit-sync-members
+    timer already provisions every member org-wide every ~5 min, so this only
+    makes the accepting member land in Odoo + Taiga within seconds instead of
+    waiting for the next tick. It is NEVER the source of truth — a failure here
+    is covered by that timer.
+
+    Same contract/return shape as trigger_add_team: never raises, no-op (debug
+    log) when TEAM_RUNNER_URL / TEAM_RUNNER_TOKEN are unset. HTTP 409 means a
+    sync for this slug is already queued/running and the runner coalesced ours
+    into it — that is success, not a failure.
+    """
+    base_url = os.environ.get("TEAM_RUNNER_URL") or ""
+    token = os.environ.get("TEAM_RUNNER_TOKEN") or ""
+    if not base_url or not token:
+        logger.debug(
+            "member sync skipped (TEAM_RUNNER_URL/TEAM_RUNNER_TOKEN unset): %s", slug
+        )
+        return
+    try:
+        response = requests.post(
+            f"{base_url.rstrip('/')}/run/sync-members",
+            json={"team_slug": slug},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=TIMEOUT_SECONDS,
+        )
+        if response.status_code == 202:
+            logger.info(
+                "member sync queued for org %s (runner job %s)",
+                slug,
+                response.json().get("job_id", "?"),
+            )
+        elif response.status_code == 409:
+            # A sync for this slug is already in flight; the runner folded ours
+            # into it. Nothing missed — this is the coalesced-success path.
+            logger.info(
+                "member sync for org %s coalesced into an in-flight run (HTTP 409)",
+                slug,
+            )
+        else:
+            logger.warning(
+                "member sync runner refused org %s: HTTP %s %s — provision "
+                "unaffected; the sync-members timer will reconcile on its next tick",
+                slug,
+                response.status_code,
+                response.text[:500],
+            )
+    except Exception:
+        logger.warning(
+            "member sync runner unreachable for org %s — provision unaffected; "
+            "the sync-members timer will reconcile on its next tick",
+            slug,
+            exc_info=True,
+        )

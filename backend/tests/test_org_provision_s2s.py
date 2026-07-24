@@ -302,6 +302,78 @@ class TestTeamStackTrigger:
         assert calls == []
 
 
+class TestMemberSyncTrigger:
+    """An invite accept into an ALREADY-EXISTING org fires an instant CRM+Taiga
+    member reconcile (latency win over the 5-min timer); the founder bootstrap
+    and org-only updates must not (add-team already syncs; nothing to sync)."""
+
+    @pytest.fixture
+    def calls(self, monkeypatch):
+        """Capture both runner triggers so we can assert which one (if any) fired."""
+        add_team, sync = [], []
+        monkeypatch.setattr(
+            org_provision, "trigger_add_team",
+            lambda slug, name: add_team.append((slug, name)))
+        monkeypatch.setattr(
+            org_provision, "sync_members",
+            lambda slug: sync.append(slug))
+        return {"add_team": add_team, "sync": sync}
+
+    def test_member_accept_into_existing_org_fires_sync(self, client, cleanup, calls):
+        slug = f"s2s-sync-{_uid()}"
+        cleanup.append(slug)
+        # seed the org first, so this POST is an accept into an existing org
+        from src.services.org_provisioning import provision_org
+        provision_org(slug, "Sync Org")
+        r = client.post(
+            "/api/orgs/provision",
+            json={"slug": slug, "source": "govkit-accept",
+                  "members": [{"email": f"acc-{_uid()}@example.com"}]},
+            headers=_auth())
+        assert r.status_code == 200 and r.json()["created"] is False
+        assert calls["sync"] == [slug]
+        assert calls["add_team"] == []
+
+    def test_founder_bootstrap_fires_add_team_not_sync(self, client, cleanup, calls):
+        # Brand-new org from a founder accept: add-team provisions (and syncs)
+        # the whole stack, so sync_members must NOT also fire.
+        slug = f"s2s-boot-{_uid()}"
+        cleanup.append(slug)
+        r = client.post(
+            "/api/orgs/provision",
+            json={"slug": slug, "name": "Boot Org", "source": "govkit-accept",
+                  "members": [{"email": f"founder-{_uid()}@example.com"}]},
+            headers=_auth())
+        assert r.status_code == 200 and r.json()["created"] is True
+        assert calls["add_team"] == [(slug, "Boot Org")]
+        assert calls["sync"] == []
+
+    def test_org_only_update_does_not_sync(self, client, cleanup, calls):
+        # No members in the request → nothing to reconcile.
+        slug = f"s2s-nomem-{_uid()}"
+        cleanup.append(slug)
+        from src.services.org_provisioning import provision_org
+        provision_org(slug, "No Members")
+        client.post("/api/orgs/provision",
+                    json={"slug": slug, "source": "govkit-accept"},
+                    headers=_auth())
+        assert calls["sync"] == [] and calls["add_team"] == []
+
+    def test_add_team_self_registration_does_not_sync(self, client, cleanup, calls):
+        # add-team.yml self-registers its members; it already syncs in-playbook,
+        # so its POST must not queue a redundant sync.
+        slug = f"s2s-selfreg-{_uid()}"
+        cleanup.append(slug)
+        from src.services.org_provisioning import provision_org
+        provision_org(slug, "Self Reg")
+        client.post(
+            "/api/orgs/provision",
+            json={"slug": slug, "source": "add-team",
+                  "members": [{"email": f"m-{_uid()}@example.com"}]},
+            headers=_auth())
+        assert calls["sync"] == [] and calls["add_team"] == []
+
+
 class TestSharedEnvCredentialsMode:
     """Cohort-VM shape (Golda 2026-07-16): ENV_CREDENTIALS_SHARED=true declares
     the process-env credentials shared by all orgs — provisioning must work

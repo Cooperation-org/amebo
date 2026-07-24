@@ -82,3 +82,71 @@ def test_runner_unreachable_never_raises(monkeypatch):
 
     monkeypatch.setattr(team_stack_runner.requests, "post", boom)
     team_stack_runner.trigger_add_team("sunrise", "Sunrise Co-op")  # must not raise
+
+
+# --- sync_members: same GovKit-reporter contract, different route/body -------
+
+
+def test_sync_members_posts_slug_with_bearer(monkeypatch, posts):
+    monkeypatch.setenv("TEAM_RUNNER_URL", "http://127.0.0.1:8946/")
+    monkeypatch.setenv("TEAM_RUNNER_TOKEN", "rt-token")
+    team_stack_runner.sync_members("sunrise")
+    assert len(posts) == 1
+    url, kw = posts[0]
+    assert url == "http://127.0.0.1:8946/run/sync-members"
+    assert kw["json"] == {"team_slug": "sunrise"}
+    assert kw["headers"]["Authorization"] == "Bearer rt-token"
+
+
+@pytest.mark.parametrize("missing", ["TEAM_RUNNER_URL", "TEAM_RUNNER_TOKEN", "both"])
+def test_sync_members_unset_env_is_a_noop(monkeypatch, posts, missing):
+    monkeypatch.setenv("TEAM_RUNNER_URL", "http://127.0.0.1:8946")
+    monkeypatch.setenv("TEAM_RUNNER_TOKEN", "rt-token")
+    for var in ("TEAM_RUNNER_URL", "TEAM_RUNNER_TOKEN"):
+        if missing in (var, "both"):
+            monkeypatch.delenv(var)
+    team_stack_members = team_stack_runner.sync_members("sunrise")
+    assert team_stack_members is None
+    assert posts == []
+
+
+def test_sync_members_409_coalesced_never_raises(monkeypatch):
+    # 409 = a sync for this slug is already queued/running; treat as success.
+    monkeypatch.setenv("TEAM_RUNNER_URL", "http://127.0.0.1:8946")
+    monkeypatch.setenv("TEAM_RUNNER_TOKEN", "rt-token")
+
+    class _Coalesced:
+        status_code = 409
+        text = "sync for sunrise already queued"
+
+        def json(self):
+            return {}
+
+    monkeypatch.setattr(team_stack_runner.requests, "post", lambda *a, **k: _Coalesced())
+    team_stack_runner.sync_members("sunrise")  # must not raise
+
+
+def test_sync_members_runner_refusal_never_raises(monkeypatch):
+    monkeypatch.setenv("TEAM_RUNNER_URL", "http://127.0.0.1:8946")
+    monkeypatch.setenv("TEAM_RUNNER_TOKEN", "rt-token")
+
+    class _BadSlug:
+        status_code = 400
+        text = "empty slug"
+
+        def json(self):
+            return {}
+
+    monkeypatch.setattr(team_stack_runner.requests, "post", lambda *a, **k: _BadSlug())
+    team_stack_runner.sync_members("")  # must not raise
+
+
+def test_sync_members_unreachable_never_raises(monkeypatch):
+    monkeypatch.setenv("TEAM_RUNNER_URL", "http://127.0.0.1:8946")
+    monkeypatch.setenv("TEAM_RUNNER_TOKEN", "rt-token")
+
+    def boom(*a, **k):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(team_stack_runner.requests, "post", boom)
+    team_stack_runner.sync_members("sunrise")  # must not raise
