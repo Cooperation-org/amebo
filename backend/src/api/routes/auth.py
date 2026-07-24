@@ -784,6 +784,23 @@ def _front(path: str) -> str:
     return f"{FRONTEND_URL}{path}"
 
 
+def _auth_fail_redirect(next_url, error: str) -> RedirectResponse:
+    """A non-success auth outcome (pending approval, expired, mismatch, ...).
+
+    Honor the caller's allowlisted ``next`` when there is one: the sign-in
+    cascade's contract is that a failing hop moves the person FORWARD toward the
+    dash, it never strands them (workers.vc signin_view) — and amebo's API host
+    has no ``/login`` page, so ``_front('/login')`` there is a raw 404. Fall back
+    to the SPA login page only for standalone amebo use, where there is no
+    cross-app ``next``.
+    """
+    target = _safe_next_url(next_url)
+    if target:
+        sep = "&" if "?" in target else "?"
+        return RedirectResponse(f"{target}{sep}amebo_error={error}", status_code=302)
+    return RedirectResponse(_front(f"/login?error={error}"), status_code=302)
+
+
 def _safe_next_url(next_value: Optional[str]) -> Optional[str]:
     """
     Validate a post-login ``next`` redirect target against the allowlist.
@@ -869,8 +886,13 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
         payload = decode_token(tx)
     except Exception:
         return RedirectResponse(_front("/login?error=expired"), status_code=302)
+    # The cascade's continuation URL, stashed at /oidc/login. Drives the
+    # forward redirect on BOTH success (below) and every failure — a pending or
+    # errored amebo hop must still carry the person on to the dash, never dump
+    # them on amebo's non-existent /login (signin_view contract).
+    next_url = payload.get("oidc_next")
     if payload.get("oidc_state") != state:
-        return RedirectResponse(_front("/login?error=state_mismatch"), status_code=302)
+        return _auth_fail_redirect(next_url, "state_mismatch")
 
     cfg = OidcConfig.from_env()
     try:
@@ -878,7 +900,7 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
         ident = verify_id_token(cfg, tokens["id_token"], nonce=payload["oidc_nonce"])
     except (OidcError, KeyError) as exc:
         logger.warning("OIDC callback failed: %s", exc)
-        return RedirectResponse(_front("/login?error=auth_failed"), status_code=302)
+        return _auth_fail_redirect(next_url, "auth_failed")
     # No-email identities (e.g. Bluesky) are fine — we key on the stable subject.
     email = ident.email or f"lt-{ident.sub}@users.amebo.local"
     invite_token = payload.get("oidc_invite")
@@ -986,11 +1008,11 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
                     )
                     conn.commit()
                     logger.info("OIDC: created PENDING (inactive) user %s (sub=%s)", email, ident.sub)
-                    return RedirectResponse(_front("/login?error=pending_approval"), status_code=302)
+                    return _auth_fail_redirect(next_url, "pending_approval")
 
                 if not user["is_active"]:
                     logger.info("OIDC: inactive user %s denied", email)
-                    return RedirectResponse(_front("/login?error=pending_approval"), status_code=302)
+                    return _auth_fail_redirect(next_url, "pending_approval")
 
                 cur.execute(
                     "UPDATE platform_users SET last_login_at = NOW(), updated_at = NOW() WHERE user_id = %s",
@@ -1027,7 +1049,7 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
     except Exception as exc:
         conn.rollback()
         logger.error("OIDC callback DB error: %s", exc, exc_info=True)
-        return RedirectResponse(_front("/login?error=server_error"), status_code=302)
+        return _auth_fail_redirect(next_url, "server_error")
     finally:
         DatabaseConnection.return_connection(conn)
 
