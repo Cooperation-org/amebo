@@ -316,6 +316,39 @@
 
   // ---- <amebo-ask> --------------------------------------------------------
 
+  // Cohort-dash lazy login (Option 1, golda 2026-07-24). <amebo-ask> is passive:
+  // it calls amebo only when the member submits a question, so a dash visitor
+  // who has never clicked into amebo carries only their LinkedTrust/GovKit
+  // session and the first Ask 401s. Rather than a dead "connect" link, treat
+  // that Ask AS the first click into amebo (the signin_view lazy-login
+  // contract): bounce once through amebo's backend OIDC login — no amebo
+  // frontend needed (amebo has no /login page), and silent against the member's
+  // existing LinkedTrust session — then return to this dash and re-ask the
+  // stashed question. NOTE: the dash origin must be in amebo's
+  // OIDC_NEXT_ALLOWED_ORIGINS env or _safe_next_url drops `next` and the return
+  // hop falls back to amebo's default redirect.
+  const PENDING_ASK_KEY = 'amebo-ask:pending';
+
+  function beginAmeboLogin(base, question) {
+    try {
+      sessionStorage.setItem(PENDING_ASK_KEY + ':' + base, question);
+    } catch (_) { /* storage blocked — proceed; the question just won't restore */ }
+    location.assign(base + '/api/auth/oidc/login?next=' + encodeURIComponent(location.href));
+  }
+
+  // One-shot: read and immediately clear any stashed question, so returning
+  // from the login bounce re-asks exactly once and a later reload does not.
+  function takePendingAsk(base) {
+    try {
+      const k = PENDING_ASK_KEY + ':' + base;
+      const q = sessionStorage.getItem(k);
+      if (q) sessionStorage.removeItem(k);
+      return q;
+    } catch (_) {
+      return null;
+    }
+  }
+
   class AmeboAsk extends HTMLElement {
     connectedCallback() {
       ensureStyles();
@@ -332,10 +365,11 @@
       const form = this.querySelector('form');
       const answer = this.querySelector('.answer');
       const sources = this.querySelector('.sources');
-      form.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const q = form.q.value.trim();
-        if (!q) return;
+
+      // viaLogin marks the auto-ask that runs after returning from the login
+      // bounce: if a freshly minted session STILL 401s, surface the error
+      // instead of bouncing again — one bounce per member action, never a loop.
+      const ask = async (q, viaLogin) => {
         answer.innerHTML = '<span class="amebo-loading">thinking…</span>';
         sources.textContent = '';
         try {
@@ -345,9 +379,26 @@
             sources.textContent = `sources: ${data.sources.length}`;
           }
         } catch (err) {
+          if (err instanceof HttpError && err.status === 401 && !viaLogin) {
+            beginAmeboLogin(base, q);
+            return;
+          }
           showError(answer, err);
         }
+      };
+
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const q = form.q.value.trim();
+        if (q) ask(q, false);
       });
+
+      // Returning from the login bounce: restore the question and answer it.
+      const pending = takePendingAsk(base);
+      if (pending) {
+        form.q.value = pending;
+        ask(pending, true);
+      }
     }
   }
 
