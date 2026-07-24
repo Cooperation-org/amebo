@@ -38,6 +38,20 @@ class OdooClient:
         self._connect()
         return self._models.execute_kw(self.db, self._uid, self.pwd, model, method, args, kwargs or {})
 
+    def search_read(self, model, domain, fields=None, limit=None, order=None):
+        """Generic search_read passthrough (same auth/env as the rest of this
+        client). Kept public so read-only adapters (e.g. the contact-scoring
+        claw's ``OdooContactReader``) can reuse this single Odoo access path
+        instead of opening a second XML-RPC connection."""
+        kwargs = {}
+        if fields is not None:
+            kwargs["fields"] = fields
+        if limit is not None:
+            kwargs["limit"] = limit
+        if order is not None:
+            kwargs["order"] = order
+        return self._kw(model, "search_read", [domain], kwargs)
+
     def find_partner_by_email(self, email: str) -> Optional[int]:
         rows = self._kw("res.partner", "search_read",
                         [[("email", "=ilike", email)]], {"fields": ["id"], "limit": 1})
