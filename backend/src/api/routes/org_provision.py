@@ -137,9 +137,17 @@ async def provision(
         # Odoo CRM + Taiga membership NOW instead of waiting up to 5 min for the
         # earnkit-sync-members timer. Fire-and-forget after the response;
         # sync_members never raises, and the timer is the safety net if the
-        # runner is down. Deliberately NOT the founder-bootstrap path above
-        # (add-team already runs a full member sync as part of its playbook) nor
-        # add-team's own self-registration POST (same reason) — those would only
-        # queue a redundant sync.
+        # runner is down.
+        #
+        # NOT fired on the founder-bootstrap path above, for two reasons: (1)
+        # add-team is still queued/running for this slug, so a sync POST would
+        # just 409 on the runner's one-job-per-slug lock and be dropped; (2) the
+        # founder's own member sync belongs at the END of add-team, once the Odoo
+        # DB exists. add-team posts `members: []` and does NOT sync members
+        # itself (an earlier comment here wrongly claimed it did — that false
+        # belief is why founders had no CRM user). Until add-team chains a
+        # sync-members at its end (earnkit fix), the ~5-min sync-members timer is
+        # the only thing that provisions the founder — correct but slow. Also
+        # skipped for add-team's own self-registration POST (source == add-team).
         background_tasks.add_task(sync_members, request.slug)
     return ProvisionResponse(**result)
