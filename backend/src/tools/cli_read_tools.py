@@ -167,6 +167,18 @@ def _team_crm_db(context: Any) -> Optional[Dict[str, str]]:
     pattern = _os.getenv("ODOO_TEAM_DB_PATTERN", "").strip()
     if not pattern:
         return None
+    slug = _acting_org_slug(context)
+    if not slug:
+        return None
+    return {"ODOO_DB": pattern.format(slug=slug)}
+
+
+def _acting_org_slug(context: Any) -> Optional[str]:
+    """The slug of the org whose behalf this tool call is made on, or None.
+
+    None for every reason that should leave a tool's own behaviour alone: no org
+    in context, no such org, or a lookup that failed. Never raises.
+    """
     org_id = _org_id_from_context(context)
     if org_id is None:
         return None
@@ -174,13 +186,32 @@ def _team_crm_db(context: Any) -> Optional[Dict[str, str]]:
         from src.db.repositories.org_repo import OrgRepo
         org = OrgRepo().get(org_id)
     except Exception:
-        # Never let this break a tool call: fall back to the env's own ODOO_DB.
-        logger.exception("team CRM db lookup failed org=%s", org_id)
+        logger.exception("acting org slug lookup failed org=%s", org_id)
         return None
-    slug = (org or {}).get("slug") or ""
+    return (org or {}).get("slug") or None
+
+
+def _team_project(context: Any) -> Optional[str]:
+    """The Taiga project this team is allowed to touch, when the deployment
+    names team boards after the org slug (env TAIGA_TEAM_PROJECT_PATTERN).
+
+    This is a GUARD, not a convenience. Every Taiga tool otherwise takes the
+    project as an argument the MODEL writes, so on a deployment where one token
+    can reach every team's board, the only thing stopping a team's agent from
+    reading or editing another team's board is instructions in a prompt. When
+    this is set the argument is overridden, so naming another team's project
+    simply cannot do anything — no wording in a prompt has to hold.
+
+    Returns None when unset (the model's argument is honoured, unchanged
+    behaviour) or when there is no org in context.
+    """
+    pattern = _os.getenv("TAIGA_TEAM_PROJECT_PATTERN", "").strip()
+    if not pattern:
+        return None
+    slug = _acting_org_slug(context)
     if not slug:
         return None
-    return {"ODOO_DB": pattern.format(slug=slug)}
+    return pattern.format(slug=slug)
 
 
 def _routed_env(context: Any, tool_key: str):
@@ -685,7 +716,9 @@ def taiga_list_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
     # Confirmed against the live CLI (`mcp-taiga list --help`, 2026-06-06):
     # `mcp-taiga list PROJECT` — PROJECT is a REQUIRED positional argument.
     # (Use the `mcp-taiga projects` command to discover valid project slugs.)
-    project = _require(tool_input, "project")
+    # The acting team's own board wins over anything the model asked for, where
+    # the deployment pins it (_team_project). Otherwise the argument is used.
+    project = _team_project(context) or _require(tool_input, "project")
     if project is None:
         return "Error: project is required (a Taiga project slug/name)."
     env, err = _routed_env(context, "tasks")

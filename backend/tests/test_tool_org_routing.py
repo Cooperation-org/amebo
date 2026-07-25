@@ -401,3 +401,43 @@ class TestPerTeamCrmDatabase:
         monkeypatch.setenv("ODOO_TEAM_DB_PATTERN", "crm-{slug}")
         env, err = _routed_env({"org_id": org_id}, "tasks")
         assert err is None and env is None
+
+
+# --- Taiga: a team can only ever touch its own board -------------------------
+# Every Taiga tool takes the project as an argument the MODEL writes, and one
+# token reaches every team's board, so without this the only thing keeping a
+# team's agent off another team's board is prompt wording.
+
+from src.tools.cli_read_tools import _team_project, taiga_list_impl
+
+
+class TestTeamTaigaProject:
+    def test_unset_pattern_honours_the_models_argument(self, team_org, monkeypatch):
+        org_id, _ = team_org
+        monkeypatch.delenv("TAIGA_TEAM_PROJECT_PATTERN", raising=False)
+        assert _team_project({"org_id": org_id}) is None
+
+    def test_pattern_gives_the_acting_team_its_own_board(self, team_org, monkeypatch):
+        org_id, slug = team_org
+        monkeypatch.setenv("TAIGA_TEAM_PROJECT_PATTERN", "{slug}")
+        assert _team_project({"org_id": org_id}) == slug
+
+    def test_no_org_in_context_is_left_alone(self, monkeypatch):
+        monkeypatch.setenv("TAIGA_TEAM_PROJECT_PATTERN", "{slug}")
+        assert _team_project({}) is None
+
+    def test_asking_for_another_teams_board_is_overridden(self, team_org, monkeypatch):
+        """The guard: naming someone else's project simply cannot do anything."""
+        org_id, slug = team_org
+        monkeypatch.setenv("TAIGA_TEAM_PROJECT_PATTERN", "{slug}")
+        monkeypatch.setenv("ENV_CREDENTIALS_SHARED", "1")
+        seen = {}
+
+        def fake_run_cli(argv, **kw):
+            seen["argv"] = argv
+            return "ok"
+
+        monkeypatch.setattr("src.tools.cli_read_tools.run_cli", fake_run_cli)
+        taiga_list_impl({"project": "some-other-team"}, {"org_id": org_id})
+        assert seen["argv"] == ["mcp-taiga", "list", slug]
+        assert "some-other-team" not in seen["argv"]

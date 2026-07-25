@@ -37,7 +37,7 @@ import logging
 from typing import Any, Callable, Dict, Optional
 
 from src.services.draft_approval_service import DraftApprovalService
-from src.tools.cli_read_tools import run_cli
+from src.tools.cli_read_tools import run_cli, _team_project
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +159,7 @@ def execute_taiga_create(action: Dict[str, Any]) -> str:
     SUBJECT [--description D] [--due YYYY-MM-DD] [--assign USER] [--cash N]``.
     """
     payload = action.get("payload") or {}
-    project = payload.get("project")
+    project = _team_project(action) or payload.get("project")
     subject = payload.get("subject")
     if not project or not subject:
         return "Error: cannot create task — payload is missing project or subject."
@@ -212,7 +212,10 @@ def taiga_create_task_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) 
     if not isinstance(subject, str) or not subject.strip():
         return "Error: subject is required."
     subject = subject.strip()
-    project = (tool_input.get("project") or "").strip()
+    # Where the deployment pins each team to its own board (_team_project),
+    # that wins over whatever the model asked for — one token can reach every
+    # board, so this is what keeps a team on its own, not prompt wording.
+    project = (_team_project(context) or tool_input.get("project") or "").strip()
     if not project:
         # Confirmed against the live CLI: `mcp-taiga create PROJECT SUBJECT`
         # requires a project. Refuse to draft a task with no project rather
@@ -345,7 +348,8 @@ def _cli_failed(out: str) -> bool:
 
 def execute_taiga_update(action: Dict[str, Any]) -> str:
     payload = action.get("payload") or {}
-    project, ref = payload.get("project"), payload.get("ref")
+    project = _team_project(action) or payload.get("project")
+    ref = payload.get("ref")
     if not project or ref in (None, ""):
         return "Error: cannot update — payload missing project or ref."
     argv = ["mcp-taiga", "update", str(project), str(ref)]
@@ -365,7 +369,8 @@ def execute_taiga_update(action: Dict[str, Any]) -> str:
 
 def execute_taiga_comment(action: Dict[str, Any]) -> str:
     payload = action.get("payload") or {}
-    project, ref, text = payload.get("project"), payload.get("ref"), payload.get("text")
+    project = _team_project(action) or payload.get("project")
+    ref, text = payload.get("ref"), payload.get("text")
     if not project or ref in (None, "") or not (text or "").strip():
         return "Error: cannot comment — payload missing project, ref, or text."
     out = run_cli(["mcp-taiga", "comment", str(project), str(ref), text],
@@ -377,7 +382,8 @@ def execute_taiga_comment(action: Dict[str, Any]) -> str:
 
 def execute_taiga_close(action: Dict[str, Any]) -> str:
     payload = action.get("payload") or {}
-    project, ref = payload.get("project"), payload.get("ref")
+    project = _team_project(action) or payload.get("project")
+    ref = payload.get("ref")
     status = (payload.get("status") or "Done")
     if not project or ref in (None, ""):
         return "Error: cannot close — payload missing project or ref."
