@@ -86,10 +86,16 @@ def sync_members(slug: str) -> None:
     waiting for the next tick. It is NEVER the source of truth — a failure here
     is covered by that timer.
 
+    Called on every member join, including a founder's brand-new venture. In
+    that case add-team is still running for this slug; the runner dedupes per
+    ACTION, so this queues behind it and its single worker runs the sync the
+    moment the stack is up. (While the runner deduped on slug alone, this POST
+    came back 409 and the founder's sync was silently dropped.)
+
     Same contract/return shape as trigger_add_team: never raises, no-op (debug
-    log) when TEAM_RUNNER_URL / TEAM_RUNNER_TOKEN are unset. HTTP 409 means a
-    sync for this slug is already queued/running and the runner coalesced ours
-    into it — that is success, not a failure.
+    log) when TEAM_RUNNER_URL / TEAM_RUNNER_TOKEN are unset. HTTP 409 means an
+    identical sync for this slug is already queued/running and the runner
+    coalesced ours into it — that is success, not a failure.
     """
     base_url = os.environ.get("TEAM_RUNNER_URL") or ""
     token = os.environ.get("TEAM_RUNNER_TOKEN") or ""

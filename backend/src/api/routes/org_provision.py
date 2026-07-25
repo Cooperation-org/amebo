@@ -129,25 +129,27 @@ async def provision(
     # finished stack does not re-provision on a later member-join. add-team is
     # idempotent, so re-firing an incomplete stack is safe.
     # After the response, never blocking it; trigger_add_team never raises.
-    if request.source == "govkit-accept" and not team_stack_provisioned(request.slug):
+    bootstrapping = (request.source == "govkit-accept"
+                     and not team_stack_provisioned(request.slug))
+    if bootstrapping:
         background_tasks.add_task(
             trigger_add_team, request.slug, request.name or request.slug)
-    elif result["members"] and request.source != "add-team":
-        # An invite accept into an ALREADY-EXISTING org: reconcile that org's
-        # Odoo CRM + Taiga membership NOW instead of waiting up to 5 min for the
-        # earnkit-sync-members timer. Fire-and-forget after the response;
-        # sync_members never raises, and the timer is the safety net if the
-        # runner is down.
-        #
-        # NOT fired on the founder-bootstrap path above, for two reasons: (1)
-        # add-team is still queued/running for this slug, so a sync POST would
-        # just 409 on the runner's one-job-per-slug lock and be dropped; (2) the
-        # founder's own member sync belongs at the END of add-team, once the Odoo
-        # DB exists. add-team posts `members: []` and does NOT sync members
-        # itself (an earlier comment here wrongly claimed it did — that false
-        # belief is why founders had no CRM user). Until add-team chains a
-        # sync-members at its end (earnkit fix), the ~5-min sync-members timer is
-        # the only thing that provisions the founder — correct but slow. Also
-        # skipped for add-team's own self-registration POST (source == add-team).
+
+    # Then reconcile this org's members into its Odoo CRM + Taiga project NOW,
+    # rather than leaving them to the ~5-minute earnkit-sync-members timer.
+    #
+    # This runs on the founder-bootstrap path TOO, which it did not before, and
+    # that omission is why a brand-new venture's founder sat un-synced: add-team
+    # posts `members: []` and does not sync members itself, so nothing asked for
+    # their Taiga membership until the next timer tick. The old reasoning was
+    # that a sync POST would be refused anyway, because the runner treated any
+    # in-flight job for a slug as a conflict — it now dedupes per ACTION, so a
+    # sync queues BEHIND the running add-team and the single worker runs it as
+    # soon as the stack it depends on is up. Order matters and is guaranteed:
+    # background tasks run in the order added, so add-team is queued first.
+    #
+    # Skipped only for add-team's own self-registration POST, which would be
+    # asking the playbook currently running to sync on its own behalf.
+    if result["members"] and request.source != "add-team":
         background_tasks.add_task(sync_members, request.slug)
     return ProvisionResponse(**result)

@@ -450,9 +450,15 @@ class TestMemberSyncTrigger:
         assert calls["sync"] == [slug]
         assert calls["add_team"] == []
 
-    def test_founder_bootstrap_fires_add_team_not_sync(self, client, cleanup, calls):
-        # Brand-new org from a founder accept: add-team provisions (and syncs)
-        # the whole stack, so sync_members must NOT also fire.
+    def test_founder_bootstrap_fires_add_team_AND_sync(self, client, cleanup, calls):
+        """A founder's brand-new venture needs BOTH, in this order.
+
+        add-team builds the stack but posts `members: []` and never syncs
+        members, so without the sync the founder had no Taiga membership until
+        the ~5-min timer swept them up. The sync is queued second on purpose:
+        the runner dedupes per action, so it waits behind add-team and runs as
+        soon as the stack it depends on exists.
+        """
         slug = f"s2s-boot-{_uid()}"
         cleanup.append(slug)
         r = client.post(
@@ -462,6 +468,17 @@ class TestMemberSyncTrigger:
             headers=_auth())
         assert r.status_code == 200 and r.json()["created"] is True
         assert calls["add_team"] == [(slug, "Boot Org")]
+        assert calls["sync"] == [slug]
+
+    def test_bootstrap_without_members_does_not_sync(self, client, cleanup, calls):
+        """Nobody to sync — the org row alone must not queue a member run."""
+        slug = f"s2s-bootnomem-{_uid()}"
+        cleanup.append(slug)
+        client.post(
+            "/api/orgs/provision",
+            json={"slug": slug, "name": "Empty Boot", "source": "govkit-accept"},
+            headers=_auth())
+        assert calls["add_team"] == [(slug, "Empty Boot")]
         assert calls["sync"] == []
 
     def test_org_only_update_does_not_sync(self, client, cleanup, calls):
