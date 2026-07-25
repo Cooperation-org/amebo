@@ -148,17 +148,61 @@ def _conn_env(context: Any, tool_key: str) -> Optional[Dict[str, str]]:
     return c.as_subprocess_env() if c is not None else None
 
 
+def _team_crm_db(context: Any) -> Optional[Dict[str, str]]:
+    """ODOO_DB for the ACTING org, when this deployment names each team's CRM
+    database after its org slug (env ODOO_TEAM_DB_PATTERN, e.g. 'crm-{slug}').
+
+    Why this exists: on a cohort VM every team org shares one set of Odoo
+    credentials by declaration, so the credential fallback is open to all of
+    them — but ODOO_DB is a single fixed value, so every team's CRM tools read
+    the SAME database instead of their own `crm-<slug>`. This supplies the one
+    piece that is genuinely per-team without needing per-team accounts, tokens,
+    or a manifest.
+
+    Returns None — i.e. exactly the previous behaviour, the process env's own
+    ODOO_DB — when the pattern is unset (every deployment that has not opted
+    in), when there is no org in context, or when the org has no slug. It is an
+    OVERLAY of one variable; credentials, URL and everything else are untouched.
+    """
+    pattern = _os.getenv("ODOO_TEAM_DB_PATTERN", "").strip()
+    if not pattern:
+        return None
+    org_id = _org_id_from_context(context)
+    if org_id is None:
+        return None
+    try:
+        from src.db.repositories.org_repo import OrgRepo
+        org = OrgRepo().get(org_id)
+    except Exception:
+        # Never let this break a tool call: fall back to the env's own ODOO_DB.
+        logger.exception("team CRM db lookup failed org=%s", org_id)
+        return None
+    slug = (org or {}).get("slug") or ""
+    if not slug:
+        return None
+    return {"ODOO_DB": pattern.format(slug=slug)}
+
+
 def _routed_env(context: Any, tool_key: str):
     """(env, error_message). error_message is a friendly string when the org has
     no such tool connected (or a broken manifest) — the tool returns it instead
-    of running, so a non-legacy org NEVER misroutes to the legacy org's creds."""
+    of running, so a non-legacy org NEVER misroutes to the legacy org's creds.
+
+    On the shared-credential fallback (env is None) a CRM call still gets the
+    acting team's own database when the deployment names them by slug — see
+    _team_crm_db. A configured per-org connection is left alone: its manifest
+    already says which database it means.
+    """
     from src.credentials.connections import ToolNotConfigured, ManifestInvalid
     try:
-        return _conn_env(context, tool_key), None
+        env = _conn_env(context, tool_key)
     except ToolNotConfigured:
         return None, f"This org doesn't have {tool_key} connected."
     except ManifestInvalid as exc:
         return None, f"This org's {tool_key} config is invalid: {exc}"
+    if env is None and tool_key == "crm":
+        return _team_crm_db(context), None
+    return env, None
 
 
 # ---------------------------------------------------------------------------
@@ -253,12 +297,17 @@ def _crm_conf(context: Any = None) -> Dict[str, str]:
     env = _conn_env(context, "crm")
     if env:
         return env
-    return {
+    conf = {
         "ODOO_URL": _os.getenv("ODOO_URL", "http://localhost:8069"),
         "ODOO_DB": _os.getenv("ODOO_DB", "linkedtrust_crm"),
         "ODOO_USER": _os.getenv("ODOO_USER", ""),
         "ODOO_API_KEY": _os.getenv("ODOO_API_KEY", "") or _os.getenv("ODOO_PASSWORD", ""),
     }
+    # Same per-team database as the subprocess path (_routed_env): these tools go
+    # over XML-RPC instead of the CLI, so they read the value from here and would
+    # otherwise all land on the one env-configured database.
+    conf.update(_team_crm_db(context) or {})
+    return conf
 
 
 def _odoo(context: Any = None):

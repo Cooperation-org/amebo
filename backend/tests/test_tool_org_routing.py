@@ -314,3 +314,90 @@ class TestCrossTenantIsolation:
                             lambda argv, **kw: calls.append((argv, kw.get("env"))) or "ok")
         odoo_search_impl({"query": "acme"}, {"org_id": 1})
         assert len(calls) == 1 and calls[0][1] is None  # ran, with process env (env overlay None)
+
+
+# --- Per-team CRM database on the shared-credential fallback -----------------
+# On a cohort VM every team org shares one set of Odoo credentials, but ODOO_DB
+# was a single fixed value, so every team's CRM tools read the SAME database
+# instead of their own crm-<slug>. ODOO_TEAM_DB_PATTERN supplies just that one
+# variable per team. Dormant unless set — these tests pin both directions.
+
+from src.tools.cli_read_tools import _team_crm_db, _routed_env
+
+
+@pytest.fixture
+def team_org():
+    """A plain org with a slug and NO manifest — the cohort shape."""
+    slug = f"team-{_uid()}"
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "INSERT INTO organizations (org_name, org_slug) VALUES (%s, %s) "
+                "RETURNING org_id", (f"Team {slug}", slug))
+            org_id = cur.fetchone()[0]
+            conn.commit()
+        yield org_id, slug
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM organizations WHERE org_id = %s", (org_id,))
+            conn.commit()
+        DatabaseConnection.return_connection(conn)
+
+
+class TestPerTeamCrmDatabase:
+    @pytest.fixture(autouse=True)
+    def cohort_shape(self, monkeypatch):
+        """The cohort VM's declared shape: one shared credential pool, so every
+        org reaches the env fallback. Without this a manifest-less org fails
+        closed instead (the team-instance shape) and never gets here at all."""
+        monkeypatch.setenv("ENV_CREDENTIALS_SHARED", "1")
+        invalidate_cache()
+
+    def test_unset_pattern_changes_nothing(self, team_org, monkeypatch):
+        """The default: behaviour is exactly what it was before this existed."""
+        org_id, _ = team_org
+        monkeypatch.delenv("ODOO_TEAM_DB_PATTERN", raising=False)
+        monkeypatch.setenv("ODOO_DB", "linkedtrust_crm")
+        assert _team_crm_db({"org_id": org_id}) is None
+        assert _crm_conf({"org_id": org_id})["ODOO_DB"] == "linkedtrust_crm"
+
+    def test_pattern_gives_each_team_its_own_database(self, team_org, monkeypatch):
+        org_id, slug = team_org
+        monkeypatch.setenv("ODOO_TEAM_DB_PATTERN", "crm-{slug}")
+        monkeypatch.setenv("ODOO_DB", "linkedtrust_crm")
+        assert _crm_conf({"org_id": org_id})["ODOO_DB"] == f"crm-{slug}"
+
+    def test_credentials_and_url_are_untouched(self, team_org, monkeypatch):
+        """Only the database name is per-team; nothing else is invented."""
+        org_id, slug = team_org
+        monkeypatch.setenv("ODOO_TEAM_DB_PATTERN", "crm-{slug}")
+        monkeypatch.setenv("ODOO_URL", "https://crm.example")
+        monkeypatch.setenv("ODOO_USER", "svc")
+        monkeypatch.setenv("ODOO_API_KEY", "secret")
+        conf = _crm_conf({"org_id": org_id})
+        assert conf["ODOO_URL"] == "https://crm.example"
+        assert conf["ODOO_USER"] == "svc"
+        assert conf["ODOO_API_KEY"] == "secret"
+        assert conf["ODOO_DB"] == f"crm-{slug}"
+
+    def test_no_org_in_context_is_left_alone(self, monkeypatch):
+        monkeypatch.setenv("ODOO_TEAM_DB_PATTERN", "crm-{slug}")
+        monkeypatch.setenv("ODOO_DB", "linkedtrust_crm")
+        assert _team_crm_db({}) is None
+        assert _crm_conf({})["ODOO_DB"] == "linkedtrust_crm"
+
+    def test_subprocess_path_gets_the_same_database(self, team_org, monkeypatch):
+        """The CLI tools take their env from _routed_env, not _crm_conf, so it
+        has to carry the override too — as an overlay of that one variable."""
+        org_id, slug = team_org
+        monkeypatch.setenv("ODOO_TEAM_DB_PATTERN", "crm-{slug}")
+        env, err = _routed_env({"org_id": org_id}, "crm")
+        assert err is None
+        assert env == {"ODOO_DB": f"crm-{slug}"}
+
+    def test_non_crm_tools_are_unaffected(self, team_org, monkeypatch):
+        org_id, _ = team_org
+        monkeypatch.setenv("ODOO_TEAM_DB_PATTERN", "crm-{slug}")
+        env, err = _routed_env({"org_id": org_id}, "tasks")
+        assert err is None and env is None
