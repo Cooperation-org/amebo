@@ -406,6 +406,10 @@ class ApiClient {
   }
 
   // Pending gated actions (drafts awaiting human approval)
+  async getWorkList(): Promise<WorkList> {
+    return this.request('/api/work-list/');
+  }
+
   async getPendingActions(): Promise<PendingAction[]> {
     return this.request('/api/pending-actions/');
   }
@@ -473,6 +477,42 @@ export interface WhiteboardEntry {
   created_at: string;
   processed_at: string | null;
   filed: Array<Record<string, unknown>> | null;
+}
+
+export interface WorkLink {
+  label: string;
+  url: string;
+  /** true when amebo went and found this link; links already on the record are not flagged */
+  found: boolean;
+}
+
+export interface WorkQuote {
+  who: string;
+  text: string;
+  url?: string | null;
+}
+
+/** 'clock' = a rule put it here (dated, needs no defending). 'judgement' = a call. */
+export interface WorkReason {
+  label: string;
+  kind: 'clock' | 'judgement';
+}
+
+export interface WorkItem {
+  subject: string;
+  title: string;
+  reason: WorkReason;
+  rank: number;
+  links: WorkLink[];
+  quote?: WorkQuote | null;
+  due?: string | null;
+  assignee?: string | null;
+  past: boolean;
+}
+
+export interface WorkList {
+  live: WorkItem[];
+  past: WorkItem[];
 }
 
 export interface PendingAction {
