@@ -3,7 +3,8 @@ Tests for /api/auth/google.
 
 The Google library's id-token verifier is patched out — we feed it a
 fixed payload and check that:
-- A new email creates a personal org + user with auth_provider=google.
+- An unknown email is refused 403 and creates NOTHING (a login never mints an
+  org; that comes from a founder's venture or an operator run).
 - A returning Google user is matched by (provider, provider_id) and gets a
   new session.
 - A user with the same email but different provider history gets their
@@ -97,7 +98,14 @@ class TestGoogleLoginNewUser:
     def teardown_method(self):
         _clean_user_and_org(self.EMAIL)
 
-    def test_first_login_creates_personal_org_and_user(self, client):
+    def test_unknown_identity_is_refused_and_mints_nothing(self, client):
+        """A login is not a reason to create an org (golda 2026-07-25).
+
+        This used to mint "<name>'s workspace" + an owner row for any verified
+        Google identity. Orgs now come only from a founder bringing a venture
+        or a deliberate operator/add-team run, so an unknown identity is simply
+        told it has no team here — and leaves NO rows behind.
+        """
         fake_payload = {
             "sub": "google-sub-newuser-1",
             "email": self.EMAIL,
@@ -111,17 +119,9 @@ class TestGoogleLoginNewUser:
         ):
             resp = client.post("/api/auth/google", json={"id_token": "fake.id.token"})
 
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert body["token_type"] == "bearer"
-        assert body["access_token"]
-
-        row = _user_row(self.EMAIL)
-        assert row is not None
-        assert row["auth_provider"] == "google"
-        assert row["auth_provider_id"] == "google-sub-newuser-1"
-        assert row["role"] == "owner"
-        assert row["avatar_url"] == "https://example.com/avatar.png"
+        assert resp.status_code == 403, resp.text
+        assert "not a member of any team" in resp.json()["detail"]
+        assert _user_row(self.EMAIL) is None
 
 
 # ---------------------------------------------------------------------------
@@ -132,15 +132,41 @@ class TestGoogleLoginNewUser:
 class TestGoogleLoginReturning:
     EMAIL = "test-google-returning@example.com"
 
+    SUB = "google-sub-returning-1"
+
     def setup_method(self):
         _clean_user_and_org(self.EMAIL)
+        # A returning user is by definition already a member — seed the row the
+        # way provisioning would (login no longer creates one, see above).
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO organizations (org_name, org_slug) "
+                    "VALUES ('Returning Org', 'returning-' || md5(random()::text)) "
+                    "RETURNING org_id"
+                )
+                org_id = cur.fetchone()[0]
+                cur.execute(
+                    """
+                    INSERT INTO platform_users (
+                        org_id, email, full_name, role, is_active,
+                        email_verified, auth_provider, auth_provider_id
+                    ) VALUES (%s, %s, 'Returning User', 'member', true,
+                              true, 'google', %s)
+                    """,
+                    (org_id, self.EMAIL, self.SUB),
+                )
+                conn.commit()
+        finally:
+            DatabaseConnection.return_connection(conn)
 
     def teardown_method(self):
         _clean_user_and_org(self.EMAIL)
 
     def test_second_login_finds_existing_user(self, client):
         payload = {
-            "sub": "google-sub-returning-1",
+            "sub": self.SUB,
             "email": self.EMAIL,
             "email_verified": True,
             "name": "Returning User",

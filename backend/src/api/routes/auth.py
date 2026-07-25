@@ -603,16 +603,6 @@ async def change_password(
 # ---------------------------------------------------------------------------
 
 
-def _slug_from_email(email: str) -> str:
-    """
-    Build a per-user default org slug from an email. The org is a personal
-    workspace for first-time Google signups — the user can rename it later.
-    """
-    local = email.split('@', 1)[0]
-    slug = create_org_slug(local + "-personal")
-    return slug or "personal"
-
-
 @router.post("/google", response_model=TokenResponse)
 async def google_login(request: GoogleLoginRequest):
     """
@@ -663,46 +653,18 @@ async def google_login(request: GoogleLoginRequest):
                 user = cur.fetchone()
 
             if user is None:
-                # 2. New user — create a personal org + the user record.
-                base_slug = _slug_from_email(profile.email)
-                org_slug = base_slug
-                suffix = 0
-                while True:
-                    cur.execute(
-                        "SELECT 1 FROM organizations WHERE org_slug = %s",
-                        (org_slug,),
-                    )
-                    if cur.fetchone() is None:
-                        break
-                    suffix += 1
-                    org_slug = f"{base_slug}-{suffix}"
-
-                org_name = (profile.name or profile.email.split('@', 1)[0]) + "'s workspace"
-                cur.execute(
-                    """
-                    INSERT INTO organizations (org_name, org_slug, subscription_plan, subscription_status)
-                    VALUES (%s, %s, 'free', 'active')
-                    RETURNING org_id
-                    """,
-                    (org_name, org_slug),
-                )
-                org_id = cur.fetchone()['org_id']
-
-                cur.execute(
-                    """
-                    INSERT INTO platform_users (
-                        org_id, email, full_name, role, is_active, email_verified,
-                        auth_provider, auth_provider_id, avatar_url
-                    )
-                    VALUES (%s, %s, %s, 'owner', true, true, 'google', %s, %s)
-                    RETURNING user_id, org_id, email, role
-                    """,
-                    (org_id, profile.email, profile.name, profile.sub, profile.picture),
-                )
-                user = cur.fetchone()
+                # 2. Unknown identity — NO org, NO user row. Same rule as the
+                #    LinkedTrust/OIDC path below (golda 2026-07-25): an org is
+                #    minted for a founder bringing a venture, or by a deliberate
+                #    operator/add-team run. Never by somebody logging in. This
+                #    used to mint a "<name>'s workspace" org per sign-in.
                 logger.info(
-                    "Google sign-in: created user=%s org=%s for %s",
-                    user['user_id'], org_id, profile.email,
+                    "Google sign-in: no amebo membership for %s (sub=%s) — "
+                    "no org minted", profile.email, profile.sub)
+                raise HTTPException(
+                    status_code=403,
+                    detail="This Google account is not a member of any team here. "
+                           "Bring a venture or accept a team invite first.",
                 )
             else:
                 # 3. Existing user — link Google identity if not already, refresh
@@ -984,31 +946,22 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
                     )
 
                 if user is None:
-                    base = _slug_from_email(email)
-                    slug = base
-                    n = 0
-                    while True:
-                        cur.execute("SELECT 1 FROM organizations WHERE org_slug = %s", (slug,))
-                        if cur.fetchone() is None:
-                            break
-                        n += 1
-                        slug = f"{base}-{n}"
-                    org_name = (ident.name or email.split("@", 1)[0]) + "'s workspace"
-                    cur.execute(
-                        "INSERT INTO organizations (org_name, org_slug, subscription_plan, subscription_status) "
-                        "VALUES (%s, %s, 'free', 'active') RETURNING org_id",
-                        (org_name, slug),
-                    )
-                    org_id = cur.fetchone()["org_id"]
-                    cur.execute(
-                        "INSERT INTO platform_users "
-                        "(org_id, email, full_name, role, is_active, email_verified, auth_provider, auth_provider_id) "
-                        "VALUES (%s, %s, %s, 'owner', false, true, 'linkedtrust', %s)",
-                        (org_id, email, ident.name, ident.sub),
-                    )
-                    conn.commit()
-                    logger.info("OIDC: created PENDING (inactive) user %s (sub=%s)", email, ident.sub)
-                    return _auth_fail_redirect(next_url, "pending_approval")
+                    # An unknown identity gets NO org and NO user row. Orgs are
+                    # minted in exactly two places (golda 2026-07-25, matching
+                    # the rule GovKit already follows in orgs/invites.py): a
+                    # founder bringing a venture, and a deliberate operator /
+                    # add-team run. Never as a side effect of somebody logging
+                    # in. This branch used to mint "<name>'s workspace" plus an
+                    # inactive user, which (a) littered the registry with
+                    # single-person orgs nobody asked for and (b) poisoned the
+                    # person's row so no later provisioning could admit them.
+                    #
+                    # The honest answer is "you have no team here yet" — the
+                    # caller renders it as the route into one.
+                    logger.info(
+                        "OIDC: no amebo membership for sub=%s (%s) — no org minted; "
+                        "they need a venture or a team invite", ident.sub, email)
+                    return _auth_fail_redirect(next_url, "no_org")
 
                 if not user["is_active"]:
                     logger.info("OIDC: inactive user %s denied", email)

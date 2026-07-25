@@ -67,6 +67,9 @@ def cleanup():
     try:
         with conn.cursor() as cur:
             for s in slugs:
+                # instances first: _mark_stack_up may have added one, and it is
+                # keyed by the same slug (add-team's own output).
+                cur.execute("DELETE FROM instances WHERE slug = %s", (s,))
                 cur.execute("DELETE FROM organizations WHERE org_slug = %s", (s,))
             conn.commit()
     finally:
@@ -79,6 +82,35 @@ def _db_one(sql, params):
         with conn.cursor() as cur:
             cur.execute(sql, params)
             return cur.fetchone()
+    finally:
+        DatabaseConnection.return_connection(conn)
+
+
+def _mark_stack_up(slug: str):
+    """Make `slug` look like a team whose stack add-team already stood up.
+
+    team_stack_provisioned() reads the `instances` row — add-team's own output —
+    so that row IS "the stack is up". Tests that mean "already provisioned" must
+    seed it; without it a govkit-accept correctly RE-fires add-team, which is
+    the retry behaviour added in 002f5e9.
+    """
+    _db_write_one(
+        "INSERT INTO instances (name, slug, org_id, config) "
+        "SELECT %s, %s, org_id, '{}'::jsonb FROM organizations "
+        "WHERE org_slug = %s RETURNING id",
+        (slug, slug, slug))
+
+
+def _db_write_one(sql, params):
+    """_db_one for seed INSERTs: commits, so the row is visible to the API's
+    own connection (the app runs on a different one from the pool)."""
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params)
+            row = cur.fetchone()
+            conn.commit()
+            return row
     finally:
         DatabaseConnection.return_connection(conn)
 
@@ -237,6 +269,73 @@ class TestProvision:
             "SELECT auth_provider, auth_provider_id FROM platform_users "
             "WHERE user_id = %s", (uid,)) == ("linkedtrust", sub)
 
+    def test_inactive_person_is_admitted(self, client, cleanup):
+        """The lockout fix. A person left inactive in a personal "workspace" org
+        by the retired self-signup gate could never be admitted afterwards:
+        provisioning matched their row and only filled blanks, so amebo kept
+        failing them `pending_approval` while their CRM and Taiga worked.
+
+        A trusted service vouching for a membership IS the admission.
+        """
+        from src.services.org_provisioning import provision_org
+
+        slug = f"s2s-locked-{_uid()}"
+        orphan_slug = f"s2s-orphan-{_uid()}"
+        cleanup.extend([slug, orphan_slug])
+        sub = f"lt-sub-{_uid()}"
+        email = f"locked-{_uid()}@example.com"
+
+        # The exact shape the old gate left behind: a personal org with an
+        # inactive user and NO org_members row anywhere.
+        orphan_id = provision_org(orphan_slug, "Their Workspace")["org_id"]
+        uid = _db_write_one(
+            "INSERT INTO platform_users (org_id, email, full_name, role, "
+            "is_active, email_verified, auth_provider, auth_provider_id) "
+            "VALUES (%s, %s, 'Locked Out', 'owner', false, true, "
+            "'linkedtrust', %s) RETURNING user_id",
+            (orphan_id, email, sub))[0]
+
+        r = client.post(
+            "/api/orgs/provision",
+            json={"slug": slug, "name": "Real Team",
+                  "members": [{"email": email, "lt_sub": sub, "role": "admin"}]},
+            headers=_auth())
+        assert r.status_code == 200
+        org_id = r.json()["org_id"]
+        assert r.json()["members"][0] == {"user_id": uid, "created": False}
+
+        assert _db_one(
+            "SELECT is_active FROM platform_users WHERE user_id = %s",
+            (uid,))[0] is True, "provisioned member must be admitted"
+        # They ARE now a member of the real org (org_members is the source of
+        # truth). Their deprecated `org_id` primary is deliberately untouched.
+        assert _db_one(
+            "SELECT 1 FROM org_members WHERE user_id = %s AND org_id = %s",
+            (uid, org_id)) is not None
+
+    def test_existing_primary_org_is_never_moved(self, client, cleanup):
+        """Provisioning never repoints someone's primary org: joining a second
+        team must not silently move their amebo session off the first."""
+        first = f"s2s-first-{_uid()}"
+        second = f"s2s-second-{_uid()}"
+        cleanup.extend([first, second])
+        sub = f"lt-sub-{_uid()}"
+        email = f"multi-{_uid()}@example.com"
+        member = {"email": email, "lt_sub": sub}
+
+        r1 = client.post("/api/orgs/provision",
+                         json={"slug": first, "name": "First Team",
+                               "members": [member]}, headers=_auth())
+        first_org_id = r1.json()["org_id"]
+        uid = r1.json()["members"][0]["user_id"]
+
+        client.post("/api/orgs/provision",
+                    json={"slug": second, "name": "Second Team",
+                          "members": [member]}, headers=_auth())
+
+        assert _db_one("SELECT org_id FROM platform_users WHERE user_id = %s",
+                       (uid,))[0] == first_org_id
+
     def test_existing_org_name_and_aliases_preserved(self, client, cleanup):
         slug = f"s2s-keep-{_uid()}"
         cleanup.append(slug)
@@ -274,13 +373,28 @@ class TestTeamStackTrigger:
         assert r.status_code == 200 and r.json()["created"] is True
         assert calls == [(slug, "Trig Org")]
 
-    def test_repost_does_not_refire(self, client, cleanup, calls):
+    def test_repost_does_not_refire_once_the_stack_is_up(
+            self, client, cleanup, calls):
         slug = f"s2s-retrig-{_uid()}"
         cleanup.append(slug)
         payload = {"slug": slug, "name": "Once Org", "source": "govkit-accept"}
         client.post("/api/orgs/provision", json=payload, headers=_auth())
+        # add-team ran and stood the stack up (the real runner writes this row).
+        _mark_stack_up(slug)
         client.post("/api/orgs/provision", json=payload, headers=_auth())
         assert calls == [(slug, "Once Org")]
+
+    def test_repost_refires_while_the_stack_is_still_not_up(
+            self, client, cleanup, calls):
+        """The retry the `created`-only gate used to make impossible (002f5e9):
+        a first accept whose add-team never finished leaves no instances row, so
+        the next accept must fire it again."""
+        slug = f"s2s-retry-{_uid()}"
+        cleanup.append(slug)
+        payload = {"slug": slug, "name": "Retry Org", "source": "govkit-accept"}
+        client.post("/api/orgs/provision", json=payload, headers=_auth())
+        client.post("/api/orgs/provision", json=payload, headers=_auth())
+        assert calls == [(slug, "Retry Org"), (slug, "Retry Org")]
 
     def test_add_team_source_never_fires(self, client, cleanup, calls):
         # add-team.yml registers the org it is provisioning; firing the runner
@@ -322,9 +436,11 @@ class TestMemberSyncTrigger:
     def test_member_accept_into_existing_org_fires_sync(self, client, cleanup, calls):
         slug = f"s2s-sync-{_uid()}"
         cleanup.append(slug)
-        # seed the org first, so this POST is an accept into an existing org
+        # seed the org AND its stack, so this POST is an accept into a team that
+        # is already standing — the only case that takes the instant-sync path.
         from src.services.org_provisioning import provision_org
         provision_org(slug, "Sync Org")
+        _mark_stack_up(slug)
         r = client.post(
             "/api/orgs/provision",
             json={"slug": slug, "source": "govkit-accept",
@@ -354,6 +470,7 @@ class TestMemberSyncTrigger:
         cleanup.append(slug)
         from src.services.org_provisioning import provision_org
         provision_org(slug, "No Members")
+        _mark_stack_up(slug)  # standing team, so add-team must not fire either
         client.post("/api/orgs/provision",
                     json={"slug": slug, "source": "govkit-accept"},
                     headers=_auth())

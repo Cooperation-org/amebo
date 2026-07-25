@@ -191,8 +191,28 @@ def _upsert_platform_user(
     Match order (same resolution the OIDC callback uses, auth.py): the stable
     LinkedTrust subject first (auth_provider='linkedtrust', auth_provider_id),
     then email. Existing rows are only FILLED IN (link lt_sub if the row has no
-    provider yet, set full_name if empty) — never overwritten, and their org_id
-    / platform role are left alone (org role lives in org_members).
+    provider yet, set full_name if empty) — never overwritten, and their
+    platform role is left alone (org role lives in org_members).
+
+    ONE exception to fill-in-only: ``is_active`` is set true, because a trusted
+    sibling service saying "this person is a member of this org" IS the
+    admission decision — there is no second human approval step behind it.
+    Without this, anyone who reached amebo's OIDC login BEFORE being
+    provisioned was left inactive by the old self-signup gate and could never
+    be admitted afterwards: this function matched their row and only filled
+    blanks, so the login kept failing `pending_approval` forever while their
+    CRM and Taiga accounts worked. A permanent lockout that re-inviting did
+    not clear.
+
+    NOT fixed here — ``org_id`` (the person's "primary" org) is left alone.
+    Anyone stuck by the old gate still points at the personal "<name>'s
+    workspace" org it minted for them, and the session JWT is scoped from that
+    column, so amebo answers as that empty org. It cannot be detected from
+    here: the mig-020 trigger mirrors platform_users.org_id into org_members,
+    so an orphan workspace is indistinguishable from a real membership. Those
+    rows need a one-off operator repair, and the durable fix is to scope the
+    session from the org the person is actually looking at rather than from
+    this deprecated column (see the multi-org note in api/routes/auth.py).
 
     Returns (user_id, created).
     """
@@ -204,19 +224,19 @@ def _upsert_platform_user(
     conn = DatabaseConnection.get_connection()
     try:
         with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+            cols = ("user_id, full_name, auth_provider, auth_provider_id, "
+                    "is_active, org_id")
             user = None
             if lt_sub:
                 cur.execute(
-                    "SELECT user_id, full_name, auth_provider, auth_provider_id "
-                    "FROM platform_users "
+                    f"SELECT {cols} FROM platform_users "
                     "WHERE auth_provider = 'linkedtrust' AND auth_provider_id = %s",
                     (lt_sub,),
                 )
                 user = cur.fetchone()
             if user is None and email:
                 cur.execute(
-                    "SELECT user_id, full_name, auth_provider, auth_provider_id "
-                    "FROM platform_users WHERE email = %s",
+                    f"SELECT {cols} FROM platform_users WHERE email = %s",
                     (email,),
                 )
                 user = cur.fetchone()
@@ -240,7 +260,8 @@ def _upsert_platform_user(
                 conn.commit()
                 return user_id, True
 
-            # Existing person: fill-in-only updates, no overwrites.
+            # Existing person: fill-in-only updates, no overwrites — plus the
+            # two admission exceptions documented above (is_active, orphan org).
             sets: List[str] = []
             params: List[Any] = []
             if lt_sub and not user["auth_provider"]:
@@ -250,6 +271,12 @@ def _upsert_platform_user(
             if display_name and not user["full_name"]:
                 sets.append("full_name = %s")
                 params.append(display_name)
+            if not user["is_active"]:
+                sets.append("is_active = true")
+                logger.info(
+                    "S2S provision: reactivating user_id=%s for org_id=%s "
+                    "(was inactive from the retired self-signup gate)",
+                    user["user_id"], org_id)
             if sets:
                 sets.append("updated_at = NOW()")
                 params.append(user["user_id"])
