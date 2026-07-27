@@ -36,7 +36,6 @@ export default function DashboardLayout({
   const navigation = [
     { name: 'Chat', href: '/chat', icon: MessageSquare },
     { name: 'Whiteboard', href: '/dashboard/whiteboard', icon: PenLine },
-    { name: 'Your list', href: '/dashboard/list', icon: Inbox },
     { name: 'Workspaces', href: '/dashboard/workspaces', icon: Building2 },
     { name: 'Settings', href: '/dashboard/settings', icon: Settings },
   ];
@@ -83,14 +82,15 @@ export default function DashboardLayout({
                 </div>
               </div>
               <div className="flex items-center space-x-4">
-                {listCount > 0 && (
-                  <Link
-                    href="/dashboard/list"
-                    className="flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-900 hover:bg-emerald-200"
-                  >
-                    {listCount}
-                  </Link>
-                )}
+                {/* The list lives next to the profile, where an inbox is looked for. */}
+                <Link
+                  href="/dashboard/list"
+                  title="Your list"
+                  className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-900 hover:bg-emerald-100"
+                >
+                  <Inbox className="h-4 w-4" />
+                  {listCount > 0 && listCount}
+                </Link>
                 {/* Mobile hamburger button */}
                 <Button
                   variant="ghost"

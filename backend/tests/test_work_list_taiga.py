@@ -25,16 +25,33 @@ def store(responses, **kw):
 
 
 def test_ref_is_resolved_within_its_project_not_globally():
-    """A ref is only unique per project, so the slug has to be part of the lookup."""
-    s = store({"/api/v1/resolve": {"us": 501},
-               "/api/v1/userstories/501": {"id": 501, "ref": 34}})
+    """A ref is only unique per project, so the project is part of the lookup."""
+    s = store({"/api/v1/projects/by_slug": {"id": 110},
+               "/api/v1/userstories/by_ref": {"id": 501, "ref": 34}})
     assert s.story("business-dev", 34)["id"] == 501
-    assert "project=business-dev" in s._client.calls[0]
-    assert "us=34" in s._client.calls[0]
+    assert "slug=business-dev" in s._client.calls[0]
+    assert "project=110" in s._client.calls[1] and "ref=34" in s._client.calls[1]
 
 
-def test_unresolvable_ref_returns_none_rather_than_raising():
-    assert store({"/api/v1/resolve": {}}).story("biz", 999) is None
+def test_by_ref_not_a_ref_filter():
+    """The list endpoint ignores ?ref= and hands back the project's FIRST story,
+    which silently shows the wrong task. by_ref is the only correct lookup."""
+    s = store({"/api/v1/projects/by_slug": {"id": 110},
+               "/api/v1/userstories/by_ref": {"id": 501, "ref": 34}})
+    s.story("business-dev", 34)
+    assert not any("userstories?project" in c for c in s._client.calls)
+
+
+def test_project_id_is_looked_up_once_per_slug():
+    s = store({"/api/v1/projects/by_slug": {"id": 110},
+               "/api/v1/userstories/by_ref": {"id": 501, "ref": 34}})
+    s.story("biz", 34)
+    s.story("biz", 35)
+    assert sum("by_slug" in c for c in s._client.calls) == 1
+
+
+def test_unknown_project_returns_none_rather_than_raising():
+    assert store({"/api/v1/projects/by_slug": {}}).story("nope", 999) is None
 
 
 def test_field_edits_are_not_speech():

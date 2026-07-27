@@ -28,18 +28,31 @@ class TaigaStoryStore:
     def __init__(self, client: Optional[TaigaClient] = None,
                  host: Optional[str] = None):
         self._client = client or TaigaClient()
+        self._projects: Dict[str, Optional[int]] = {}
         self.host = (host or os.getenv("TAIGA_UI_URL")
                      or os.getenv("TAIGA_URL", "https://taiga.linkedtrust.us")).rstrip("/")
 
+    def project_id(self, slug: str) -> Optional[int]:
+        """Slug -> id, cached for the life of the request. Taiga's /resolve
+        endpoint is not available on this deployment, so the lookup goes through
+        by_slug and the id is reused for every story in the same project."""
+        if slug in self._projects:
+            return self._projects[slug]
+        project = self._client._get(f"/api/v1/projects/by_slug?slug={slug}")
+        pid = (project or {}).get("id")
+        self._projects[slug] = pid
+        return pid
+
     def story(self, project_slug: str, ref: int) -> Optional[Dict[str, Any]]:
-        """A ref is only unique within a project, so resolve through the project
-        slug rather than guessing a global id."""
-        resolved = self._client._get(
-            f"/api/v1/resolve?project={project_slug}&us={ref}")
-        story_id = (resolved or {}).get("us")
-        if not story_id:
+        """A ref is only unique within a project, so the project is part of the
+        lookup — never a bare global id."""
+        pid = self.project_id(project_slug)
+        if not pid:
             return None
-        return self._client._get(f"/api/v1/userstories/{story_id}")
+        # by_ref, not a ?ref= filter: the list endpoint ignores ref and would
+        # hand back the project's first story instead of the one asked for.
+        return self._client._get(
+            f"/api/v1/userstories/by_ref?project={pid}&ref={ref}")
 
     def comments(self, story_id: int) -> List[Dict[str, str]]:
         """Every human comment on the story, oldest first — the thread.
