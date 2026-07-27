@@ -63,6 +63,18 @@ class TaigaClient:
                                      headers={"Authorization": f"Bearer {self._token}"})
         return json.loads(urllib.request.urlopen(req, timeout=20).read())
 
+    def _request(self, method: str, path: str) -> Any:
+        """Non-GET calls (currently only DELETE). Kept beside _get so there is
+        one auth path; callers gate whether the call is allowed, not this."""
+        if not self._token:
+            self._login()
+        req = urllib.request.Request(
+            self.host + path, method=method,
+            headers={"Authorization": f"Bearer {self._token}"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            body = resp.read()
+        return json.loads(body) if body else None
+
     def open_stories(self, project_id: int) -> List[Dict]:
         """Open (not closed) user stories for a project."""
         return self._get(f"/api/v1/userstories?project={project_id}&status__is_closed=false")

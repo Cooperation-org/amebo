@@ -54,6 +54,36 @@ class TaigaStoryStore:
         return self._client._get(
             f"/api/v1/userstories/by_ref?project={pid}&ref={ref}")
 
+    def statuses(self, project_slug: str) -> List[Dict[str, Any]]:
+        """The project's own status names, in board order, so the dropdown shows
+        what Marten shows rather than a list amebo made up."""
+        pid = self.project_id(project_slug)
+        if not pid:
+            return []
+        return self._client._get(f"/api/v1/userstory-statuses?project={pid}") or []
+
+    def members(self, project_slug: str) -> List[Dict[str, Any]]:
+        """Who can be assigned on this board, so the assignee control offers the
+        real people rather than a free-text box that fails on a typo."""
+        pid = self.project_id(project_slug)
+        if not pid:
+            return []
+        return self._client._get(f"/api/v1/projects/{pid}") .get("members", []) or []
+
+    def archived_status(self, project_slug: str) -> Optional[str]:
+        """The board's archive status, by its own flag — not by guessing a name.
+        None when the board has no archived status, in which case the caller must
+        not silently do something else instead."""
+        for st in self.statuses(project_slug):
+            if st.get("is_archived"):
+                return st.get("name")
+        return None
+
+    def delete(self, story_id: int) -> None:
+        """Irreversible. No CLI covers this, so it is a direct REST call, and the
+        route only reaches it behind an explicit confirm."""
+        self._client._request("DELETE", f"/api/v1/userstories/{story_id}")
+
     def comments(self, story_id: int) -> List[Dict[str, str]]:
         """Every human comment on the story, oldest first — the thread.
 

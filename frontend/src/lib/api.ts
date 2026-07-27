@@ -544,15 +544,25 @@ export interface WorkItemDetail {
   assignee?: string | null;
   url: string;
   comments: WorkComment[];
+  /** The board's own statuses, in board order — same list Marten shows. */
+  statuses: string[];
+  /** Who can be assigned on this board. */
+  members: string[];
 }
 
 export interface WorkEdit {
   subject: string;
+  /** The story's own title (kept apart from `subject`, the item URI). */
+  title?: string;
+  assignee?: string;
   due_date?: string;
   description?: string;
   status?: string;
   comment?: string;
   close?: boolean;
+  archive?: boolean;
+  /** Irreversible. Only sent behind an explicit confirm. */
+  delete?: boolean;
 }
 
 export interface PendingAction {

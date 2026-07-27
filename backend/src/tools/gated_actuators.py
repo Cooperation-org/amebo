@@ -353,6 +353,8 @@ def execute_taiga_update(action: Dict[str, Any]) -> str:
     if not project or ref in (None, ""):
         return "Error: cannot update — payload missing project or ref."
     argv = ["mcp-taiga", "update", str(project), str(ref)]
+    if payload.get("subject"):
+        argv += ["--subject", str(payload["subject"])]
     if payload.get("status"):
         argv += ["--status", str(payload["status"])]
     if payload.get("assignee"):

@@ -167,6 +167,12 @@ class DetailOut(BaseModel):
     assignee: Optional[str] = None
     url: str
     comments: List[CommentOut]
+    # The board's own statuses, in board order, so the dropdown matches Marten
+    # instead of offering a list amebo invented.
+    statuses: List[str] = []
+    # Who can be assigned on this board — a real list, not a free-text box that
+    # fails silently on a typo.
+    members: List[str] = []
 
 
 def _guard(subject: str, org_id: int) -> tuple:
@@ -205,6 +211,8 @@ async def get_detail(subject: str,
         assignee=(story.get("assigned_to_extra_info") or {}).get("username"),
         url=f"{store.host}/project/{slug}/us/{ref}",
         comments=[CommentOut(**c) for c in store.comments(story["id"])],
+        statuses=[st.get("name") for st in store.statuses(slug) if st.get("name")],
+        members=[m.get("username") for m in store.members(slug) if m.get("username")],
     )
 
 
@@ -213,11 +221,19 @@ async def get_detail(subject: str,
 
 class EditIn(BaseModel):
     subject: str
+    # The story's own title. Named apart from `subject` (the item URI) so the
+    # two are never confused on the wire.
+    title: Optional[str] = None
+    assignee: Optional[str] = None
     due_date: Optional[str] = None
     description: Optional[str] = None
     status: Optional[str] = None
     comment: Optional[str] = None
     close: bool = False
+    archive: bool = False
+    # Irreversible, and the only thing here that is. The client asks for it
+    # explicitly behind a confirm; nothing else on the surface can reach it.
+    delete: bool = False
 
 
 class EditOut(BaseModel):
@@ -244,7 +260,8 @@ async def edit(body: EditIn,
     try:
         fields = {k: v for k, v in
                   (("due_date", body.due_date), ("description", body.description),
-                   ("status", body.status)) if v}
+                   ("status", body.status), ("subject", body.title),
+                   ("assignee", body.assignee)) if v}
         if fields:
             execute_taiga_update({"org_id": org_id, "payload": {**base, **fields}})
             applied.extend(fields)
@@ -255,6 +272,24 @@ async def edit(body: EditIn,
         if body.close:
             execute_taiga_close({"org_id": org_id, "payload": base})
             applied.append("close")
+        if body.archive:
+            store = TaigaStoryStore()
+            archived = store.archived_status(slug)
+            if not archived:
+                # Do NOT quietly close instead — that is a different outcome.
+                raise HTTPException(status_code=409,
+                                    detail="This board has no archive status")
+            execute_taiga_close({"org_id": org_id,
+                                 "payload": {**base, "status": archived}})
+            applied.append("archive")
+        if body.delete:
+            store = TaigaStoryStore()
+            story = store.story(slug, ref)
+            if not story:
+                raise HTTPException(status_code=404, detail="Story not found")
+            store.delete(story["id"])
+            logger.info("work-list: org %s deleted %s", org_id, body.subject)
+            applied.append("delete")
     except RuntimeError as exc:
         logger.warning("work-list edit failed for %s: %s", body.subject, exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc

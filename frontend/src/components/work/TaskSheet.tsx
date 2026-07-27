@@ -7,12 +7,20 @@ import { useEditWorkItem, useWorkItem } from '@/src/hooks/useWorkItem';
 /**
  * The task, opened over the list at nearly full size.
  *
- * Not a cramped strip inside the row and not a small modal: a cramped editor is
- * worse than a link out. Every field is edited where it sits and saves when you
- * leave it, so there is no edit mode and no Save button to hunt for. Esc closes.
+ * UX PRINCIPLES — this file obeys them, and so must anything added to it:
  *
- * Underneath it is the thread — what people actually said, oldest first, with a
- * box to add to it.
+ *   SHOW, DON'T TELL          Show the thing. Never a report about it.
+ *   EVERYTHING ACTIONABLE     Nothing on screen exists only to be read.
+ *   LINKS                     If it cannot be shown, link it.
+ *   SEE IT, EDIT IT           Every visible field is editable where it sits,
+ *                             whenever the source system allows it at all.
+ *   OMIT NEEDLESS WORDS       No labels that restate the obvious, no helper
+ *                             prose, no AI voice.
+ *   FEW CLICKS, SAVE IN FLOW  Edit in place, save on leaving the field.
+ *   THEIR WORDS               A person's own words lead, attributed and linked.
+ *
+ * Not a cramped strip inside the row and not a small modal: a cramped editor is
+ * worse than a link out. Esc closes.
  */
 
 /** Saves on blur, only when the value actually changed. */
@@ -20,12 +28,14 @@ function Field({
   label,
   value,
   multiline,
+  big,
   onSave,
   hint,
 }: {
   label: string;
   value: string;
   multiline?: boolean;
+  big?: boolean;
   onSave: (v: string) => void;
   hint?: string;
 }) {
@@ -58,7 +68,7 @@ function Field({
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commit}
-          className={shared}
+          className={big ? `${shared} text-lg font-semibold` : shared}
         />
       )}
     </label>
@@ -130,6 +140,8 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
   const { data, isLoading } = useWorkItem(subject);
   const edit = useEditWorkItem();
   const [comment, setComment] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   useEffect(() => {
     const esc = (e: KeyboardEvent) => e.key === 'Escape' && onClose();
@@ -138,6 +150,14 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
   }, [onClose]);
 
   const apply = (body: Parameters<typeof edit.mutate>[0]) => edit.mutate(body);
+
+  /** Fields already save on blur. This is for pressing something instead of
+   *  trusting that: blur whatever has focus, then confirm briefly. */
+  const saveNow = () => {
+    (document.activeElement as HTMLElement | null)?.blur();
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1500);
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-gray-900/25 p-3 sm:p-6" onClick={onClose}>
@@ -173,7 +193,12 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
         ) : (
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-y-auto md:grid-cols-[1fr_300px]">
             <div className="space-y-4 p-5">
-              <p className="text-lg font-semibold leading-snug">{data.title}</p>
+              <Field
+                label="Title"
+                value={data.title}
+                big
+                onSave={(v) => apply({ subject, title: v })}
+              />
 
               <Field
                 label="Description"
@@ -227,18 +252,41 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                 value={data.due ?? ''}
                 onSave={(v) => apply({ subject, due_date: v })}
               />
-              <div>
-                <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
+              {/* The board's own statuses, in board order — same as Marten. */}
+              <label className="block">
+                <span className="mb-1.5 block text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
                   Status
-                </p>
-                <p className="text-sm text-gray-700">{data.status ?? '—'}</p>
-              </div>
-              <div>
-                <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
+                </span>
+                <select
+                  value={data.status ?? ''}
+                  onChange={(e) => apply({ subject, status: e.target.value })}
+                  className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 hover:border-gray-300 focus:border-emerald-600 focus:outline-none"
+                >
+                  {!data.status && <option value="">—</option>}
+                  {data.statuses.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1.5 block text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
                   Assignee
-                </p>
-                <p className="text-sm text-gray-700">{data.assignee ?? 'no owner'}</p>
-              </div>
+                </span>
+                <select
+                  value={data.assignee ?? ''}
+                  onChange={(e) => apply({ subject, assignee: e.target.value })}
+                  className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 hover:border-gray-300 focus:border-emerald-600 focus:outline-none"
+                >
+                  {!data.assignee && <option value="">no owner</option>}
+                  {data.members.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
               <div className="space-y-2 border-t pt-4">
                 <button
@@ -258,6 +306,64 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                     onClose();
                   }}
                 />
+
+                {/* Fields save when you leave them; this is for when you would
+                    rather press something than trust that. */}
+                <button
+                  type="button"
+                  disabled={edit.isPending}
+                  onClick={() => saveNow()}
+                  className="w-full rounded-md border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {saved ? 'Saved' : 'Save'}
+                </button>
+
+                <div className="flex items-center gap-3 pt-1 text-xs text-gray-400">
+                  <button
+                    type="button"
+                    disabled={edit.isPending}
+                    onClick={() => {
+                      apply({ subject, archive: true });
+                      onClose();
+                    }}
+                    className="underline underline-offset-2 hover:text-gray-700"
+                  >
+                    archive
+                  </button>
+                  <button
+                    type="button"
+                    disabled={edit.isPending}
+                    onClick={() => setConfirmDelete(true)}
+                    className="underline underline-offset-2 hover:text-red-700"
+                  >
+                    delete
+                  </button>
+                </div>
+
+                {confirmDelete && (
+                  <div className="rounded-md border border-red-200 bg-red-50 p-3 text-xs text-red-900">
+                    <p className="mb-2">Delete #{data.ref} for good? This cannot be undone.</p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          apply({ subject, delete: true });
+                          onClose();
+                        }}
+                        className="rounded bg-red-700 px-2.5 py-1 font-medium text-white hover:bg-red-800"
+                      >
+                        Delete it
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDelete(false)}
+                        className="rounded border border-red-200 bg-white px-2.5 py-1"
+                      >
+                        Keep it
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {edit.isError && (
