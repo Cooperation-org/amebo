@@ -24,7 +24,12 @@ if not SECRET_KEY:
         "Generate a secure key with: python -c \"import secrets; print(secrets.token_urlsafe(32))\""
     )
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60  # 1 hour
+# A one-hour session meant re-authenticating several times a day on a tool people
+# keep open all day, which is the kind of friction that stops it being used. The
+# session cookie tracks this value, and the 30-day refresh token is unchanged, so
+# the recovery path if a session is ever cut short is the same as before.
+# Override with AMEBO_SESSION_HOURS.
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("AMEBO_SESSION_HOURS", "12")) * 60
 REFRESH_TOKEN_EXPIRE_DAYS = 30  # 30 days
 
 # Session cookie: the session JWT mirrored into an HttpOnly cookie at OIDC
