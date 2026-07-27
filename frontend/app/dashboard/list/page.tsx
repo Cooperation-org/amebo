@@ -1,7 +1,9 @@
 'use client';
 
+import { useState } from 'react';
 import { ExternalLink } from 'lucide-react';
 import { useWorkList, type WorkItem } from '@/src/hooks/useWorkList';
+import { TaskSheet } from '@/src/components/work/TaskSheet';
 
 /**
  * The claw list.
@@ -41,6 +43,7 @@ function Links({ item }: { item: WorkItem }) {
             href={l.url}
             target="_blank"
             rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
             className="inline-flex items-center gap-1 border-b border-emerald-200 text-emerald-800 hover:border-emerald-500"
           >
             {l.label}
@@ -59,9 +62,11 @@ function Links({ item }: { item: WorkItem }) {
   );
 }
 
-function Row({ item }: { item: WorkItem }) {
+function Row({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
   return (
-    <div className="rounded-lg border bg-white px-4 py-3">
+    <div
+      onClick={onOpen}
+      className="cursor-pointer rounded-lg border bg-white px-4 py-3 hover:border-gray-300">
       <div className="flex items-start gap-3">
         <Why label={item.reason.label} kind={item.reason.kind} />
         <div className="min-w-0 flex-1">
@@ -80,9 +85,11 @@ function Row({ item }: { item: WorkItem }) {
 }
 
 /** Past its date: still visible, still closable, no longer at the top. */
-function PastRow({ item }: { item: WorkItem }) {
+function PastRow({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
   return (
-    <div className="rounded-lg border border-dashed bg-gray-50 px-4 py-3">
+    <div
+      onClick={onOpen}
+      className="cursor-pointer rounded-lg border border-dashed bg-gray-50 px-4 py-3 hover:border-gray-400">
       <div className="flex items-start gap-3">
         <span className="mt-0.5 shrink-0 rounded border bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-gray-500">
           {item.reason.label}
@@ -98,6 +105,8 @@ function PastRow({ item }: { item: WorkItem }) {
 
 export default function WorkListPage() {
   const { data, isLoading, isError } = useWorkList();
+  // Clicking anywhere on a row opens the whole task over the list.
+  const [open, setOpen] = useState<string | null>(null);
 
   if (isLoading) return null;
   if (isError) {
@@ -115,7 +124,7 @@ export default function WorkListPage() {
     <div className="space-y-2">
       <h1 className="sr-only">Your list</h1>
       {live.map((item) => (
-        <Row key={item.subject} item={item} />
+        <Row key={item.subject} item={item} onOpen={() => setOpen(item.subject)} />
       ))}
 
       {past.length > 0 && (
@@ -126,10 +135,12 @@ export default function WorkListPage() {
             <span className="h-px flex-1 bg-gray-200" />
           </div>
           {past.map((item) => (
-            <PastRow key={item.subject} item={item} />
+            <PastRow key={item.subject} item={item} onOpen={() => setOpen(item.subject)} />
           ))}
         </>
       )}
+
+      {open && <TaskSheet subject={open} onClose={() => setOpen(null)} />}
     </div>
   );
 }

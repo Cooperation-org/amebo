@@ -410,6 +410,18 @@ class ApiClient {
     return this.request('/api/work-list/');
   }
 
+  async getWorkItem(subject: string): Promise<WorkItemDetail> {
+    return this.request(`/api/work-list/detail?subject=${encodeURIComponent(subject)}`);
+  }
+
+  /** Applies immediately — the human pressed it, so there is nothing to gate. */
+  async editWorkItem(body: WorkEdit): Promise<{ applied: string[] }> {
+    return this.request('/api/work-list/edit', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
   async getPendingActions(): Promise<PendingAction[]> {
     return this.request('/api/pending-actions/');
   }
@@ -513,6 +525,34 @@ export interface WorkItem {
 export interface WorkList {
   live: WorkItem[];
   past: WorkItem[];
+}
+
+export interface WorkComment {
+  who: string;
+  text: string;
+  when?: string | null;
+}
+
+export interface WorkItemDetail {
+  subject: string;
+  ref: number;
+  project: string;
+  title: string;
+  description?: string | null;
+  status?: string | null;
+  due?: string | null;
+  assignee?: string | null;
+  url: string;
+  comments: WorkComment[];
+}
+
+export interface WorkEdit {
+  subject: string;
+  due_date?: string;
+  description?: string;
+  status?: string;
+  comment?: string;
+  close?: boolean;
 }
 
 export interface PendingAction {
