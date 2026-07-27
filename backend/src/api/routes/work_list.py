@@ -294,6 +294,29 @@ async def edit(body: EditIn,
         logger.warning("work-list edit failed for %s: %s", body.subject, exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    # Handling the task from the list is what the drafted ping was for, so the
+    # ping is no longer wanted: its rows are declined, which is what takes the
+    # item out of the list. Without this, archiving a story leaves the row
+    # sitting there because the list is driven by the pending drafts, not by the
+    # story's status.
+    if any(a in applied for a in ("close", "archive", "delete", "due_date")):
+        _stand_down(repo=PendingActionRepo(), org_id=org_id, subject=body.subject,
+                    approver=str(client.get("user") or "list"))
+
     if not applied:
         raise HTTPException(status_code=400, detail="Nothing to change")
     return EditOut(applied=applied)
+
+
+def _stand_down(*, repo: PendingActionRepo, org_id: int, subject: str,
+                approver: str) -> None:
+    """Decline every pending draft about this subject. Rejected, not approved:
+    the message was never sent, and recording it as sent would be a lie in the
+    audit trail."""
+    key = subject.replace("taiga:", "", 1)
+    for action in repo.list_for_org(org_id=org_id, status="pending"):
+        if (action.get("payload") or {}).get("followup_task") != key:
+            continue
+        repo.set_decision(action_id=str(action["id"]), org_id=org_id,
+                          to_status="rejected", approver=approver,
+                          decision_reason="handled from the list")

@@ -258,6 +258,10 @@ def assemble(keys: Sequence[str], store: StoryStore, *, taiga_host: str,
             continue
         if not story:
             continue
+        if (story.get("status_extra_info") or {}).get("is_closed"):
+            # Closed or archived elsewhere (Marten, Taiga) — not live work,
+            # whatever the drafts still say.
+            continue
         comment = None
         try:
             comment = store.last_comment(story["id"])

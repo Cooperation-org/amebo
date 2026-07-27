@@ -138,6 +138,20 @@ def test_one_unreadable_story_does_not_sink_the_list():
     assert len(out.live) == 1
 
 
+def test_a_story_closed_elsewhere_leaves_the_list():
+    """Archive or close it in Marten, or from the sheet, and it stops being live
+    work — whatever the drafted pings still say."""
+    store = FakeStore({
+        ("biz", 34): story(ref=34, due_date="2026-07-25",
+                           status_extra_info={"name": "Archived", "is_closed": True}),
+        ("biz", 40): story(id=2, ref=40, due_date="2026-07-25",
+                           status_extra_info={"name": "In Progress", "is_closed": False}),
+    })
+    out = assemble(["biz#34", "biz#40"], store, taiga_host=HOST, today=TODAY)
+    assert [i.subject for i in out.live] == ["taiga:biz#40"]
+    assert out.past == []
+
+
 def test_unparseable_subject_is_skipped():
     assert parse_subject("nonsense") is None
     assert parse_subject("biz#notanumber") is None
