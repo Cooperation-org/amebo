@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from src.services.followup_claw import TaigaClient
 
@@ -40,6 +40,27 @@ class TaigaStoryStore:
         if not story_id:
             return None
         return self._client._get(f"/api/v1/userstories/{story_id}")
+
+    def comments(self, story_id: int) -> List[Dict[str, str]]:
+        """Every human comment on the story, oldest first — the thread.
+
+        Taiga returns history newest-first and mixes field edits in with speech;
+        entries with no ``comment`` are edits, not words, and are dropped.
+        """
+        history = self._client._get(f"/api/v1/history/userstory/{story_id}") or []
+        out: List[Dict[str, str]] = []
+        for entry in history:
+            text = (entry.get("comment") or "").strip()
+            if not text or entry.get("delete_comment_date"):
+                continue
+            user = entry.get("user") or {}
+            out.append({
+                "who": user.get("name") or user.get("username") or "someone",
+                "text": text,
+                "when": (entry.get("created_at") or "")[:10] or None,
+            })
+        out.reverse()
+        return out
 
     def last_comment(self, story_id: int) -> Optional[Dict[str, str]]:
         """The newest human comment on the story, or None.

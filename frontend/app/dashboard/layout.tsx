@@ -15,8 +15,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { User, Settings, LogOut, MessageSquare, Building2, Users, Menu, X, Link2, Inbox, PenLine } from 'lucide-react';
 import { usePermissions } from '@/src/hooks/usePermissions';
-import { usePendingActions } from '@/src/hooks/usePendingActions';
-import { useNeedsInput } from '@/src/hooks/useNeedsInput';
+import { useWorkList } from '@/src/hooks/useWorkList';
 
 export default function DashboardLayout({
   children,
@@ -27,10 +26,9 @@ export default function DashboardLayout({
   const { user, logout } = useAuthStore();
   const { canInviteUsers } = usePermissions();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const { data: pendingActions } = usePendingActions();
-  const pendingCount = pendingActions?.length ?? 0;
-  const { data: needsInput } = useNeedsInput();
-  const needsInputCount = needsInput?.length ?? 0;
+  // One list, one count. Approvals and needs-input forward into it.
+  const { data: workList } = useWorkList();
+  const listCount = workList?.live.length ?? 0;
 
   // Thin fixed chrome (docs/DASHBOARD.md): wordmark = home; only the few
   // top-level places live here. Q&A/Connections/Team are secondary — they sit
@@ -38,7 +36,7 @@ export default function DashboardLayout({
   const navigation = [
     { name: 'Chat', href: '/chat', icon: MessageSquare },
     { name: 'Whiteboard', href: '/dashboard/whiteboard', icon: PenLine },
-    { name: 'Needs input', href: '/dashboard/needs-input', icon: Inbox },
+    { name: 'Your list', href: '/dashboard/list', icon: Inbox },
     { name: 'Workspaces', href: '/dashboard/workspaces', icon: Building2 },
     { name: 'Settings', href: '/dashboard/settings', icon: Settings },
   ];
@@ -85,20 +83,12 @@ export default function DashboardLayout({
                 </div>
               </div>
               <div className="flex items-center space-x-4">
-                {needsInputCount > 0 && (
+                {listCount > 0 && (
                   <Link
-                    href="/dashboard/needs-input"
-                    className="flex items-center gap-1.5 rounded-full bg-blue-100 px-2.5 py-0.5 text-xs font-medium text-blue-800 hover:bg-blue-200"
+                    href="/dashboard/list"
+                    className="flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-900 hover:bg-emerald-200"
                   >
-                    {needsInputCount} need input
-                  </Link>
-                )}
-                {pendingCount > 0 && (
-                  <Link
-                    href="/dashboard/approvals"
-                    className="flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 hover:bg-amber-200"
-                  >
-                    {pendingCount} to approve
+                    {listCount}
                   </Link>
                 )}
                 {/* Mobile hamburger button */}

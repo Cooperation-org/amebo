@@ -10,7 +10,16 @@ cookie. The authenticated client's org_id is the authority; callers never pass
 one.
 
 Endpoints:
-    GET /api/work-list/    live + past items, live sorted by rank
+    GET  /api/work-list/          live + past items, live sorted by rank
+    GET  /api/work-list/detail    one item's full record + what people said on it
+    POST /api/work-list/edit      apply a change the human just pressed
+
+Writes here are NOT gated. The draft-approval gate exists to stop the claw acting
+unilaterally; when the human presses the button there is nothing to gate. They run
+through the same registered executors the gate would have run on approval, so
+there is one write path and no new authority. Every edit is checked against the
+org's own list first, so a subject the org was never shown cannot be edited by
+passing it in.
 
 Ranking is returned, not enforced by the client: every item carries ``rank`` and
 ``reason.kind`` ('clock' for the deterministic half, 'judgement' for the judged
@@ -27,8 +36,11 @@ from pydantic import BaseModel
 
 from src.api.middleware.auth import get_service_or_user
 from src.db.repositories.pending_action_repo import PendingActionRepo
-from src.services.work_list import Item, assemble
+from src.services.work_list import Item, assemble, parse_subject
 from src.services.work_list_taiga import TaigaStoryStore
+from src.tools.gated_actuators import (
+    execute_taiga_close, execute_taiga_comment, execute_taiga_update,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -133,3 +145,120 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user)):
 
     return WorkListOut(live=[_out(i) for i in result.live],
                        past=[_out(i) for i in result.past])
+
+
+# ------------------------------------------------------------------ detail
+
+
+class CommentOut(BaseModel):
+    who: str
+    text: str
+    when: Optional[str] = None
+
+
+class DetailOut(BaseModel):
+    subject: str
+    ref: int
+    project: str
+    title: str
+    description: Optional[str] = None
+    status: Optional[str] = None
+    due: Optional[str] = None
+    assignee: Optional[str] = None
+    url: str
+    comments: List[CommentOut]
+
+
+def _guard(subject: str, org_id: int) -> tuple:
+    """A subject may only be touched if it is on this org's own list. Without
+    this the project slug would be caller-supplied, and on a deployment where one
+    Taiga token reaches several boards that is the whole authorization story."""
+    parsed = parse_subject(subject.replace("taiga:", "", 1))
+    if not parsed:
+        raise HTTPException(status_code=400, detail="Unreadable subject")
+    if subject not in {f"taiga:{s}" for s in subjects_for_org(PendingActionRepo(), org_id)}:
+        raise HTTPException(status_code=404, detail="Not on your list")
+    return parsed
+
+
+@router.get("/detail", response_model=DetailOut)
+async def get_detail(subject: str,
+                     client: Dict[str, Any] = Depends(get_service_or_user)):
+    org_id = client.get("org_id")
+    if not org_id:
+        raise HTTPException(status_code=403, detail="No organization for this client")
+    slug, ref = _guard(subject, org_id)
+
+    store = TaigaStoryStore()
+    story = store.story(slug, ref)
+    if not story:
+        raise HTTPException(status_code=404, detail="Story not found")
+
+    return DetailOut(
+        subject=subject,
+        ref=ref,
+        project=slug,
+        title=story.get("subject") or f"#{ref}",
+        description=story.get("description"),
+        status=(story.get("status_extra_info") or {}).get("name"),
+        due=story.get("due_date"),
+        assignee=(story.get("assigned_to_extra_info") or {}).get("username"),
+        url=f"{store.host}/project/{slug}/us/{ref}",
+        comments=[CommentOut(**c) for c in store.comments(story["id"])],
+    )
+
+
+# ------------------------------------------------------------------ edit
+
+
+class EditIn(BaseModel):
+    subject: str
+    due_date: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    comment: Optional[str] = None
+    close: bool = False
+
+
+class EditOut(BaseModel):
+    applied: List[str]
+
+
+@router.post("/edit", response_model=EditOut)
+async def edit(body: EditIn,
+               client: Dict[str, Any] = Depends(get_service_or_user)):
+    """Apply what the human just pressed, immediately.
+
+    'Later' is one of these: it writes a new due date on the story. Nothing is
+    stored in amebo for a snooze — the task carries its own date, and the claw
+    surfaces it again when that date comes round.
+    """
+    org_id = client.get("org_id")
+    if not org_id:
+        raise HTTPException(status_code=403, detail="No organization for this client")
+    slug, ref = _guard(body.subject, org_id)
+
+    base = {"org_id": org_id, "project": slug, "ref": ref}
+    applied: List[str] = []
+
+    try:
+        fields = {k: v for k, v in
+                  (("due_date", body.due_date), ("description", body.description),
+                   ("status", body.status)) if v}
+        if fields:
+            execute_taiga_update({"org_id": org_id, "payload": {**base, **fields}})
+            applied.extend(fields)
+        if body.comment:
+            execute_taiga_comment({"org_id": org_id,
+                                   "payload": {**base, "text": body.comment}})
+            applied.append("comment")
+        if body.close:
+            execute_taiga_close({"org_id": org_id, "payload": base})
+            applied.append("close")
+    except RuntimeError as exc:
+        logger.warning("work-list edit failed for %s: %s", body.subject, exc)
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    if not applied:
+        raise HTTPException(status_code=400, detail="Nothing to change")
+    return EditOut(applied=applied)
