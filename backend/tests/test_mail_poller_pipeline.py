@@ -223,3 +223,74 @@ def test_no_message_id_dead_letters():
     m = msg(mid=None)
     assert poller(repo).process(m) == "no_message_id"
     assert repo.dead[0]["reason"] == "no_message_id"
+
+
+# --- per-team routing: one inbox, the +tag names the team -------------------
+
+def test_parse_tag_forms():
+    from src.mail_poller.poller import parse_tag
+    assert parse_tag("crm") == ("crm", None)
+    assert parse_tag("intake") == ("intake", None)
+    assert parse_tag("vc") == ("crm", "vc")
+    assert parse_tag("crm.vc") == ("crm", "vc")
+    assert parse_tag("friday-test-venture") == ("crm", "friday-test-venture")
+    # not a slug: stays an action, so it dead-letters instead of naming a database
+    assert parse_tag("Not A Team") == ("not a team", None)
+
+
+class TeamOdoo(FakeOdoo):
+    """A FakeOdoo that hands out a separate CRM per team, like the real client
+    binding itself to that team's database."""
+
+    def __init__(self, teams=("vc",)):
+        super().__init__()
+        self.teams = {t: FakeOdoo() for t in teams}
+
+    def for_team(self, slug):
+        if slug not in self.teams:
+            raise RuntimeError(f"no CRM database for team '{slug}'")
+        return self.teams[slug]
+
+
+def test_team_tag_files_into_that_teams_crm():
+    odoo = TeamOdoo(teams=("vc",))
+    repo = FakeRepo()
+    p = Poller(cfg(), repo, odoo)
+    assert p.process(msg(delivered="amebo2019+vc@gmail.com")) == "filed_created"
+    assert len(odoo.teams["vc"].posts) == 1        # landed in the vc CRM
+    assert odoo.posts == []                        # and not in the default one
+
+
+def test_explicit_action_dot_team_form():
+    odoo = TeamOdoo(teams=("vc",))
+    p = Poller(cfg(), FakeRepo(), odoo)
+    assert p.process(msg(delivered="amebo2019+crm.vc@gmail.com")) == "filed_created"
+    assert len(odoo.teams["vc"].posts) == 1
+
+
+def test_no_tag_still_uses_the_default_crm():
+    odoo = TeamOdoo(teams=("vc",))
+    p = Poller(cfg(), FakeRepo(), odoo)
+    assert p.process(msg(delivered="amebo2019@gmail.com")) == "filed_created"
+    assert len(odoo.posts) == 1
+    assert odoo.teams["vc"].posts == []
+
+
+def test_unknown_team_dead_letters_and_writes_nowhere():
+    odoo = TeamOdoo(teams=("vc",))
+    repo = FakeRepo()
+    p = Poller(cfg(), repo, odoo)
+    assert p.process(msg(delivered="amebo2019+nosuchteam@gmail.com")) == "unknown_team"
+    assert repo.dead[0]["reason"] == "unknown_team"
+    assert odoo.posts == [] and odoo.teams["vc"].posts == []
+
+
+def test_crm_write_failure_dead_letters_instead_of_raising():
+    class Broken(FakeOdoo):
+        def find_partner_by_email(self, email_):
+            raise RuntimeError("CRM is down")
+
+    repo = FakeRepo()
+    p = Poller(cfg(), repo, Broken())
+    assert p.process(msg()) == "crm_write_failed"
+    assert repo.dead[0]["reason"] == "crm_write_failed"

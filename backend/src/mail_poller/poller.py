@@ -96,13 +96,44 @@ def extract_tag(msg: Message, base_local: str) -> str:
     delivery address. Defaults to 'crm' when none is visible (common for BCC,
     where Gmail may not preserve the +tag) since the inbox is the CRM inbox.
     """
-    pat = re.compile(rf"\b{re.escape(base_local)}\+([a-z0-9_]+)@", re.IGNORECASE)
+    pat = re.compile(rf"\b{re.escape(base_local)}\+([a-z0-9_.-]+)@", re.IGNORECASE)
     for header in ("Delivered-To", "X-Original-To", "To", "Cc"):
         for value in msg.get_all(header, []):
             m = pat.search(value or "")
             if m:
                 return m.group(1).lower()
     return "crm"
+
+
+# Words that name an ACTION in the tag position. Anything else there is read as
+# a team slug, which is what makes the plain `crm+vc@` form work — so these are
+# reserved and cannot be team slugs.
+ACTION_TAGS = ("crm", "intake", "project", "task", "rag")
+
+_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
+
+
+def parse_tag(raw: str):
+    """Split a +tag into (action, team). team is None for the default CRM.
+
+      crm.vc  -> ("crm", "vc")   explicit; works whatever the mailbox is called
+      vc      -> ("crm", "vc")   a bare non-action word is a team, on the CRM inbox
+      crm     -> ("crm", None)   the default database (ODOO_DB)
+      intake  -> ("intake", None)
+
+    A team that is not a valid slug comes back as ("crm", None) with the raw
+    word as the action, so it dead-letters as an unrouted tag instead of being
+    turned into a database name.
+    """
+    raw = (raw or "").strip().lower()
+    if "." in raw:
+        action, _, team = raw.partition(".")
+        return action, (team if _SLUG_RE.match(team) else None)
+    if raw in ACTION_TAGS:
+        return raw, None
+    if _SLUG_RE.match(raw):
+        return "crm", raw
+    return raw, None
 
 
 def recipient_addresses(msg: Message, exclude_locals: List[str]) -> List[str]:
@@ -250,7 +281,8 @@ class Poller:
             self.repo.mark_seen(mid)
             return reason
 
-        tag = extract_tag(msg, self._base_local)
+        raw_tag = extract_tag(msg, self._base_local)
+        tag, team = parse_tag(raw_tag)
         if tag == "intake":
             # +intake → the amebo intake bucket (abra). Async drop, processed
             # later; connected to a task by keyword (either direction). Kept
@@ -260,9 +292,20 @@ class Poller:
             return "intake_filed"
         if tag != "crm":
             self.repo.dead_letter("unrouted_tag", message_id=mid, from_addr=parseaddr(from_hdr)[1],
-                                  subject=subject, tag=tag, detail=f"+{tag} not handled yet")
+                                  subject=subject, tag=raw_tag, detail=f"+{raw_tag} not handled yet")
             self.repo.mark_seen(mid)
             return "unrouted_tag"
+
+        # Which team's CRM. Unset team = the default database, i.e. what every
+        # deployment did before per-team routing existed.
+        try:
+            odoo = self.odoo.for_team(team) if team else self.odoo
+        except Exception as e:
+            self.repo.dead_letter("unknown_team", message_id=mid,
+                                  from_addr=parseaddr(from_hdr)[1], subject=subject,
+                                  tag=raw_tag, detail=str(e)[:200])
+            self.repo.mark_seen(mid)
+            return "unknown_team"
 
         sender = parseaddr(from_hdr)[1]
         body = body_text(msg)
@@ -279,18 +322,28 @@ class Poller:
                 self.repo.mark_seen(mid)
                 return "no_recipient"
 
-        partner_id = self.odoo.find_partner_by_email(target)
-        created = False
-        if partner_id is None:
-            partner_id = self.odoo.create_partner(_name_for(msg, target), target)
-            created = True
+        # Never a silent drop: a CRM that is down, or a team database that does
+        # not exist, dead-letters with the reason instead of raising into the
+        # runner, where the message would be marked read and lost.
+        try:
+            partner_id = odoo.find_partner_by_email(target)
+            created = False
+            if partner_id is None:
+                partner_id = odoo.create_partner(_name_for(msg, target), target)
+                created = True
 
-        self.odoo.post_message(
-            partner_id, subject, _provenance_body(sender, target, body, forwarded=forwarded))
+            odoo.post_message(
+                partner_id, subject, _provenance_body(sender, target, body, forwarded=forwarded))
+        except Exception as e:
+            logger.exception("CRM write failed for %s (team=%s)", mid, team or "-")
+            self.repo.dead_letter("crm_write_failed", message_id=mid, from_addr=sender,
+                                  subject=subject, tag=raw_tag, detail=str(e)[:200])
+            self.repo.mark_seen(mid)
+            return "crm_write_failed"
 
         for other in skipped:
             self.repo.dead_letter("skipped_recipient", message_id=mid, to_addrs=other,
-                                  subject=subject, tag="crm", detail=f"filed under {target}")
+                                  subject=subject, tag=raw_tag, detail=f"filed under {target}")
 
         self.repo.mark_seen(mid)
         return "filed_created" if created else "filed"

@@ -72,6 +72,35 @@ router hint (ours, not Odoo's `mail.alias`):
 We are deliberately not using Odoo `mail.alias` (it cannot match `To:`), so this
 is a separate layer, not a duplicate.
 
+#### The tag also names the team (one inbox for every team)
+
+On a deployment where each team's CRM is its own database (`crm-<slug>`, the
+workers.vc cohort), the same `+tag` says which team's CRM to file into. One
+mailbox, one process, the database resolved per message instead of once at
+startup — the move already made for amebo's CRM tools, same variable
+(`ODOO_TEAM_DB_PATTERN=crm-{slug}`) and same shared credentials.
+
+    crm+vc@…      -> the vc team's CRM       (a bare word that is not an action
+                                              is read as a team slug)
+    crm+crm.vc@…  -> the same, said explicitly (works whatever the mailbox is called)
+    crm+crm@…     -> the default database, ODOO_DB
+    no +tag       -> the default database    (BCC often loses the tag)
+
+`crm`, `intake`, `project`, `task` and `rag` name actions, so they are reserved
+and cannot be team slugs. A tag that is neither an action nor a valid slug
+dead-letters as an unrouted tag; it is never turned into a database name.
+
+A team tag on a deployment with no per-team pattern is **refused**, not filed
+into whatever `ODOO_DB` happens to be — that would drop one team's mail into
+another team's CRM. Same for a slug with no database: dead-letter `unknown_team`.
+
+Note what this does and does not isolate. Step 0 proves the mail came from
+someone on the team's trusted list; it does not prove that person belongs to the
+team they addressed. Anyone who passes Step 0 can file into any team's CRM by
+changing the tag. That matches the cohort's stated posture ("not big secrets"),
+and resolving the team from the sender's org membership is the tighter version
+if that changes.
+
 ### 3. Resolver — pluggable, so amebo works without abra
 ```
 Resolver.resolve(message) -> Match(partner_id, ...) | None

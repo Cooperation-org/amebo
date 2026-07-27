@@ -6,6 +6,12 @@ auth pattern (ODOO_API_KEY / ODOO_USER).
 This is the Writer + OdooResolver from the design, as a Python client so the
 poller has no fragile shell-output parsing. The human-facing `odoo-cli log` verb
 is a separate convenience; both end at the same `message_post`.
+
+One process serves every team. A deployment where each team's CRM is its own
+database names them from the team slug (ODOO_TEAM_DB_PATTERN, e.g. 'crm-{slug}',
+the same variable amebo's CRM tools already use); `for_team(slug)` returns a
+client bound to that database. Credentials, URL and everything else are shared,
+exactly as they are for the tools.
 """
 
 import logging
@@ -16,14 +22,39 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
+class TeamRoutingDisabled(RuntimeError):
+    """A mail addressed to a team arrived, but this deployment has no per-team
+    database naming (ODOO_TEAM_DB_PATTERN unset). Refusing rather than filing it
+    into whatever ODOO_DB happens to be: that would put one team's mail in
+    another team's CRM."""
+
+
 class OdooClient:
-    def __init__(self):
+    def __init__(self, db: Optional[str] = None):
         self.url = os.getenv("ODOO_URL", "http://localhost:8069")
-        self.db = os.getenv("ODOO_DB", "linkedtrust_crm")
+        self.db = db or os.getenv("ODOO_DB", "linkedtrust_crm")
         self.user = os.getenv("ODOO_USER", "admin")
         self.pwd = os.getenv("ODOO_API_KEY", "") or os.getenv("ODOO_PASSWORD", "")
+        self.team_db_pattern = os.getenv("ODOO_TEAM_DB_PATTERN", "").strip()
         self._uid = None
         self._models = None
+        self._team_clients = {}
+
+    def for_team(self, slug: str) -> "OdooClient":
+        """A client bound to that team's CRM database. Cached, so a busy inbox
+        authenticates once per team rather than once per message."""
+        if not slug:
+            return self
+        if not self.team_db_pattern:
+            raise TeamRoutingDisabled(
+                f"mail addressed to team '{slug}' but ODOO_TEAM_DB_PATTERN is unset"
+            )
+        db = self.team_db_pattern.format(slug=slug)
+        if db == self.db:
+            return self
+        if db not in self._team_clients:
+            self._team_clients[db] = OdooClient(db=db)
+        return self._team_clients[db]
 
     def _connect(self):
         if self._uid is not None:
