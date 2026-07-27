@@ -16,6 +16,7 @@ Guidance for any agent working in this repository ([AGENTS.md](AGENTS.md) points
 | Architecture & subsystem docs (human-readable) | [docs/](docs/) — start with `docs/BOUNDARIES.md` |
 | Work-package plan + runbook | `/opt/shared/projects/plans/amebo/` |
 | Hard guardrails (hooks: no stash, no force-push, amebo-services-only systemctl) | [.claude/](.claude/) |
+| Peer apps' boundaries — same discipline, their side of the line | `../govkit/docs/BOUNDARIES.md`, `../workers.vc/docs/BOUNDARIES.md` |
 
 Standing rules (details in the architecture doc): amebo is a **participant, not owner** (I1); core code is **semantic, vendor names only in leaves** (I11); **all outbound gated** (I6); **never `git stash`**; commit as you go; **never use the AskUserQuestion tool** — write questions to the board in plain language; **never ghostwrite words for a human to say to others** — give key points, never speakable copy/scripts/CTAs, and never cold-outreach/spam phrasing (e.g. "worth a short call") — for anyone, always (see `backend/prompts/skills/no-ghostwriting.md` + `identity.md`).
 

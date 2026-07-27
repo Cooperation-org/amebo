@@ -126,6 +126,19 @@ this principal or team identity). Both apply.
 > boundary principle the credential helper must satisfy (delegated and service authority,
 > both scoped); it is not the implementation.
 
+## How your work lands
+
+**Open a pull request.** Don't push to `main`. The shared-VM rule about committing
+straight to main is for the people who own the repo; anyone else works on a branch and
+opens a PR, so someone sees it before it deploys. Small PRs, often, beat one big one.
+
+## Peer docs
+
+The same discipline, written from the other side of the line:
+`../../govkit/docs/BOUNDARIES.md` (the org and equity record) and
+`../../workers.vc/docs/BOUNDARIES.md` (the face and the doorway, which owns almost
+no data).
+
 ## Keep key understandings in a system of record
 
 This document is itself an instance of the principle. The understanding it records does not
