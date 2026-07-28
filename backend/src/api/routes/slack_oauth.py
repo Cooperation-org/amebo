@@ -517,13 +517,18 @@ async def slack_events(request: Request):
         text = event.get("text", "")
         user = event.get("user")
         ts = event.get("ts")
+        # A mention inside an existing thread carries the thread's root ts.
+        # Without it the handler keys conversation memory on THIS message's
+        # own ts, so every mention in a thread starts a blank conversation
+        # and amebo cannot see what was already said (seen live 2026-07-28).
+        thread_ts = event.get("thread_ts")
         team_id = payload.get("team_id")
 
         logger.info(f"App mentioned in channel {channel} by {user}")
 
         async def process_mention():
             try:
-                await handle_app_mention(team_id, channel, text, user, ts)
+                await handle_app_mention(team_id, channel, text, user, ts, thread_ts)
                 logger.info("App mention handled successfully")
             except Exception as e:
                 logger.error(f"Error handling app mention: {e}", exc_info=True)
@@ -584,6 +589,12 @@ async def slack_events(request: Request):
                             bot_uid = resolved
                         else:
                             bot_uid = bot_user_id
+
+                        # A reply that @-mentions amebo also arrives as an
+                        # app_mention event, which answers it. Handling it
+                        # here as well would post the answer twice.
+                        if bot_uid and f"<@{bot_uid}>" in text:
+                            return
 
                         if await is_thread_parent_our_bot(channel, thread_ts, bot_uid):
                             logger.info(

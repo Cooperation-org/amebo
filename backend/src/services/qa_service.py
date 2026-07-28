@@ -200,9 +200,17 @@ class QAService:
         author_info: Optional[str] = None,
         instance_slug: Optional[str] = None,
         allow_tools: bool = True,
+        conversation: Optional[Dict] = None,
     ) -> Dict:
         """
         Answer a question based on Slack history.
+
+        conversation: optional descriptor of WHERE this conversation is
+            happening — e.g. {"channel_type": "slack", "channel_id": "C123",
+            "thread_ref": "1753.42"}. Passed through to tools so a channel
+            can offer tools that act on the live conversation (reading the
+            surrounding Slack thread). Channels that don't set it simply
+            get no such tool behaviour; nothing else depends on it.
 
         Args:
             question: User's question
@@ -221,7 +229,8 @@ class QAService:
         if thread_ref and self.client:
             return self._generate_with_thread_context(
                 question, thread_ref, source_type, author_info,
-                instance_slug=instance_slug, allow_tools=allow_tools
+                instance_slug=instance_slug, allow_tools=allow_tools,
+                conversation=conversation,
             )
 
         # --- Legacy RAG path: slash commands (/ask, /askall) without thread context ---
@@ -749,6 +758,7 @@ Answer the question based on this context. Be comprehensive and include all rele
         author_info: Optional[str] = None,
         instance_slug: Optional[str] = None,
         allow_tools: bool = True,
+        conversation: Optional[Dict] = None,
     ) -> Dict:
         """
         Agentic answer generation — mirrors the Claude Code pattern.
@@ -851,6 +861,7 @@ Answer the question based on this context. Be comprehensive and include all rele
                             # Owner (admin) directing live -> gated tools execute
                             # now instead of drafting. Non-admin stays gated.
                             auto_execute=self.full_tools,
+                            conversation=conversation,
                         )
                         logger.info(f"Tool result [{tool_round}]: {len(result)} chars")
                         tool_results.append({

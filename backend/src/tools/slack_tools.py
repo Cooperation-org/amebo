@@ -187,6 +187,164 @@ def slack_post_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
     )
 
 
+SLACK_REPLIES_ENDPOINT = "https://slack.com/api/conversations.replies"
+SLACK_USERS_INFO_ENDPOINT = "https://slack.com/api/users.info"
+MAX_THREAD_MESSAGES = 100
+THREAD_TEXT_TRUNCATE = 1500
+
+
+def _conversation_from_context(context) -> Dict[str, Any]:
+    """The live conversation descriptor, or {} when there isn't one.
+
+    Set by channel handlers that know where they are (Slack). Claws, the
+    CLI and scheduled runs have no conversation, and must not crash here.
+    """
+    if not isinstance(context, dict):
+        return {}
+    conv = context.get("conversation")
+    return conv if isinstance(conv, dict) else {}
+
+
+def _resolve_slack_names(token: str, user_ids) -> Dict[str, str]:
+    """Slack user id -> display name, best effort.
+
+    One call per distinct participant; a thread has a handful. Any lookup
+    that fails leaves the raw id, which is still readable enough.
+    """
+    names: Dict[str, str] = {}
+    for uid in user_ids:
+        if not uid:
+            continue
+        try:
+            resp = requests.get(
+                SLACK_USERS_INFO_ENDPOINT,
+                params={"user": uid},
+                headers={"Authorization": f"Bearer {token}"},
+                timeout=10,
+            )
+            data = resp.json()
+            if data.get("ok"):
+                profile = data.get("user", {})
+                names[uid] = (
+                    profile.get("profile", {}).get("display_name")
+                    or profile.get("real_name")
+                    or profile.get("name")
+                    or uid
+                )
+        except Exception:
+            logger.debug("users.info lookup failed for %s", uid, exc_info=True)
+    return names
+
+
+def read_slack_thread_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """Read the messages of a Slack thread, oldest first.
+
+    Defaults to the thread this conversation is happening in, so the model
+    can answer "look above in this thread". Explicit channel/thread_ts let
+    it read a thread someone linked instead.
+    """
+    conv = _conversation_from_context(context)
+
+    channel = (tool_input.get("channel") or "").strip() or conv.get("channel_id")
+    thread_ts = (tool_input.get("thread_ts") or "").strip() or conv.get("thread_ref")
+
+    if not channel or not thread_ts:
+        if conv.get("channel_type") not in (None, "slack"):
+            return (
+                "Error: this conversation is not on Slack "
+                f"(it is on {conv.get('channel_type')}), so there is no Slack "
+                "thread to read. Pass channel and thread_ts explicitly to read "
+                "a specific Slack thread."
+            )
+        return (
+            "Error: no Slack thread in context. Pass channel (e.g. C0123ABC) "
+            "and thread_ts to read a specific thread."
+        )
+
+    try:
+        limit = int(tool_input.get("limit") or 50)
+    except (TypeError, ValueError):
+        limit = 50
+    limit = max(1, min(limit, MAX_THREAD_MESSAGES))
+
+    try:
+        token = _bot_token(context)
+    except SlackPostError as exc:
+        return f"Error: {exc}"
+
+    try:
+        resp = requests.get(
+            SLACK_REPLIES_ENDPOINT,
+            params={"channel": channel, "ts": thread_ts, "limit": limit},
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=10,
+        )
+    except requests.exceptions.RequestException as exc:
+        logger.exception("read_slack_thread request failed")
+        return f"Error: Slack API request failed — {exc}"
+
+    if resp.status_code != 200:
+        return f"Error: Slack API returned HTTP {resp.status_code}: {resp.text[:200]}"
+
+    body = resp.json()
+    if not body.get("ok"):
+        err = body.get("error") or body
+        if err == "missing_scope":
+            return (
+                "Error: the Slack app is missing the history scope needed to "
+                f"read threads (needed: {body.get('needed')}). Ask an admin to "
+                "add it and reinstall the app."
+            )
+        return f"Error: Slack API: {err}"
+
+    messages = body.get("messages", [])
+    if not messages:
+        return "That thread has no messages (or the bot cannot see it)."
+
+    names = _resolve_slack_names(token, {m.get("user") for m in messages})
+
+    lines = []
+    for msg in messages:
+        uid = msg.get("user") or msg.get("bot_id") or "unknown"
+        who = names.get(uid, uid)
+        text = (msg.get("text") or "").strip()
+        if len(text) > THREAD_TEXT_TRUNCATE:
+            text = text[:THREAD_TEXT_TRUNCATE] + " …[truncated]"
+        lines.append(f"[{msg.get('ts', '')}] {who}: {text}")
+
+    header = (
+        f"Slack thread {thread_ts} in {channel} — {len(messages)} message(s), "
+        "oldest first:"
+    )
+    return header + "\n\n" + "\n\n".join(lines)
+
+
+READ_SLACK_THREAD_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "channel": {
+            "type": "string",
+            "description": (
+                "Slack channel id (e.g. C0123ABC). Omit to read the thread "
+                "this conversation is already in."
+            ),
+        },
+        "thread_ts": {
+            "type": "string",
+            "description": (
+                "Timestamp of the thread's FIRST message. Omit to read the "
+                "thread this conversation is already in."
+            ),
+        },
+        "limit": {
+            "type": "integer",
+            "description": f"Max messages to return (1-{MAX_THREAD_MESSAGES}, default 50).",
+        },
+    },
+    "required": [],
+}
+
+
 SLACK_POST_SCHEMA = {
     "type": "object",
     "properties": {

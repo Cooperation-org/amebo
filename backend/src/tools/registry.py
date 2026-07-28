@@ -210,6 +210,7 @@ def execute_tool(
     org_context=None,
     principal=None,
     auto_execute: bool = False,
+    conversation: Optional[Dict] = None,
 ) -> str:
     """
     Execute a tool and return the result as a string.
@@ -244,6 +245,11 @@ def execute_tool(
         "org_id": ctx_org_id,
         "org_context": org_context,
         "auto_execute": auto_execute,   # owner-directing-live: gated tools run now
+        # Where this conversation is happening, when the channel knows:
+        # {"channel_type", "channel_id", "thread_ref"}. None for callers that
+        # aren't in a live conversation (claws, scripts, API). Tools that need
+        # it must degrade with a clear message, never assume it is set.
+        "conversation": conversation,
     }
     try:
         return tool.execute(tool_input, context)
@@ -705,7 +711,10 @@ from src.tools.main_md_tools import (
     CREATE_MAIN_MD_SCHEMA,
     read_org_file_impl, READ_ORG_FILE_SCHEMA,
 )
-from src.tools.slack_tools import slack_post_impl, SLACK_POST_SCHEMA
+from src.tools.slack_tools import (
+    slack_post_impl, SLACK_POST_SCHEMA,
+    read_slack_thread_impl, READ_SLACK_THREAD_SCHEMA,
+)
 
 
 register_tool(Tool(
@@ -770,6 +779,24 @@ register_tool(Tool(
     execute=create_main_md_impl,
     is_read_only=False,
     category="projects",
+))
+
+
+register_tool(Tool(
+    name="read_slack_thread",
+    description=(
+        "Read the messages of a Slack thread, oldest first. Call this with NO "
+        "arguments to see everything already said in the thread you are "
+        "replying in — use it whenever someone refers to earlier messages "
+        "('look above', 'as I said', 'this', 'it') or when their message only "
+        "makes sense with what came before. Pass channel and thread_ts to read "
+        "a different thread. Returns an error when the conversation is not on "
+        "Slack."
+    ),
+    input_schema=READ_SLACK_THREAD_SCHEMA,
+    execute=read_slack_thread_impl,
+    is_read_only=True,
+    category="comms",
 ))
 
 

@@ -373,7 +373,12 @@ async def process_events(client: SocketModeClient, req: SocketModeRequest):
                     n_context_messages=10,
                     thread_ref=thread_ts,
                     source_type="slack",
-                    author_info=f"slack:{user_id}"
+                    author_info=f"slack:{user_id}",
+                    conversation={
+                        "channel_type": "slack",
+                        "channel_id": channel_id,
+                        "thread_ref": thread_ts,
+                    },
                 )
 
                 response_text = f"*Q:* {question}\n\n{result['answer']}"
@@ -405,12 +410,18 @@ async def process_events(client: SocketModeClient, req: SocketModeRequest):
                 )
 
 
-async def handle_app_mention(team_id, channel, text, user, ts):
+async def handle_app_mention(team_id, channel, text, user, ts, thread_ts=None):
     """
     Handle app mention from Event Subscriptions API
     This is called when the bot is mentioned via HTTP Events API (not Socket Mode)
+
+    thread_ts is the root of the thread the mention sits in (None for a
+    top-level mention, which starts its own thread at `ts`). Conversation
+    memory is keyed on that root, so every mention in the same Slack thread
+    continues one conversation instead of starting a blank one.
     """
     try:
+        thread_root = thread_ts or ts
         # Remove bot mention from text
         import re
         question = re.sub(r'<@[A-Z0-9]+>', '', text).strip()
@@ -422,7 +433,7 @@ async def handle_app_mention(team_id, channel, text, user, ts):
         if not question or question.lower() in ['hi', 'hello', 'hey']:
             await web_client.chat_postMessage(
                 channel=channel,
-                thread_ts=ts,
+                thread_ts=thread_root,
                 text=f"Hi <@{user}>!\n\nAsk me questions!\n\n*Examples:*\n• What projects are being worked on?\n• Who is working on AI?\n• What are the main topics?"
             )
             return
@@ -435,10 +446,15 @@ async def handle_app_mention(team_id, channel, text, user, ts):
         result = qa_service.answer_question(
             question=question,
             n_context_messages=10,
-            thread_ref=ts,
+            thread_ref=thread_root,
             source_type="slack",
             author_info=f"slack:{user}",
             instance_slug=instance_slug,
+            conversation={
+                "channel_type": "slack",
+                "channel_id": channel,
+                "thread_ref": thread_root,
+            },
         )
 
         response_text = f"*Q:* {question}\n\n{result['answer']}"
@@ -456,7 +472,7 @@ async def handle_app_mention(team_id, channel, text, user, ts):
         # Send response in thread
         await web_client.chat_postMessage(
             channel=channel,
-            thread_ts=ts,
+            thread_ts=thread_root,
             text=response_text
         )
 
@@ -471,7 +487,7 @@ async def handle_app_mention(team_id, channel, text, user, ts):
             web_client = AsyncWebClient(token=BOT_TOKEN)
             await web_client.chat_postMessage(
                 channel=channel,
-                thread_ts=ts,
+                thread_ts=thread_ts or ts,
                 text=f"Sorry, I encountered an error: {str(e)}"
             )
         except:
@@ -548,6 +564,11 @@ async def handle_thread_reply(team_id, channel, text, user, ts, thread_ts):
             source_type="slack",
             author_info=f"slack:{user}",
             instance_slug=instance_slug,
+            conversation={
+                "channel_type": "slack",
+                "channel_id": channel,
+                "thread_ref": thread_ts,
+            },
         )
 
         response_text = result.get("answer", "(no response)")
