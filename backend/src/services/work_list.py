@@ -219,6 +219,35 @@ def _is_past(due: str, today: date) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def items_from_goals(goals: Sequence[Dict[str, Any]]) -> List[Item]:
+    """Goals waiting on a person become items too.
+
+    One list means one list: a question amebo is holding is work needing this
+    human just as much as a dated task is, and it used to live on its own page.
+    A goal has no date, so it ranks in the judged half, and its links come out of
+    its description the same way a story's do.
+    """
+    items: List[Item] = []
+    for goal in goals:
+        title = (goal.get("title") or "").strip() or "(untitled)"
+        text = goal.get("description") or ""
+        links = [Link(_short(u), u) for u in _URL_RE.findall(text)]
+        items.append(Item(
+            subject=f"goal:{goal.get('id')}",
+            title=title,
+            reason=Reason("waiting on you", "judgement"),
+            # Above every other judged item: it is a question already asked of
+            # this person, so nothing else judged should sit on top of it.
+            rank=JUDGED_CEILING,
+            links=links,
+            quote=None,
+            due=None,
+            assignee=None,
+            past=False,
+        ))
+    return items
+
+
 @dataclass
 class WorkList:
     live: List[Item] = field(default_factory=list)

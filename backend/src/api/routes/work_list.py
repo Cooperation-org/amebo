@@ -36,7 +36,9 @@ from pydantic import BaseModel
 
 from src.api.middleware.auth import get_service_or_user
 from src.db.repositories.pending_action_repo import PendingActionRepo
-from src.services.work_list import Item, assemble, parse_subject
+from src.services.work_list import (
+    Item, assemble, items_from_goals, parse_subject,
+)
 from src.services.work_list_taiga import TaigaStoryStore
 from src.tools.gated_actuators import (
     execute_taiga_close, execute_taiga_comment, execute_taiga_update,
@@ -132,19 +134,31 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user)):
 
     repo = PendingActionRepo()
     subjects = subjects_for_org(repo, org_id)
-    if not subjects:
-        return WorkListOut(live=[], past=[])
 
-    store = TaigaStoryStore()
+    # Questions amebo is holding for this person. These had their own page; one
+    # list means they belong here, not nowhere.
+    from src.db.repositories.goal_repo import GoalRepo
     try:
-        result = assemble(subjects, store, taiga_host=store.host)
-    except Exception as exc:  # noqa: BLE001 - a Taiga outage must not 500 the dash
-        logger.warning("work-list: assembly failed for org %s: %s", org_id, exc)
-        raise HTTPException(status_code=503,
-                            detail="Task source unavailable") from exc
+        waiting = GoalRepo().list_for_org(org_id=org_id, status="waiting_user")
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("work-list: goals unreadable for org %s: %s", org_id, exc)
+        waiting = []
+    live: List[Item] = items_from_goals(waiting)
+    past: List[Item] = []
 
-    return WorkListOut(live=[_out(i) for i in result.live],
-                       past=[_out(i) for i in result.past])
+    if subjects:
+        store = TaigaStoryStore()
+        try:
+            result = assemble(subjects, store, taiga_host=store.host)
+            live.extend(result.live)
+            past = result.past
+        except Exception as exc:  # noqa: BLE001 - a Taiga outage must not empty
+            # the whole list; the goals half is still real work.
+            logger.warning("work-list: taiga half failed for org %s: %s", org_id, exc)
+
+    live.sort(key=lambda i: (-i.rank, i.title))
+    return WorkListOut(live=[_out(i) for i in live],
+                       past=[_out(i) for i in past])
 
 
 # ------------------------------------------------------------------ detail
