@@ -31,17 +31,17 @@ export default function DashboardLayout({
   const listCount = workList?.live.length ?? 0;
 
   // Thin fixed chrome (docs/DASHBOARD.md): wordmark = home; only the few
-  // top-level places live here. Q&A/Connections/Team are secondary — they sit
-  // in the account dropdown until their pages merge under Workspaces/Settings.
-  // The three that matter: the inbox (next to the profile, below), chat, and
-  // goals. Whiteboard was a chat wearing another name; Q&A was superseded.
+  // top-level places live here. Connections/Team are secondary — they sit in
+  // the account dropdown until their pages merge under Workspaces/Settings.
+  // Three things: the inbox (beside the profile, below), chat, goals. Anything
+  // else belongs in the account menu, not the bar.
   const navigation = [
     { name: 'Chat', href: '/chat', icon: MessageSquare },
     { name: 'Goals', href: '/dashboard/goals', icon: Target },
-    { name: 'Workspaces', href: '/dashboard/workspaces', icon: Building2 },
-    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
   ];
   const secondary = [
+    { name: 'Workspaces', href: '/dashboard/workspaces', icon: Building2 },
+    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
     { name: 'Connections', href: '/dashboard/connections', icon: Link2 },
     ...(canInviteUsers ? [{ name: 'Team', href: '/dashboard/team', icon: Users }] : []),
   ];
