@@ -907,7 +907,7 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
                     )
                 else:
                     cur.execute(
-                        "UPDATE platform_users SET org_id = %s, role = %s, is_active = true, "
+                        "UPDATE platform_users SET org_id = %s, role = %s, is_active = true, email_verified = true, "
                         "auth_provider = 'linkedtrust', auth_provider_id = %s, "
                         "last_login_at = NOW(), updated_at = NOW() WHERE user_id = %s "
                         "RETURNING user_id, org_id, email, role",
@@ -941,7 +941,7 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
                 # No invite: the standard gate (approval required for new identities).
                 if user is not None:
                     cur.execute(
-                        "UPDATE platform_users SET auth_provider = 'linkedtrust', auth_provider_id = %s WHERE user_id = %s",
+                        "UPDATE platform_users SET auth_provider = 'linkedtrust', auth_provider_id = %s, email_verified = true, last_login_at = NOW() WHERE user_id = %s",
                         (ident.sub, user["user_id"]),
                     )
 
