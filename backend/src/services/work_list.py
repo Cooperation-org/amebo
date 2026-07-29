@@ -318,11 +318,18 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
     today = today or date.today()
     live: List[Item] = []
     past: List[Item] = []
+    skipped_blocked: List[str] = []
     for story in stories:
         if (story.get("status_extra_info") or {}).get("is_closed"):
             continue
         slug = store.project_slug_of(story)
         if not slug:
+            continue
+        # Taiga refuses every write to a blocked board (an iceboxed project),
+        # so nothing here can be acted on. A row you cannot act on does not
+        # belong in a list of what needs you.
+        if getattr(store, "project_blocked", None) and store.project_blocked(slug):
+            skipped_blocked.append(slug)
             continue
         comment = None
         try:
@@ -332,6 +339,10 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
         item = build_item(story, project_slug=slug, taiga_host=taiga_host,
                           today=today, comment=comment)
         (past if item.past else live).append(item)
+    if skipped_blocked:
+        # Never a silent drop: say what was left out and why.
+        logger.info("work_list: %d stories skipped on blocked boards (%s)",
+                    len(skipped_blocked), ", ".join(sorted(set(skipped_blocked))))
     live.sort(key=lambda i: (-i.rank, i.title))
     past.sort(key=lambda i: (i.due or "", i.title))
     return WorkList(live=live, past=past)

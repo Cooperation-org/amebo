@@ -10,6 +10,10 @@ export function useWorkItem(subject: string | null) {
     queryFn: () => apiClient.getWorkItem(subject as string),
     enabled: !!subject,
     staleTime: 15 * 1000,
+    // A refetch while the sheet is open used to overwrite unsaved words. The
+    // fields also guard themselves, but not re-fetching under someone's hands
+    // is the simpler half of the fix.
+    refetchOnWindowFocus: false,
   });
 }
 

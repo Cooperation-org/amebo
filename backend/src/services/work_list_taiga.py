@@ -30,6 +30,7 @@ class TaigaStoryStore:
         self._client = client or TaigaClient()
         self._projects: Dict[str, Optional[int]] = {}
         self._slugs: Dict[int, Optional[str]] = {}
+        self._blocked: Dict[str, bool] = {}
         self.host = (host or os.getenv("TAIGA_UI_URL")
                      or os.getenv("TAIGA_URL", "https://taiga.linkedtrust.us")).rstrip("/")
 
@@ -39,7 +40,11 @@ class TaigaStoryStore:
         by_slug and the id is reused for every story in the same project."""
         if slug in self._projects:
             return self._projects[slug]
-        project = self._client._get(f"/api/v1/projects/by_slug?slug={slug}")
+        try:
+            project = self._client._get(f"/api/v1/projects/by_slug?slug={slug}")
+        except Exception as exc:  # noqa: BLE001 - unknown slug is a 404, not a crash
+            logger.debug("work_list: no project %r: %s", slug, exc)
+            project = None
         pid = (project or {}).get("id")
         self._projects[slug] = pid
         return pid
@@ -99,6 +104,24 @@ class TaigaStoryStore:
         self._slugs[pid] = slug
         self._projects[slug] = pid
         return slug
+
+    def project_blocked(self, project_slug: str) -> bool:
+        """True when Taiga has the whole board blocked (``blocked_code``, e.g.
+        an iceboxed project). Taiga refuses every write to such a board, so its
+        stories cannot be acted on at all — which is why they do not belong in a
+        list of what needs a person.
+        """
+        if project_slug in self._blocked:
+            return self._blocked[project_slug]
+        try:
+            project = self._client._get(
+                f"/api/v1/projects/by_slug?slug={project_slug}") or {}
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("work_list: cannot read project %r: %s", project_slug, exc)
+            project = {}
+        blocked = bool(project.get("blocked_code") or project.get("is_blocked"))
+        self._blocked[project_slug] = blocked
+        return blocked
 
     def members(self, project_slug: str) -> List[Dict[str, Any]]:
         """Who can be assigned on this board, so the assignee control offers the

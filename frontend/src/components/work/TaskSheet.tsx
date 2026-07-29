@@ -23,13 +23,21 @@ import { useEditWorkItem, useWorkItem } from '@/src/hooks/useWorkItem';
  * worse than a link out. Esc closes.
  */
 
-/** Saves on blur, only when the value actually changed. */
+/**
+ * Saves on blur, only when the value actually changed.
+ *
+ * Your words are never thrown away. Once edited, the field stops accepting
+ * server values over the top of what you typed — a background refetch used to
+ * overwrite unsaved text, so a failed save lost the words entirely. The draft
+ * is released only after a save the server accepted.
+ */
 function Field({
   label,
   value,
   multiline,
   big,
   onSave,
+  saveFailed,
   hint,
 }: {
   label: string;
@@ -37,10 +45,21 @@ function Field({
   multiline?: boolean;
   big?: boolean;
   onSave: (v: string) => void;
+  saveFailed?: boolean;
   hint?: string;
 }) {
   const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
+  const [dirty, setDirty] = useState(false);
+
+  useEffect(() => {
+    // Never clobber unsaved words with a value that arrived from the server.
+    if (!dirty) setDraft(value);
+  }, [value, dirty]);
+
+  // The save landed: the server's value and the draft agree, so let go.
+  useEffect(() => {
+    if (dirty && value === draft) setDirty(false);
+  }, [value, draft, dirty]);
 
   const commit = () => {
     if (draft !== value) onSave(draft);
@@ -54,11 +73,16 @@ function Field({
       <span className="mb-1.5 block text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
         {label}
         {hint && <span className="ml-1.5 font-medium normal-case tracking-normal text-emerald-700">{hint}</span>}
+        {dirty && (
+          <span className="ml-1.5 font-medium normal-case tracking-normal text-amber-700">
+            {saveFailed ? 'not saved — your words are still here' : 'unsaved'}
+          </span>
+        )}
       </span>
       {multiline ? (
         <textarea
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => { setDraft(e.target.value); setDirty(true); }}
           onBlur={commit}
           rows={9}
           className={shared}
@@ -66,7 +90,7 @@ function Field({
       ) : (
         <input
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => { setDraft(e.target.value); setDirty(true); }}
           onBlur={commit}
           className={big ? `${shared} text-lg font-semibold` : shared}
         />
@@ -197,6 +221,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                 label="Title"
                 value={data.title}
                 big
+                saveFailed={edit.isError}
                 onSave={(v) => apply({ subject, title: v })}
               />
 
@@ -204,6 +229,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                 label="Description"
                 value={data.description ?? ''}
                 multiline
+                saveFailed={edit.isError}
                 onSave={(v) => apply({ subject, description: v })}
               />
 
@@ -367,8 +393,12 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
               </div>
 
               {edit.isError && (
-                <p className="text-xs text-red-700">
-                  Taiga refused that change. Nothing was saved.
+                <p className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-900">
+                  {String((edit.error as Error)?.message ?? '').includes('Blocked element')
+                    ? 'This board is iceboxed in Taiga, so Taiga refuses every edit to it. Un-icebox the project there, then press Save.'
+                    : String((edit.error as Error)?.message ?? 'That change did not save.')}
+                  <br />
+                  Nothing you typed was lost.
                 </p>
               )}
             </div>
