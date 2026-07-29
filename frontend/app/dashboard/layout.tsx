@@ -36,7 +36,7 @@ export default function DashboardLayout({
   // Three things: the inbox (beside the profile, below), chat, goals. Anything
   // else belongs in the account menu, not the bar.
   const navigation = [
-    { name: 'Chat', href: '/chat', icon: MessageSquare },
+    { name: 'Team chat', href: '/chat', icon: MessageSquare },
     { name: 'Goals', href: '/dashboard/goals', icon: Target },
   ];
   const secondary = [
