@@ -13,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { User, Settings, LogOut, MessageSquare, Building2, Users, Menu, X, Link2, Inbox, PenLine } from 'lucide-react';
+import { User, Settings, LogOut, MessageSquare, Building2, Users, Menu, X, Link2, Inbox, Target } from 'lucide-react';
 import { usePermissions } from '@/src/hooks/usePermissions';
 import { useWorkList } from '@/src/hooks/useWorkList';
 
@@ -33,14 +33,15 @@ export default function DashboardLayout({
   // Thin fixed chrome (docs/DASHBOARD.md): wordmark = home; only the few
   // top-level places live here. Q&A/Connections/Team are secondary — they sit
   // in the account dropdown until their pages merge under Workspaces/Settings.
+  // The three that matter: the inbox (next to the profile, below), chat, and
+  // goals. Whiteboard was a chat wearing another name; Q&A was superseded.
   const navigation = [
     { name: 'Chat', href: '/chat', icon: MessageSquare },
-    { name: 'Whiteboard', href: '/dashboard/whiteboard', icon: PenLine },
+    { name: 'Goals', href: '/dashboard/goals', icon: Target },
     { name: 'Workspaces', href: '/dashboard/workspaces', icon: Building2 },
     { name: 'Settings', href: '/dashboard/settings', icon: Settings },
   ];
   const secondary = [
-    { name: 'Q&A', href: '/dashboard/qa', icon: MessageSquare },
     { name: 'Connections', href: '/dashboard/connections', icon: Link2 },
     ...(canInviteUsers ? [{ name: 'Team', href: '/dashboard/team', icon: Users }] : []),
   ];

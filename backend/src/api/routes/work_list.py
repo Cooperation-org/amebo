@@ -136,7 +136,9 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user)):
     # list means they belong here, not nowhere.
     from src.db.repositories.goal_repo import GoalRepo
     try:
-        waiting = GoalRepo().list_for_org(org_id=org_id, status="waiting_user")
+        repo_g = GoalRepo()
+        waiting = (repo_g.list_for_org(org_id=org_id, status="waiting_user")
+                   + repo_g.list_for_org(org_id=org_id, status="pending"))
     except Exception as exc:  # noqa: BLE001
         logger.warning("work-list: goals unreadable for org %s: %s", org_id, exc)
         waiting = []
@@ -179,6 +181,9 @@ class CommentOut(BaseModel):
 
 class DetailOut(BaseModel):
     subject: str
+    # 'task' or 'goal' — the sheet shows different controls for each, because a
+    # goal has no board, no assignee and no due date to edit.
+    kind: str = "task"
     ref: int
     project: str
     title: str
@@ -191,6 +196,7 @@ class DetailOut(BaseModel):
     # The board's own statuses, in board order, so the dropdown matches Marten
     # instead of offering a list amebo invented.
     statuses: List[str] = []
+    trigger: Optional[str] = None
     # Who can be assigned on this board — a real list, not a free-text box that
     # fails silently on a typo.
     members: List[str] = []
@@ -208,12 +214,35 @@ def _guard(subject: str, org_id: int) -> tuple:
     return parsed
 
 
+def _goal_detail(goal_id: str, org_id: int) -> DetailOut:
+    from src.db.repositories.goal_repo import GoalRepo
+    goal = GoalRepo().get(goal_id)
+    if not goal or goal.get("org_id") != org_id:
+        raise HTTPException(status_code=404, detail="Not on your list")
+    return DetailOut(
+        subject=f"goal:{goal_id}",
+        kind="goal",
+        ref=0,
+        project="amebo",
+        title=goal.get("title") or "(untitled)",
+        description=goal.get("description"),
+        status=goal.get("status"),
+        url="",
+        comments=[],
+        # Only the transitions that mean something for a goal.
+        statuses=["pending", "paused", "completed"],
+        trigger=(goal.get("trigger_config") or {}).get("type"),
+    )
+
+
 @router.get("/detail", response_model=DetailOut)
 async def get_detail(subject: str,
                      client: Dict[str, Any] = Depends(get_service_or_user)):
     org_id = client.get("org_id")
     if not org_id:
         raise HTTPException(status_code=403, detail="No organization for this client")
+    if subject.startswith("goal:"):
+        return _goal_detail(subject.split(":", 1)[1], org_id)
     slug, ref = _guard(subject, org_id)
 
     store = TaigaStoryStore()
@@ -273,6 +302,10 @@ async def edit(body: EditIn,
     org_id = client.get("org_id")
     if not org_id:
         raise HTTPException(status_code=403, detail="No organization for this client")
+
+    if body.subject.startswith("goal:"):
+        return _edit_goal(body, org_id)
+
     slug, ref = _guard(body.subject, org_id)
 
     base = {"org_id": org_id, "project": slug, "ref": ref}
@@ -323,6 +356,36 @@ async def edit(body: EditIn,
     if any(a in applied for a in ("close", "archive", "delete", "due_date")):
         _stand_down(repo=PendingActionRepo(), org_id=org_id, subject=body.subject,
                     approver=str(client.get("user") or "list"))
+
+    if not applied:
+        raise HTTPException(status_code=400, detail="Nothing to change")
+    return EditOut(applied=applied)
+
+
+def _edit_goal(body: "EditIn", org_id: int) -> "EditOut":
+    """Update or cancel a goal. Delete is a real delete: a cancelled goal that
+    lingers is just noise on the list."""
+    from src.db.repositories.goal_repo import GoalRepo
+    repo = GoalRepo()
+    goal_id = body.subject.split(":", 1)[1]
+    goal = repo.get(goal_id)
+    if not goal or goal.get("org_id") != org_id:
+        raise HTTPException(status_code=404, detail="Not on your list")
+
+    applied: List[str] = []
+    if body.delete:
+        repo.delete(goal_id, org_id)
+        return EditOut(applied=["delete"])
+
+    if body.title is not None or body.description is not None:
+        if repo.update_text(goal_id, org_id, title=body.title,
+                            description=body.description):
+            applied.append("text")
+    # 'archive' and 'close' both mean "stop working this" for a goal.
+    status = body.status or ("completed" if (body.close or body.archive) else None)
+    if status:
+        repo.set_status(goal_id, status, completed=(status == "completed"))
+        applied.append(status)
 
     if not applied:
         raise HTTPException(status_code=400, detail="Nothing to change")

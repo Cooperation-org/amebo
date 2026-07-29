@@ -201,6 +201,42 @@ class GoalRepo:
 
     # --------------------------------------------------------------- Deletion
 
+    def update_text(self, goal_id: str, org_id: int, *,
+                    title: Optional[str] = None,
+                    description: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """Edit a goal's own words. Org-scoped in the UPDATE itself, so a goal
+        belonging to another org simply does not match."""
+        sets, params = [], []
+        if title is not None:
+            sets.append("title = %s")
+            params.append(title)
+        if description is not None:
+            sets.append("description = %s")
+            params.append(description)
+        if not sets:
+            return None
+        params.extend([goal_id, org_id])
+
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                cur.execute(
+                    f"""
+                    UPDATE goals SET {", ".join(sets)}, updated_at = NOW()
+                    WHERE id = %s AND org_id = %s
+                    RETURNING *
+                    """,
+                    params,
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return dict(row) if row else None
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            DatabaseConnection.return_connection(conn)
+
     def delete(self, goal_id: str, org_id: int) -> bool:
         """Hard-delete a goal. Returns True if a row was deleted, False if
         the goal id was unknown or belonged to a different org. The

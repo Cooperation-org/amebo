@@ -264,13 +264,23 @@ def items_from_goals(goals: Sequence[Dict[str, Any]]) -> List[Item]:
         title = (goal.get("title") or "").strip() or "(untitled)"
         text = goal.get("description") or ""
         links = [Link(_short(u), u) for u in _URL_RE.findall(text)]
+        waiting = goal.get("status") == "waiting_user"
+        # A question already asked of this person outranks a goal that is merely
+        # queued, and a queued goal with no trigger can never fire on its own,
+        # which is worth saying on the row rather than leaving it to look idle.
+        if waiting:
+            reason = Reason("waiting on you", "judgement")
+        elif not (goal.get("trigger_config") or {}).get("type"):
+            reason = Reason("no trigger", "judgement")
+        else:
+            reason = Reason("queued", "judgement")
         items.append(Item(
             subject=f"goal:{goal.get('id')}",
             title=title,
-            reason=Reason("waiting on you", "judgement"),
+            reason=reason,
             # Above every other judged item: it is a question already asked of
             # this person, so nothing else judged should sit on top of it.
-            rank=JUDGED_CEILING,
+            rank=JUDGED_CEILING if waiting else JUDGED_CEILING - 100,
             links=links,
             quote=None,
             due=None,

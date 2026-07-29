@@ -588,6 +588,8 @@ export interface Goal {
     kind?: string;
     [key: string]: unknown;
   } | null;
+  /** How this goal fires: cron, event, manual — or absent, meaning it cannot. */
+  trigger_config?: { type?: string; expression?: string } | null;
   created_at: string;
   updated_at: string;
 }
