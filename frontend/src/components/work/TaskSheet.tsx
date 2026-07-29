@@ -161,7 +161,7 @@ function Later({ onPick }: { onPick: (isoDate: string) => void }) {
 }
 
 export function TaskSheet({ subject, onClose }: { subject: string; onClose: () => void }) {
-  const { data, isLoading } = useWorkItem(subject);
+  const { data, isLoading, isError, error } = useWorkItem(subject);
   const edit = useEditWorkItem();
   const [comment, setComment] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -212,7 +212,21 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
           </button>
         </div>
 
-        {isLoading || !data ? (
+        {isError || (!isLoading && !data) ? (
+          // Never a blank sheet: if it cannot load, say why and leave a way out.
+          <div className="p-6 text-sm">
+            <p className="text-red-800">
+              {String((error as Error)?.message ?? "This didn't open.")}
+            </p>
+            <button
+              type="button"
+              onClick={onClose}
+              className="mt-3 rounded-md border px-3 py-1.5 text-sm hover:bg-gray-50"
+            >
+              Close
+            </button>
+          </div>
+        ) : isLoading || !data ? (
           <div className="p-6 text-sm text-gray-400">…</div>
         ) : (
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-y-auto md:grid-cols-[1fr_300px]">

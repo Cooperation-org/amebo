@@ -203,14 +203,26 @@ class DetailOut(BaseModel):
 
 
 def _guard(subject: str, org_id: int) -> tuple:
-    """A subject may only be touched if it is on this org's own list. Without
-    this the project slug would be caller-supplied, and on a deployment where one
-    Taiga token reaches several boards that is the whole authorization story."""
+    """A subject may only be touched if it is something this org's list can
+    actually contain.
+
+    The project slug is caller-supplied, so this is the authorization boundary:
+    the board must be one amebo is a member of, and not blocked. It used to
+    require a pending draft instead, which was right when drafts were the only
+    source and wrong the moment the list started reading the boards directly —
+    every row that had no draft 404'd here and opened onto nothing.
+    """
     parsed = parse_subject(subject.replace("taiga:", "", 1))
     if not parsed:
         raise HTTPException(status_code=400, detail="Unreadable subject")
-    if subject not in {f"taiga:{s}" for s in subjects_for_org(PendingActionRepo(), org_id)}:
-        raise HTTPException(status_code=404, detail="Not on your list")
+    slug, _ref = parsed
+
+    store = TaigaStoryStore()
+    if not store.project_id(slug):
+        raise HTTPException(status_code=404, detail="No such board")
+    if store.project_blocked(slug):
+        raise HTTPException(status_code=409,
+                            detail="That board is blocked in Taiga")
     return parsed
 
 
