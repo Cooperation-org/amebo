@@ -116,15 +116,10 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   checkAuth: async () => {
     set({ isLoading: true });
     
-    // Check if we have a valid token
-    if (!TokenManager.isTokenValid()) {
-      set({ 
-        user: null, 
-        isAuthenticated: false, 
-        isLoading: false 
-      });
-      return;
-    }
+    // No token in localStorage does NOT mean signed out. A sign-in that
+    // carried a ?next= leaves the session in an HttpOnly cookie and nothing
+    // in localStorage, and the refresh cookie can mint a new access token on
+    // its own. Ask the server before concluding anything.
     
     try {
       const user = await apiClient.getCurrentUser() as User;

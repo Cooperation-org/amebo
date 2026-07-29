@@ -14,14 +14,17 @@ class ApiClient {
     if (this.refreshing) return this.refreshing;
 
     this.refreshing = (async () => {
+      // No local refresh token is not the end: the path-scoped HttpOnly
+      // refresh cookie can renew the session on its own, which is the only
+      // credential a ?next= sign-in leaves behind.
       const refreshToken = TokenManager.getRefreshToken();
-      if (!refreshToken) return false;
 
       try {
         const response = await fetch(`${this.baseURL}/api/auth/refresh`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_token: refreshToken }),
+          credentials: 'include',
+          body: JSON.stringify(refreshToken ? { refresh_token: refreshToken } : {}),
         });
 
         if (!response.ok) return false;
@@ -61,6 +64,10 @@ class ApiClient {
         ...options.headers,
       },
       mode: 'cors',
+      // The session also lives in an HttpOnly cookie. Sign-ins that carry a
+      // ?next= hand back cookies only and no fragment tokens, so without this
+      // the app has no credential at all and calls a live session signed out.
+      credentials: 'include',
       redirect: 'follow',
       ...options,
     };
@@ -86,8 +93,11 @@ class ApiClient {
       }
 
       const errorData = await response.json().catch(() => ({ message: 'Authentication required' }));
+      // Only now is the session really gone: the retry after a refresh also
+      // came back 401. Clearing on the first 401 threw away a valid refresh
+      // token and forced a fresh sign-in.
       TokenManager.clearTokens();
-      if (typeof window !== 'undefined') {
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
         window.location.href = '/login';
       }
       throw new Error(errorData.message || 'Request failed');
