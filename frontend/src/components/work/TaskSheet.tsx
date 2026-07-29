@@ -296,6 +296,25 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                   ))}
                 </select>
               </label>
+              {data.kind === 'goal' && (
+                <label className="block">
+                  <span className="mb-1.5 block text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
+                    Schedule
+                  </span>
+                  {/* Visible, therefore changeable. A goal with no schedule is
+                      one-shot; a cron keeps returning until it is done. */}
+                  <select
+                    value={data.trigger ?? ''}
+                    onChange={(e) => apply({ subject, trigger: e.target.value })}
+                    className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 hover:border-gray-300 focus:border-emerald-600 focus:outline-none"
+                  >
+                    <option value="">once, then retire</option>
+                    <option value="cron">daily until done</option>
+                    <option value="manual">only when I say</option>
+                  </select>
+                </label>
+              )}
+
               <label className="block">
                 <span className="mb-1.5 block text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
                   Assignee

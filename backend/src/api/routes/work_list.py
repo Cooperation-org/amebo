@@ -271,6 +271,8 @@ async def get_detail(subject: str,
 
 class EditIn(BaseModel):
     subject: str
+    # Goals only: '' one-shot, 'cron' daily until done, 'manual' on request.
+    trigger: Optional[str] = None
     # The story's own title. Named apart from `subject` (the item URI) so the
     # two are never confused on the wire.
     title: Optional[str] = None
@@ -381,6 +383,15 @@ def _edit_goal(body: "EditIn", org_id: int) -> "EditOut":
         if repo.update_text(goal_id, org_id, title=body.title,
                             description=body.description):
             applied.append("text")
+
+    if body.trigger is not None:
+        # A cron goal keeps returning until something says it is done; an empty
+        # trigger means one-shot. Both are the human's call to make here.
+        trigger = ({"type": "cron", "expression": "0 9 * * *"} if body.trigger == "cron"
+                   else {"type": "manual"} if body.trigger == "manual"
+                   else None)
+        repo.set_trigger(goal_id, org_id, trigger)
+        applied.append("schedule")
     # 'archive' and 'close' both mean "stop working this" for a goal.
     status = body.status or ("completed" if (body.close or body.archive) else None)
     if status:

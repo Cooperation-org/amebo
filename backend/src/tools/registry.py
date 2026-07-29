@@ -939,7 +939,9 @@ register_tool(Tool(
     category="skills",
 ))
 
-from src.tools.goal_tools import ask_user_impl, ASK_USER_SCHEMA  # noqa: E402
+from src.tools.goal_tools import (  # noqa: E402
+    ask_user_impl, ASK_USER_SCHEMA, goal_done_impl, GOAL_DONE_SCHEMA,
+)
 
 register_tool(Tool(
     name="ask_user",
@@ -950,6 +952,20 @@ register_tool(Tool(
     ),
     input_schema=ASK_USER_SCHEMA,
     execute=ask_user_impl,
+    is_read_only=True,
+    category="goals",
+))
+
+register_tool(Tool(
+    name="goal_done",
+    description=(
+        "While pursuing a GOAL, declare the goal's aim MET so it retires instead "
+        "of coming back on its schedule. Call this only when the target criteria "
+        "are actually satisfied — finishing a dispatch is not the same thing. If "
+        "there is more to do, say nothing and the goal returns on its next run."
+    ),
+    input_schema=GOAL_DONE_SCHEMA,
+    execute=goal_done_impl,
     is_read_only=True,
     category="goals",
 ))

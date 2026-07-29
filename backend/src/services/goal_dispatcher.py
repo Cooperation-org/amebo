@@ -283,10 +283,16 @@ class GoalDispatcher:
                 tool_rounds=len(tool_calls), tool_calls=tool_calls,
             )
 
-        # Finish the cycle, then notify. Recurring (cron) goals re-arm to
-        # pending so the scheduler runs them again on the next cron edge;
-        # one-shot goals complete terminally.
-        if _is_recurring(goal):
+        # Finish the cycle, then notify.
+        #
+        # A dispatch ending is not the goal being achieved. A recurring goal
+        # therefore keeps coming back on its cron until something says the aim
+        # is met — the claw calling goal_done, or a person marking it done from
+        # the list. Both land as 'completed', so if the goal already retired
+        # during this dispatch, leave it retired instead of re-arming it.
+        if self._engine.get(goal_id).get("status") == "completed":
+            pass
+        elif _is_recurring(goal):
             self._engine.rearm(goal_id, summary=summary)
         else:
             self._engine.complete(goal_id, summary=summary)

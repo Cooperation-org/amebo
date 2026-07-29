@@ -249,6 +249,31 @@ class GoalRepo:
         finally:
             DatabaseConnection.return_connection(conn)
 
+    def set_trigger(self, goal_id: str, org_id: int,
+                    trigger_config: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        """Change how a goal fires. None means one-shot: it runs once and
+        retires. Org-scoped in the UPDATE itself."""
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    UPDATE goals SET trigger_config = %s, updated_at = NOW()
+                    WHERE id = %s AND org_id = %s
+                    RETURNING *
+                    """,
+                    (extras.Json(trigger_config) if trigger_config is not None else None,
+                     goal_id, org_id),
+                )
+                row = cur.fetchone()
+                conn.commit()
+                return dict(row) if row else None
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            DatabaseConnection.return_connection(conn)
+
     def delete(self, goal_id: str, org_id: int) -> bool:
         """Hard-delete a goal. Returns True if a row was deleted, False if
         the goal id was unknown or belonged to a different org. The

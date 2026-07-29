@@ -553,6 +553,8 @@ export interface WorkItemDetail {
   due?: string | null;
   assignee?: string | null;
   url: string;
+  kind?: string;
+  trigger?: string | null;
   comments: WorkComment[];
   /** The board's own statuses, in board order — same list Marten shows. */
   statuses: string[];
@@ -562,6 +564,8 @@ export interface WorkItemDetail {
 
 export interface WorkEdit {
   subject: string;
+  /** Goals only: '' one-shot, 'cron' daily until done, 'manual' on request. */
+  trigger?: string;
   /** The story's own title (kept apart from `subject`, the item URI). */
   title?: string;
   assignee?: string;
