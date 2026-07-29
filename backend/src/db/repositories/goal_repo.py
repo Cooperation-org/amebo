@@ -27,6 +27,13 @@ logger = logging.getLogger(__name__)
 
 
 VALID_STATUSES = {"pending", "active", "completed", "failed", "paused", "waiting_user"}
+
+# A goal with no trigger can never fire: nothing schedules it and it sits in
+# 'pending' forever looking like work in progress. Default to a daily tick at
+# 09:00, the same hour the follow-up claw already runs, so a goal created
+# without a stated schedule still gets looked at. Pass an explicit
+# {"type": "manual"} for one that should wait for a person.
+DEFAULT_TRIGGER = {"type": "cron", "expression": "0 9 * * *"}
 VALID_ACTOR_TYPES = {"user", "claw", "system"}
 
 
@@ -74,7 +81,7 @@ class GoalRepo:
                         title,
                         description,
                         extras.Json(target_criteria) if target_criteria is not None else None,
-                        extras.Json(trigger_config) if trigger_config is not None else None,
+                        extras.Json(trigger_config if trigger_config else DEFAULT_TRIGGER),
                         notify_channel,
                         created_by_user_id,
                         assigned_to_user_id,
