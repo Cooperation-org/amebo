@@ -43,9 +43,14 @@ class GoalScheduler:
         dispatcher: Optional[GoalDispatcher] = None,
         goal_repo: Optional[GoalRepo] = None,
         tick_seconds: int = DEFAULT_TICK_SECONDS,
+        org_ids: Optional[List[int]] = None,
     ):
         self._dispatcher = dispatcher or GoalDispatcher()
         self._goal_repo = goal_repo or GoalRepo()
+        # Narrow the pass to specific orgs. Production leaves this None and
+        # sweeps every enabled org; a test scopes itself to the org it created,
+        # so a tick cannot pick up whatever else happens to be in the database.
+        self._org_ids = org_ids
         self._tick_seconds = tick_seconds
         self._task: Optional[asyncio.Task] = None
         self._stopped = asyncio.Event()
@@ -109,6 +114,8 @@ class GoalScheduler:
         dispatched = 0
 
         for org_id in self._enabled_org_ids():
+            if self._org_ids is not None and org_id not in self._org_ids:
+                continue
             # Pending goals fire on their trigger. Active goals are normally
             # being worked on right now — but if they were blocked on a
             # credential and have since been unblocked (e.g. OAuth callback

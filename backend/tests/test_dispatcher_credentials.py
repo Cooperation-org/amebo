@@ -154,7 +154,8 @@ class TestSchedulerSkipsBlocked:
         # records calls. The blocked goal must NOT be dispatched.
         from unittest.mock import MagicMock
         next_dispatcher = MagicMock()
-        scheduler = GoalScheduler(dispatcher=next_dispatcher)
+        scheduler = GoalScheduler(dispatcher=next_dispatcher,
+                                  org_ids=[org_with_enabled_instance])
 
         scheduler.tick()
         next_dispatcher.dispatch.assert_not_called()
@@ -177,7 +178,8 @@ class TestSchedulerSkipsBlocked:
         next_dispatcher.dispatch.return_value = DispatchResult(
             goal_id=g["id"], status="completed", summary="ok",
         )
-        scheduler = GoalScheduler(dispatcher=next_dispatcher)
+        scheduler = GoalScheduler(dispatcher=next_dispatcher,
+                                  org_ids=[org_with_enabled_instance])
 
         scheduler.tick()
         next_dispatcher.dispatch.assert_called_once_with(g["id"])

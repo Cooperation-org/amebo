@@ -166,17 +166,11 @@ class TestTick:
     def test_tick_dispatches_pending_goal_for_enabled_org(
         self, engine, org_with_enabled_instance,
     ):
-        # A goal created with no stated schedule now gets the default daily
-        # cron, so an "fires as soon as it is seen" goal has to say so.
-        # A goal created with no stated schedule now gets the default daily
-        # cron, so a test about firing has to state its own schedule and tick
-        # after a cron edge has passed.
-        g = engine.create_goal(org_with_enabled_instance, "auto goal",
-                               trigger_config={"type": "cron", "expression": "* * * * *"})
+        g = engine.create_goal(org_with_enabled_instance, "auto goal")
         dispatcher = _make_dispatcher_mock()
-        scheduler = GoalScheduler(dispatcher=dispatcher)
+        scheduler = GoalScheduler(dispatcher=dispatcher, org_ids=[org_with_enabled_instance])
 
-        count = scheduler.tick(now=datetime.now(timezone.utc) + timedelta(minutes=2))
+        count = scheduler.tick()
 
         assert count == 1
         dispatcher.dispatch.assert_called_once_with(g["id"])
@@ -186,7 +180,7 @@ class TestTick:
     ):
         engine.create_goal(org_with_disabled_instance, "should be ignored")
         dispatcher = _make_dispatcher_mock()
-        scheduler = GoalScheduler(dispatcher=dispatcher)
+        scheduler = GoalScheduler(dispatcher=dispatcher, org_ids=[org_with_enabled_instance])
 
         count = scheduler.tick()
 
@@ -199,7 +193,7 @@ class TestTick:
             trigger_config={"type": "manual"},
         )
         dispatcher = _make_dispatcher_mock()
-        scheduler = GoalScheduler(dispatcher=dispatcher)
+        scheduler = GoalScheduler(dispatcher=dispatcher, org_ids=[org_with_disabled_instance])
 
         count = scheduler.tick()
         assert count == 0
@@ -208,14 +202,13 @@ class TestTick:
     def test_tick_swallows_dispatcher_errors(
         self, engine, org_with_enabled_instance,
     ):
-        engine.create_goal(org_with_enabled_instance, "boom",
-                           trigger_config={"type": "cron", "expression": "* * * * *"})
+        engine.create_goal(org_with_enabled_instance, "boom")
 
         dispatcher = MagicMock()
         dispatcher.dispatch.side_effect = RuntimeError("boom")
-        scheduler = GoalScheduler(dispatcher=dispatcher)
+        scheduler = GoalScheduler(dispatcher=dispatcher, org_ids=[org_with_enabled_instance])
 
         # Tick should not raise; the failed goal is not counted as dispatched.
-        count = scheduler.tick(now=datetime.now(timezone.utc) + timedelta(minutes=2))
+        count = scheduler.tick()
         assert count == 0
         dispatcher.dispatch.assert_called_once()
