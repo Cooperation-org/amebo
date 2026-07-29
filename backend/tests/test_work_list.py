@@ -3,8 +3,9 @@
 from datetime import date
 
 from src.services.work_list import (
-    Link, assemble, build_item, clock_rank, clock_reason, judged_rank,
-    links_from_story, parse_subject, JUDGED_CEILING, CLOCK_FLOOR,
+    Link, assemble, build_item, clock_rank, clock_reason, items_from_drafts,
+    items_from_goals, judged_rank, links_from_story, parse_subject,
+    JUDGED_CEILING, CLOCK_FLOOR,
 )
 
 HOST = "https://taiga.example.org"
@@ -156,3 +157,31 @@ def test_unparseable_subject_is_skipped():
     assert parse_subject("nonsense") is None
     assert parse_subject("biz#notanumber") is None
     assert parse_subject("biz#34") == ("biz", 34)
+
+
+# --------------------------------------------------------------- many sources
+
+def test_a_draft_about_a_listed_task_is_not_a_second_row():
+    """The task is the thing; the message about the task is not another item."""
+    drafts = [{"id": "d1", "payload": {"followup_task": "biz#34", "text": "ping"}}]
+    assert items_from_drafts(drafts, already=["taiga:biz#34"]) == []
+
+
+def test_a_standalone_draft_survives_and_keeps_its_links():
+    drafts = [{"id": "d2", "payload": {
+        "text": "Send to Vineeth: offer stands, see https://linkedtrust.us/bare-metal"}}]
+    [item] = items_from_drafts(drafts, already=["taiga:biz#34"])
+    assert item.subject == "draft:d2"
+    assert item.links[0].url == "https://linkedtrust.us/bare-metal"
+
+
+def test_questions_and_drafts_rank_above_other_judged_but_under_any_date():
+    goal = items_from_goals([{"id": "g1", "title": "RTV Mexico?"}])[0]
+    dated = clock_rank("2027-12-31", TODAY)
+    owned = judged_rank(story(assigned_to=7, description="x"))
+    assert owned < goal.rank <= JUDGED_CEILING < dated
+
+
+def test_a_goal_with_no_title_still_shows_something():
+    [item] = items_from_goals([{"id": "g2", "title": "  "}])
+    assert item.title == "(untitled)"

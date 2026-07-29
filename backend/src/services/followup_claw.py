@@ -75,6 +75,22 @@ class TaigaClient:
             body = resp.read()
         return json.loads(body) if body else None
 
+    def _get_paged(self, path: str):
+        """Body plus Taiga's true total from x-pagination-count, so callers can
+        tell a short page from the end of the data."""
+        if not self._token:
+            self._login()
+        req = urllib.request.Request(
+            self.host + path, headers={"Authorization": f"Bearer {self._token}"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = json.loads(resp.read())
+            raw = resp.headers.get("x-pagination-count")
+        try:
+            total = int(raw) if raw else 0
+        except ValueError:
+            total = 0
+        return body, total
+
     def open_stories(self, project_id: int) -> List[Dict]:
         """Open (not closed) user stories for a project."""
         return self._get(f"/api/v1/userstories?project={project_id}&status__is_closed=false")

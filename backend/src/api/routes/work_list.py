@@ -37,7 +37,7 @@ from pydantic import BaseModel
 from src.api.middleware.auth import get_service_or_user
 from src.db.repositories.pending_action_repo import PendingActionRepo
 from src.services.work_list import (
-    Item, assemble, items_from_goals, parse_subject,
+    Item, assemble_stories, items_from_drafts, items_from_goals, parse_subject,
 )
 from src.services.work_list_taiga import TaigaStoryStore
 from src.tools.gated_actuators import (
@@ -132,9 +132,6 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user)):
     if not org_id:
         raise HTTPException(status_code=403, detail="No organization for this client")
 
-    repo = PendingActionRepo()
-    subjects = subjects_for_org(repo, org_id)
-
     # Questions amebo is holding for this person. These had their own page; one
     # list means they belong here, not nowhere.
     from src.db.repositories.goal_repo import GoalRepo
@@ -146,15 +143,25 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user)):
     live: List[Item] = items_from_goals(waiting)
     past: List[Item] = []
 
-    if subjects:
-        store = TaigaStoryStore()
-        try:
-            result = assemble(subjects, store, taiga_host=store.host)
-            live.extend(result.live)
-            past = result.past
-        except Exception as exc:  # noqa: BLE001 - a Taiga outage must not empty
-            # the whole list; the goals half is still real work.
-            logger.warning("work-list: taiga half failed for org %s: %s", org_id, exc)
+    # Source 2: dated work on the boards.
+    store = TaigaStoryStore()
+    try:
+        result = assemble_stories(store.open_dated_stories(), store,
+                                  taiga_host=store.host)
+        live.extend(result.live)
+        past = result.past
+    except Exception as exc:  # noqa: BLE001 - one source failing must not empty
+        # the list; the others are still real work.
+        logger.warning("work-list: taiga source failed for org %s: %s", org_id, exc)
+
+    # Source 3: drafts the claw is holding that are not about a task already
+    # listed above.
+    try:
+        drafts = PendingActionRepo().list_for_org(org_id=org_id, status="pending")
+        live.extend(items_from_drafts(
+            drafts, already=[i.subject for i in live] + [i.subject for i in past]))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("work-list: drafts source failed for org %s: %s", org_id, exc)
 
     live.sort(key=lambda i: (-i.rank, i.title))
     return WorkListOut(live=[_out(i) for i in live],

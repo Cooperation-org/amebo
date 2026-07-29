@@ -219,6 +219,38 @@ def _is_past(due: str, today: date) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def items_from_drafts(actions: Sequence[Dict[str, Any]],
+                      already: Sequence[str] = ()) -> List[Item]:
+    """Gated drafts the claw is holding become items too.
+
+    A draft whose subject is already in the list as a story is dropped: the task
+    is the thing, and the message about the task is not a second row. What is
+    left is a draft that stands on its own — an email or a post amebo wants to
+    send as you — and that genuinely needs a decision.
+    """
+    seen = set(already)
+    items: List[Item] = []
+    for action in actions:
+        payload = action.get("payload") or {}
+        key = payload.get("followup_task")
+        if key and f"taiga:{key}" in seen:
+            continue
+        text = payload.get("text") or action.get("preview") or ""
+        links = [Link(_short(u), u) for u in _URL_RE.findall(text)]
+        items.append(Item(
+            subject=f"draft:{action.get('id')}",
+            title=(text.strip().splitlines() or [""])[0][:120] or "(empty draft)",
+            reason=Reason("waiting on you", "judgement"),
+            rank=JUDGED_CEILING,
+            links=links,
+            quote=None,
+            due=None,
+            assignee=None,
+            past=False,
+        ))
+    return items
+
+
 def items_from_goals(goals: Sequence[Dict[str, Any]]) -> List[Item]:
     """Goals waiting on a person become items too.
 
@@ -263,6 +295,36 @@ def parse_subject(key: str) -> Optional[tuple]:
         return slug, int(ref)
     except ValueError:
         return None
+
+
+def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
+                     taiga_host: str, today: Optional[date] = None) -> WorkList:
+    """Build the list straight from stories already in hand.
+
+    The list's real source: every open story with a due date. Sourcing only from
+    drafted deadline pings meant the list emptied out the moment those were
+    handled, which is not what "what needs you" means.
+    """
+    today = today or date.today()
+    live: List[Item] = []
+    past: List[Item] = []
+    for story in stories:
+        if (story.get("status_extra_info") or {}).get("is_closed"):
+            continue
+        slug = store.project_slug_of(story)
+        if not slug:
+            continue
+        comment = None
+        try:
+            comment = store.last_comment(story["id"])
+        except Exception as exc:                      # noqa: BLE001
+            logger.debug("work_list: no comments for %s: %s", story.get("id"), exc)
+        item = build_item(story, project_slug=slug, taiga_host=taiga_host,
+                          today=today, comment=comment)
+        (past if item.past else live).append(item)
+    live.sort(key=lambda i: (-i.rank, i.title))
+    past.sort(key=lambda i: (i.due or "", i.title))
+    return WorkList(live=live, past=past)
 
 
 def assemble(keys: Sequence[str], store: StoryStore, *, taiga_host: str,

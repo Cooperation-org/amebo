@@ -29,6 +29,7 @@ class TaigaStoryStore:
                  host: Optional[str] = None):
         self._client = client or TaigaClient()
         self._projects: Dict[str, Optional[int]] = {}
+        self._slugs: Dict[int, Optional[str]] = {}
         self.host = (host or os.getenv("TAIGA_UI_URL")
                      or os.getenv("TAIGA_URL", "https://taiga.linkedtrust.us")).rstrip("/")
 
@@ -61,6 +62,43 @@ class TaigaStoryStore:
         if not pid:
             return []
         return self._client._get(f"/api/v1/userstory-statuses?project={pid}") or []
+
+    def open_dated_stories(self, page_size: int = 200) -> List[Dict[str, Any]]:
+        """Every open story with a due date, across the boards amebo can see.
+
+        This is the list's real source. Sourcing only from drafted deadline
+        pings meant the list emptied out the moment those were dealt with, which
+        is not what "what needs you" means.
+
+        Taiga paginates at 30 by default and reports the true total in
+        ``x-pagination-count``; ask for a bigger page and walk until the count is
+        met, so nothing is silently cut off at page one.
+        """
+        out: List[Dict[str, Any]] = []
+        page = 1
+        while True:
+            batch, total = self._client._get_paged(
+                f"/api/v1/userstories?status__is_closed=false"
+                f"&page_size={page_size}&page={page}")
+            out.extend(s for s in batch if s.get("due_date"))
+            if not batch or len(batch) < page_size or (total and page * page_size >= total):
+                break
+            page += 1
+        return out
+
+    def project_slug_of(self, story: Dict[str, Any]) -> Optional[str]:
+        """The slug for a story's project, cached, so building an item does not
+        cost one API call per row."""
+        pid = story.get("project")
+        if pid is None:
+            return None
+        if pid in self._slugs:
+            return self._slugs[pid]
+        project = self._client._get(f"/api/v1/projects/{pid}") or {}
+        slug = project.get("slug")
+        self._slugs[pid] = slug
+        self._projects[slug] = pid
+        return slug
 
     def members(self, project_slug: str) -> List[Dict[str, Any]]:
         """Who can be assigned on this board, so the assignee control offers the
