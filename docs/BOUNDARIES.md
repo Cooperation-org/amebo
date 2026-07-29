@@ -16,7 +16,7 @@ in a system of record that Amebo references but does not own.
 | The agentic loop (receive → think → act → emit) | Name-bindings / mind-map → **Abra** |
 | **Crystallizing**: distilling input to the smallest output that carries the meaning | Contacts → **CRM (Odoo)** |
 | In-flight conversation / thread state (decays; 24h GC) | Tasks, deadlines, status → **Taiga** |
-| In-flight goal-state and audit (`goal_events`) | Long-form initiatives / goal narratives → **projects git repo (markdown)** |
+| **Goals** — a first-class Amebo data model (`goals`: title, description, target criteria, trigger), plus their audit trail (`goal_events`). The goal is the record of what and why; the claw is that goal's trigger and execution. Goals live nowhere else — Abra has no goal role. | Long-form initiatives / goal narratives → **projects git repo (markdown)** |
 | Tool invocation and per-instance permission enforcement (`allowed_tools`) | Trust, attestations, access → **LinkedTrust** |
 | The draft / approval queue (pending outbound actions) | Semantic index → **pgvector via Abra** (rebuildable, never authoritative) |
 | | Coding → **Claude Code** invoked as a subagent in a bounded worktree |
