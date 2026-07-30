@@ -44,7 +44,7 @@ app = FastAPI(
 # Example: CORS_ORIGINS=http://localhost:3000,https://myapp.vercel.app
 # Cohort dash deployment (embeds fetching with credentials:'include' from the
 # dash — see PLAN-cohort-dash.md):
-#   CORS_ORIGINS=https://workers.vc,https://www.workers.vc,https://amebo.workers.vc
+#   CORS_ORIGINS=https://workers.vc,https://www.workers.vc,https://dash.workers.vc,https://amebo.workers.vc
 # allow_credentials is True (session cookie rides along), so this list is an
 # auth boundary: explicit origins only, never "*".
 DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://localhost:3001,https://demos.linkedtrust.us"
