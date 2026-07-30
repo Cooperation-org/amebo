@@ -251,6 +251,33 @@ def items_from_drafts(actions: Sequence[Dict[str, Any]],
     return items
 
 
+# How a goal names the task it is about, when it is about one: either the
+# written form the claws use ("Taiga story #4 in project some-slug") or a link
+# to the story in Taiga or Marten. Matching both means the tie survives however
+# the description was phrased.
+_GOAL_TASK_PHRASE_RE = re.compile(
+    r"taiga\s+story\s+#(\d+)\s+in\s+project\s+([a-z0-9][a-z0-9_-]*)", re.I)
+_GOAL_TASK_URL_RE = re.compile(
+    r"https?://[^\s\)>\]]*/project/([a-z0-9][a-z0-9_-]*)/us/(\d+)", re.I)
+
+
+def goal_task_ref(goal: Dict[str, Any]) -> Optional[tuple]:
+    """('slug', ref) when the goal's description names a Taiga story, else None.
+
+    A goal that names a story is not its own piece of work — it is amebo
+    holding that task. The list shows the task; acting on the task retires
+    the goal (see the work-list edit route).
+    """
+    text = f"{goal.get('title') or ''}\n{goal.get('description') or ''}"
+    m = _GOAL_TASK_PHRASE_RE.search(text)
+    if m:
+        return m.group(2), int(m.group(1))
+    m = _GOAL_TASK_URL_RE.search(text)
+    if m:
+        return m.group(1), int(m.group(2))
+    return None
+
+
 def items_from_goals(goals: Sequence[Dict[str, Any]]) -> List[Item]:
     """Goals waiting on a person become items too.
 

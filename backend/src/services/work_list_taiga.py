@@ -28,26 +28,28 @@ class TaigaStoryStore:
     def __init__(self, client: Optional[TaigaClient] = None,
                  host: Optional[str] = None):
         self._client = client or TaigaClient()
-        self._projects: Dict[str, Optional[int]] = {}
+        self._payloads: Dict[str, Optional[Dict[str, Any]]] = {}
         self._slugs: Dict[int, Optional[str]] = {}
-        self._blocked: Dict[str, bool] = {}
         self.host = (host or os.getenv("TAIGA_UI_URL")
                      or os.getenv("TAIGA_URL", "https://taiga.linkedtrust.us")).rstrip("/")
 
-    def project_id(self, slug: str) -> Optional[int]:
-        """Slug -> id, cached for the life of the request. Taiga's /resolve
-        endpoint is not available on this deployment, so the lookup goes through
-        by_slug and the id is reused for every story in the same project."""
-        if slug in self._projects:
-            return self._projects[slug]
+    def project(self, slug: str) -> Optional[Dict[str, Any]]:
+        """The project's full record, fetched once per store. by_slug carries the
+        id, blocked_code, us_statuses and members together, so the detail sheet
+        costs one project call instead of one per question asked of it. Taiga's
+        /resolve endpoint is not available on this deployment."""
+        if slug in self._payloads:
+            return self._payloads[slug]
         try:
-            project = self._client._get(f"/api/v1/projects/by_slug?slug={slug}")
+            payload = self._client._get(f"/api/v1/projects/by_slug?slug={slug}")
         except Exception as exc:  # noqa: BLE001 - unknown slug is a 404, not a crash
             logger.debug("work_list: no project %r: %s", slug, exc)
-            project = None
-        pid = (project or {}).get("id")
-        self._projects[slug] = pid
-        return pid
+            payload = None
+        self._payloads[slug] = payload
+        return payload
+
+    def project_id(self, slug: str) -> Optional[int]:
+        return (self.project(slug) or {}).get("id")
 
     def story(self, project_slug: str, ref: int) -> Optional[Dict[str, Any]]:
         """A ref is only unique within a project, so the project is part of the
@@ -63,10 +65,7 @@ class TaigaStoryStore:
     def statuses(self, project_slug: str) -> List[Dict[str, Any]]:
         """The project's own status names, in board order, so the dropdown shows
         what Marten shows rather than a list amebo made up."""
-        pid = self.project_id(project_slug)
-        if not pid:
-            return []
-        return self._client._get(f"/api/v1/userstory-statuses?project={pid}") or []
+        return (self.project(project_slug) or {}).get("us_statuses") or []
 
     def open_dated_stories(self, page_size: int = 200) -> List[Dict[str, Any]]:
         """Every open story with a due date, across the boards amebo can see.
@@ -102,7 +101,8 @@ class TaigaStoryStore:
         project = self._client._get(f"/api/v1/projects/{pid}") or {}
         slug = project.get("slug")
         self._slugs[pid] = slug
-        self._projects[slug] = pid
+        if slug:
+            self._payloads[slug] = project
         return slug
 
     def project_blocked(self, project_slug: str) -> bool:
@@ -111,25 +111,13 @@ class TaigaStoryStore:
         stories cannot be acted on at all — which is why they do not belong in a
         list of what needs a person.
         """
-        if project_slug in self._blocked:
-            return self._blocked[project_slug]
-        try:
-            project = self._client._get(
-                f"/api/v1/projects/by_slug?slug={project_slug}") or {}
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("work_list: cannot read project %r: %s", project_slug, exc)
-            project = {}
-        blocked = bool(project.get("blocked_code") or project.get("is_blocked"))
-        self._blocked[project_slug] = blocked
-        return blocked
+        project = self.project(project_slug) or {}
+        return bool(project.get("blocked_code") or project.get("is_blocked"))
 
     def members(self, project_slug: str) -> List[Dict[str, Any]]:
         """Who can be assigned on this board, so the assignee control offers the
         real people rather than a free-text box that fails on a typo."""
-        pid = self.project_id(project_slug)
-        if not pid:
-            return []
-        return self._client._get(f"/api/v1/projects/{pid}") .get("members", []) or []
+        return (self.project(project_slug) or {}).get("members") or []
 
     def archived_status(self, project_slug: str) -> Optional[str]:
         """The board's archive status, by its own flag — not by guessing a name.

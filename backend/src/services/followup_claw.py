@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import urllib.error
 import urllib.request
 from datetime import date
 from typing import Any, Dict, List, Optional
@@ -39,12 +40,17 @@ class TaigaClient:
     """Just enough Taiga REST for the follow-up claw: log in, list a project's
     open stories, and resolve a user id to a display name."""
 
+    # One login per credential per process, not one per request: every route
+    # used to pay a password round-trip before its first real call. Keyed by
+    # (host, user) so a differently-configured client never borrows a token.
+    _token_cache: Dict[tuple, str] = {}
+
     def __init__(self, host: Optional[str] = None,
                  username: Optional[str] = None, password: Optional[str] = None):
         self.host = (host or os.getenv("TAIGA_URL", "https://taiga.linkedtrust.us")).rstrip("/")
         self._user = username or os.getenv("TAIGA_USERNAME")
         self._pass = password or os.getenv("TAIGA_PASSWORD")
-        self._token: Optional[str] = None
+        self._token: Optional[str] = self._token_cache.get((self.host, self._user))
 
     def _login(self) -> str:
         if not self._user or not self._pass:
@@ -54,35 +60,45 @@ class TaigaClient:
         req = urllib.request.Request(self.host + "/api/v1/auth", data=data,
                                      headers={"Content-Type": "application/json"})
         self._token = json.loads(urllib.request.urlopen(req, timeout=15).read())["auth_token"]
+        TaigaClient._token_cache[(self.host, self._user)] = self._token
         return self._token
 
-    def _get(self, path: str) -> Any:
+    def _open(self, path: str, *, method: str = "GET", timeout: int = 20):
+        """One auth path for every call. A cached token can have expired on the
+        server; a 401 means exactly that, so log in again and retry once."""
         if not self._token:
             self._login()
-        req = urllib.request.Request(self.host + path,
-                                     headers={"Authorization": f"Bearer {self._token}"})
-        return json.loads(urllib.request.urlopen(req, timeout=20).read())
+        try:
+            return urllib.request.urlopen(
+                urllib.request.Request(
+                    self.host + path, method=method,
+                    headers={"Authorization": f"Bearer {self._token}"}),
+                timeout=timeout)
+        except urllib.error.HTTPError as exc:
+            if exc.code != 401:
+                raise
+            self._login()
+            return urllib.request.urlopen(
+                urllib.request.Request(
+                    self.host + path, method=method,
+                    headers={"Authorization": f"Bearer {self._token}"}),
+                timeout=timeout)
+
+    def _get(self, path: str) -> Any:
+        with self._open(path) as resp:
+            return json.loads(resp.read())
 
     def _request(self, method: str, path: str) -> Any:
         """Non-GET calls (currently only DELETE). Kept beside _get so there is
         one auth path; callers gate whether the call is allowed, not this."""
-        if not self._token:
-            self._login()
-        req = urllib.request.Request(
-            self.host + path, method=method,
-            headers={"Authorization": f"Bearer {self._token}"})
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with self._open(path, method=method) as resp:
             body = resp.read()
         return json.loads(body) if body else None
 
     def _get_paged(self, path: str):
         """Body plus Taiga's true total from x-pagination-count, so callers can
         tell a short page from the end of the data."""
-        if not self._token:
-            self._login()
-        req = urllib.request.Request(
-            self.host + path, headers={"Authorization": f"Bearer {self._token}"})
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        with self._open(path, timeout=30) as resp:
             body = json.loads(resp.read())
             raw = resp.headers.get("x-pagination-count")
         try:
