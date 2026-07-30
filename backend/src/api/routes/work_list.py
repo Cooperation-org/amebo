@@ -37,7 +37,8 @@ from pydantic import BaseModel
 from src.api.middleware.auth import get_service_or_user
 from src.db.repositories.pending_action_repo import PendingActionRepo
 from src.services.work_list import (
-    Item, assemble_stories, items_from_drafts, items_from_goals, parse_subject,
+    Item, assemble_stories, goal_task_refs, items_from_drafts, items_from_goals,
+    parse_subject,
 )
 from src.services.work_list_taiga import TaigaStoryStore
 from src.tools.gated_actuators import (
@@ -226,11 +227,52 @@ def _guard(subject: str, org_id: int) -> tuple:
     return parsed
 
 
+def _task_detail(subject: str, slug: str, ref: int,
+                 store: TaigaStoryStore) -> Optional[DetailOut]:
+    """The task's full record, or None when the story cannot be read."""
+    story = store.story(slug, ref)
+    if not story:
+        return None
+    return DetailOut(
+        subject=subject,
+        ref=ref,
+        project=slug,
+        title=story.get("subject") or f"#{ref}",
+        description=story.get("description"),
+        status=(story.get("status_extra_info") or {}).get("name"),
+        due=story.get("due_date"),
+        assignee=(story.get("assigned_to_extra_info") or {}).get("username"),
+        url=f"{store.host}/project/{slug}/us/{ref}",
+        comments=[CommentOut(**c) for c in store.comments(story["id"])],
+        statuses=[st.get("name") for st in store.statuses(slug) if st.get("name")],
+        members=[m.get("username") for m in store.members(slug) if m.get("username")],
+    )
+
+
 def _goal_detail(goal_id: str, org_id: int) -> DetailOut:
     from src.db.repositories.goal_repo import GoalRepo
     goal = GoalRepo().get(goal_id)
     if not goal or goal.get("org_id") != org_id:
         raise HTTPException(status_code=404, detail="Not on your list")
+
+    # A goal that is holding exactly one Taiga task opens AS that task: the
+    # sheet shows the task's own record and controls, and every edit — archive
+    # included — lands on the task, because the task is what the person means.
+    # Only when it is the one task: the relation is not one-to-one, and a goal
+    # holding several tasks (or none) is its own thing and shows as itself.
+    refs = goal_task_refs(goal)
+    if len(refs) == 1:
+        slug, ref = refs[0]
+        try:
+            store = TaigaStoryStore()
+            if store.project_id(slug) and not store.project_blocked(slug):
+                detail = _task_detail(f"taiga:{slug}#{ref}", slug, ref, store)
+                if detail:
+                    return detail
+        except Exception as exc:  # noqa: BLE001 - fall back to the goal itself
+            logger.warning("work-list: goal %s task %s#%s unreadable: %s",
+                           goal_id, slug, ref, exc)
+
     return DetailOut(
         subject=f"goal:{goal_id}",
         kind="goal",
@@ -257,25 +299,10 @@ async def get_detail(subject: str,
         return _goal_detail(subject.split(":", 1)[1], org_id)
     slug, ref = _guard(subject, org_id)
 
-    store = TaigaStoryStore()
-    story = store.story(slug, ref)
-    if not story:
+    detail = _task_detail(subject, slug, ref, TaigaStoryStore())
+    if not detail:
         raise HTTPException(status_code=404, detail="Story not found")
-
-    return DetailOut(
-        subject=subject,
-        ref=ref,
-        project=slug,
-        title=story.get("subject") or f"#{ref}",
-        description=story.get("description"),
-        status=(story.get("status_extra_info") or {}).get("name"),
-        due=story.get("due_date"),
-        assignee=(story.get("assigned_to_extra_info") or {}).get("username"),
-        url=f"{store.host}/project/{slug}/us/{ref}",
-        comments=[CommentOut(**c) for c in store.comments(story["id"])],
-        statuses=[st.get("name") for st in store.statuses(slug) if st.get("name")],
-        members=[m.get("username") for m in store.members(slug) if m.get("username")],
-    )
+    return detail
 
 
 # ------------------------------------------------------------------ edit

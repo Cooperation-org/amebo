@@ -25,8 +25,11 @@ export function useEditWorkItem() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: WorkEdit) => apiClient.editWorkItem(body),
-    onSuccess: (_data, body) => {
-      qc.invalidateQueries({ queryKey: ['work-item', body.subject] });
+    onSuccess: () => {
+      // The whole prefix, not one subject: a sheet opened from a claw row is
+      // keyed by the row's subject but edits carry the shown task's subject —
+      // invalidating only the edited subject left the open sheet stale.
+      qc.invalidateQueries({ queryKey: ['work-item'] });
       qc.invalidateQueries({ queryKey: ['work-list'] });
     },
   });

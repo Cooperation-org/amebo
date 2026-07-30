@@ -173,6 +173,11 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
     return () => window.removeEventListener('keydown', esc);
   }, [onClose]);
 
+  // A claw row can open AS the task it is holding (the server sends the task's
+  // record with its own subject). Edits go to what is on screen, not to the row
+  // that opened it — archive here archives the task.
+  const target = data?.subject ?? subject;
+
   const apply = (body: Parameters<typeof edit.mutate>[0]) => edit.mutate(body);
 
   /** Fields already save on blur. This is for pressing something instead of
@@ -236,7 +241,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                 value={data.title}
                 big
                 saveFailed={edit.isError}
-                onSave={(v) => apply({ subject, title: v })}
+                onSave={(v) => apply({ subject: target, title: v })}
               />
 
               <Field
@@ -244,7 +249,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                 value={data.description ?? ''}
                 multiline
                 saveFailed={edit.isError}
-                onSave={(v) => apply({ subject, description: v })}
+                onSave={(v) => apply({ subject: target, description: v })}
               />
 
               {/* The thread: what people said, oldest first. */}
@@ -275,7 +280,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                     type="button"
                     disabled={!comment.trim() || edit.isPending}
                     onClick={() => {
-                      apply({ subject, comment: comment.trim() });
+                      apply({ subject: target, comment: comment.trim() });
                       setComment('');
                     }}
                     className="rounded-md border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-40"
@@ -290,7 +295,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
               <Field
                 label="Due"
                 value={data.due ?? ''}
-                onSave={(v) => apply({ subject, due_date: v })}
+                onSave={(v) => apply({ subject: target, due_date: v })}
               />
               {/* The board's own statuses, in board order — same as Marten. */}
               <label className="block">
@@ -299,7 +304,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                 </span>
                 <select
                   value={data.status ?? ''}
-                  onChange={(e) => apply({ subject, status: e.target.value })}
+                  onChange={(e) => apply({ subject: target, status: e.target.value })}
                   className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 hover:border-gray-300 focus:border-emerald-600 focus:outline-none"
                 >
                   {!data.status && <option value="">—</option>}
@@ -319,7 +324,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                       one-shot; a cron keeps returning until it is done. */}
                   <select
                     value={data.trigger ?? ''}
-                    onChange={(e) => apply({ subject, trigger: e.target.value })}
+                    onChange={(e) => apply({ subject: target, trigger: e.target.value })}
                     className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 hover:border-gray-300 focus:border-emerald-600 focus:outline-none"
                   >
                     <option value="">once, then retire</option>
@@ -335,7 +340,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                 </span>
                 <select
                   value={data.assignee ?? ''}
-                  onChange={(e) => apply({ subject, assignee: e.target.value })}
+                  onChange={(e) => apply({ subject: target, assignee: e.target.value })}
                   className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 hover:border-gray-300 focus:border-emerald-600 focus:outline-none"
                 >
                   {!data.assignee && <option value="">no owner</option>}
@@ -352,7 +357,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                   type="button"
                   disabled={edit.isPending}
                   onClick={() => {
-                    apply({ subject, close: true });
+                    apply({ subject: target, close: true });
                     onClose();
                   }}
                   className="w-full rounded-md bg-emerald-800 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-900 disabled:opacity-50"
@@ -361,7 +366,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                 </button>
                 <Later
                   onPick={(iso) => {
-                    apply({ subject, due_date: iso });
+                    apply({ subject: target, due_date: iso });
                     onClose();
                   }}
                 />
@@ -382,7 +387,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                     type="button"
                     disabled={edit.isPending}
                     onClick={() => {
-                      apply({ subject, archive: true });
+                      apply({ subject: target, archive: true });
                       onClose();
                     }}
                     className="underline underline-offset-2 hover:text-gray-700"
@@ -406,7 +411,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                       <button
                         type="button"
                         onClick={() => {
-                          apply({ subject, delete: true });
+                          apply({ subject: target, delete: true });
                           onClose();
                         }}
                         className="rounded bg-red-700 px-2.5 py-1 font-medium text-white hover:bg-red-800"

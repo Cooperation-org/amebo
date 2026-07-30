@@ -3,9 +3,9 @@
 from datetime import date
 
 from src.services.work_list import (
-    Link, assemble, build_item, clock_rank, clock_reason, items_from_drafts,
-    items_from_goals, judged_rank, links_from_story, parse_subject,
-    JUDGED_CEILING, CLOCK_FLOOR,
+    Link, assemble, build_item, clock_rank, clock_reason, goal_task_refs,
+    items_from_drafts, items_from_goals, judged_rank, links_from_story,
+    parse_subject, JUDGED_CEILING, CLOCK_FLOOR,
 )
 
 HOST = "https://taiga.example.org"
@@ -185,3 +185,31 @@ def test_questions_and_drafts_rank_above_other_judged_but_under_any_date():
 def test_a_goal_with_no_title_still_shows_something():
     [item] = items_from_goals([{"id": "g2", "title": "  "}])
     assert item.title == "(untitled)"
+
+
+# ------------------------------------------------------- goals holding tasks
+
+def test_a_goal_naming_one_story_holds_exactly_that_task():
+    goal = {"title": "Remind Golda", "description":
+            "Taiga story #4 in project core-linkedtrust-amebo-abra, due soon."}
+    assert goal_task_refs(goal) == [("core-linkedtrust-amebo-abra", 4)]
+
+
+def test_a_story_url_counts_and_duplicates_collapse():
+    goal = {"title": "Follow up", "description":
+            "Taiga story #7 in project civic-action — see "
+            "https://taiga.linkedtrust.us/project/civic-action/us/7 for context."}
+    assert goal_task_refs(goal) == [("civic-action", 7)]
+
+
+def test_a_goal_holding_several_tasks_reports_all_of_them():
+    """Not one-to-one: a goal can hold many tasks, and callers must see that."""
+    goal = {"title": "Sweep", "description":
+            "Taiga story #1 in project biz and Taiga story #2 in project biz."}
+    assert goal_task_refs(goal) == [("biz", 1), ("biz", 2)]
+
+
+def test_a_goal_about_its_own_work_holds_nothing():
+    assert goal_task_refs({"title": "Weekly review sweep",
+                           "description": "Find the mess, propose cleanup."}) == []
+    assert goal_task_refs({"title": "x", "description": None}) == []

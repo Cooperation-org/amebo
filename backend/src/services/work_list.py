@@ -261,21 +261,26 @@ _GOAL_TASK_URL_RE = re.compile(
     r"https?://[^\s\)>\]]*/project/([a-z0-9][a-z0-9_-]*)/us/(\d+)", re.I)
 
 
-def goal_task_ref(goal: Dict[str, Any]) -> Optional[tuple]:
-    """('slug', ref) when the goal's description names a Taiga story, else None.
-
-    A goal that names a story is not its own piece of work — it is amebo
-    holding that task. The list shows the task; acting on the task retires
-    the goal (see the work-list edit route).
+def goal_task_refs(goal: Dict[str, Any]) -> List[tuple]:
+    """Every Taiga story the goal names, as ('slug', ref), deduped, in the
+    order written. A goal may hold none, one, or several tasks — the relation
+    is not one-to-one, so callers must never treat the first match as "the"
+    task unless it is the only one.
     """
     text = f"{goal.get('title') or ''}\n{goal.get('description') or ''}"
-    m = _GOAL_TASK_PHRASE_RE.search(text)
-    if m:
-        return m.group(2), int(m.group(1))
-    m = _GOAL_TASK_URL_RE.search(text)
-    if m:
-        return m.group(1), int(m.group(2))
-    return None
+    out: List[tuple] = []
+    seen: set = set()
+    for m in _GOAL_TASK_PHRASE_RE.finditer(text):
+        pair = (m.group(2), int(m.group(1)))
+        if pair not in seen:
+            seen.add(pair)
+            out.append(pair)
+    for m in _GOAL_TASK_URL_RE.finditer(text):
+        pair = (m.group(1), int(m.group(2)))
+        if pair not in seen:
+            seen.add(pair)
+            out.append(pair)
+    return out
 
 
 def items_from_goals(goals: Sequence[Dict[str, Any]]) -> List[Item]:
