@@ -843,10 +843,12 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
         return RedirectResponse(_front(f"/login?error={error}"), status_code=302)
     tx = request.cookies.get(OIDC_TX_COOKIE)
     if not tx or not code or not state:
+        logger.warning("OIDC callback invalid_request: tx_present=%s code_present=%s state_present=%s", bool(tx), bool(code), bool(state))
         return RedirectResponse(_front("/login?error=invalid_request"), status_code=302)
     try:
         payload = decode_token(tx)
-    except Exception:
+    except Exception as exc:
+        logger.warning("OIDC callback tx cookie undecodable/expired: %s", exc)
         return RedirectResponse(_front("/login?error=expired"), status_code=302)
     # The cascade's continuation URL, stashed at /oidc/login. Drives the
     # forward redirect on BOTH success (below) and every failure — a pending or
@@ -854,6 +856,7 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
     # them on amebo's non-existent /login (signin_view contract).
     next_url = payload.get("oidc_next")
     if payload.get("oidc_state") != state:
+        logger.warning("OIDC callback state_mismatch: cookie_state=%s query_state=%s", payload.get("oidc_state"), state)
         return _auth_fail_redirect(next_url, "state_mismatch")
 
     cfg = OidcConfig.from_env()
