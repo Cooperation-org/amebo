@@ -1,0 +1,16 @@
+{
+  "claw": {
+    "title": "weekly-follow-up-sweep",
+    "description": "Every Monday: load the org skill 'follow-up-sweep' and run it exactly as written — overdue follow-ups, leads in Reached Out/Connected with no next step, stalled bizdev-board tasks, deadline clocks inside 21 days. Output per-owner TOP-3 max (four gates: expires soonest / already warm or gated / doable by named owner without an intro / link is the artifact), ~50 words for the main post, aging appendix in thread. Post via slack_post_gated to #standup. Report the two weekly numbers at top: overdue follow-up count and leads that left Identified.",
+    "trigger_config": {
+      "type": "cron",
+      "expression": "0 9 * * *"
+    }
+  },
+  "requires": [
+    "org skill named 'follow-up-sweep' must exist on this deploy — the claw loads it by name and runs it as written",
+    "tools: slack_post_gated + crm/taiga read tools in the instance allowed_tools",
+    "a notify channel to post the digest to"
+  ],
+  "notes": "Monday follow-up pass. Top-3 per owner, aging appendix in thread. The claw body is the schedule and the gates; the method lives in the org skill it loads."
+}

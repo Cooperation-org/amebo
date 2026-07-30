@@ -1,0 +1,14 @@
+{
+  "claw": {
+    "title": "Weekly review sweep: find the mess, propose the cleanup",
+    "description": "Housekeeping over everything the team now spawns — claws and Taiga boards — so it does not silt up. Runs weekly; produces ONE digest in the notify channel with proposed actions. Never deletes, closes, or merges anything silently: every item is a proposal Golda approves in the thread, and only approved actions get executed (on the next dispatch or on request). Finding the mess is automated; cleanup stays a human decision.\n\nWhat to look for, each sweep:\n- Claws that have never fired, or pending with no goal_events for 14+ days: propose pause or close.\n- Completed claws older than 30 days: propose archive.\n- Near-duplicate claws (similar titles/briefs, e.g. paired reminders that should be one): propose merge.\n- Claws that keep dispatching but have surfaced nothing to a human across their last several runs: propose rewrite or kill — they are burning runs for nothing.\n- Taiga (team's active boards): overdue stories, stories with no assignee, stories that read as finished but sit open. Same treatment: propose, do not touch.\n\nWays of working: reuse the PM claw's drift logic (pm_claw reads goal_events activity vs cadence) rather than inventing new checks; use goal introspection and Taiga tools already allowed. Keep the digest short — grouped proposals with one-line reasons, nothing chatty. If a sweep finds nothing, say so in one line, do not manufacture findings. Track which proposals were approved/rejected in past sweeps and do not re-propose what Golda already rejected.",
+    "trigger_config": {
+      "cron": "0 15 * * 1"
+    }
+  },
+  "requires": [
+    "taiga: an account whose visible boards are this deploy's boards only",
+    "tools: goal introspection + taiga read tools in the instance allowed_tools"
+  ],
+  "notes": "Propose-only housekeeping over this deploy's own claws and boards. Nothing is deleted, closed or merged without a human approving it in the notify channel."
+}
