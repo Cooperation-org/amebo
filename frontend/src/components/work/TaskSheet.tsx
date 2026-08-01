@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink, X } from 'lucide-react';
 import { useEditWorkItem, useWorkItem } from '@/src/hooks/useWorkItem';
+import { LATER_OPTIONS, inDays } from '@/src/lib/later';
 
 /**
  * The task, opened over the list at nearly full size.
@@ -104,12 +105,6 @@ function Later({ onPick }: { onPick: (isoDate: string) => void }) {
   const [open, setOpen] = useState(false);
   const [days, setDays] = useState('10');
 
-  const inDays = (n: number) => {
-    const d = new Date();
-    d.setDate(d.getDate() + n);
-    return d.toISOString().slice(0, 10);
-  };
-
   if (!open) {
     return (
       <button
@@ -127,15 +122,11 @@ function Later({ onPick }: { onPick: (isoDate: string) => void }) {
       <span className="px-1 text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
         new due date
       </span>
-      {[
-        ['tomorrow', 1],
-        ['in 3 days', 3],
-        ['next week', 7],
-      ].map(([label, n]) => (
+      {LATER_OPTIONS.map(([label, n]) => (
         <button
-          key={label as string}
+          key={label}
           type="button"
-          onClick={() => onPick(inDays(n as number))}
+          onClick={() => onPick(inDays(n))}
           className="rounded-md px-2.5 py-1 text-gray-600 hover:bg-gray-100"
         >
           {label}
@@ -178,7 +169,15 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
   // that opened it — archive here archives the task.
   const target = data?.subject ?? subject;
 
-  const apply = (body: Parameters<typeof edit.mutate>[0]) => edit.mutate(body);
+  // `rowSubject` is how the list knows which row to drop when these two differ.
+  const apply = (body: Parameters<typeof edit.mutate>[0]) =>
+    edit.mutate({ ...body, rowSubject: subject });
+
+  /** For the ones that end the item: the sheet stays up until the server has
+   *  actually agreed, so a refusal is read on screen instead of vanishing with
+   *  the sheet. The row itself already left the list the moment it was pressed. */
+  const applyAndClose = (body: Parameters<typeof edit.mutate>[0]) =>
+    edit.mutate({ ...body, rowSubject: subject }, { onSuccess: () => onClose() });
 
   /** Fields already save on blur. This is for pressing something instead of
    *  trusting that: blur whatever has focus, then confirm briefly. */
@@ -386,10 +385,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                   <button
                     type="button"
                     disabled={edit.isPending}
-                    onClick={() => {
-                      apply({ subject: target, archive: true });
-                      onClose();
-                    }}
+                    onClick={() => applyAndClose({ subject: target, archive: true })}
                     className="underline underline-offset-2 hover:text-gray-700"
                   >
                     archive
@@ -410,10 +406,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                     <div className="flex gap-2">
                       <button
                         type="button"
-                        onClick={() => {
-                          apply({ subject: target, delete: true });
-                          onClose();
-                        }}
+                        onClick={() => applyAndClose({ subject: target, delete: true })}
                         className="rounded bg-red-700 px-2.5 py-1 font-medium text-white hover:bg-red-800"
                       >
                         Delete it

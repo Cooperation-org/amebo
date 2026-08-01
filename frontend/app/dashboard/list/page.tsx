@@ -1,9 +1,13 @@
 'use client';
 
 import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { ExternalLink } from 'lucide-react';
 import { useWorkList, type WorkItem } from '@/src/hooks/useWorkList';
+import { useEditWorkItem } from '@/src/hooks/useWorkItem';
 import { TaskSheet } from '@/src/components/work/TaskSheet';
+import { apiClient } from '@/src/lib/api';
+import { LATER_OPTIONS, inDays } from '@/src/lib/later';
 
 /**
  * The claw list.
@@ -62,10 +66,53 @@ function Links({ item }: { item: WorkItem }) {
   );
 }
 
+/**
+ * Push the row out to a later day without opening it. Same three choices, same
+ * words, as the sheet's own Later.
+ *
+ * These sit inside a row that opens on click, so every press has to stop there.
+ */
+function Snooze({ item }: { item: WorkItem }) {
+  const edit = useEditWorkItem();
+  return (
+    <div
+      className="mt-1.5 flex items-center gap-1 text-[11px] text-gray-400"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <span className="uppercase tracking-widest">snooze</span>
+      {LATER_OPTIONS.map(([label, n]) => (
+        <button
+          key={label}
+          type="button"
+          disabled={edit.isPending}
+          title={`Move the due date to ${inDays(n)}`}
+          onClick={() => edit.mutate({ subject: item.subject, due_date: inDays(n) })}
+          className="rounded px-1.5 py-0.5 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
+        >
+          {label}
+        </button>
+      ))}
+      {edit.isError && <span className="text-red-700">didn&apos;t save</span>}
+    </div>
+  );
+}
+
 function Row({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
+  // Fetch the task while the pointer is still on its way to the click, so the
+  // sheet opens onto the record instead of onto a spinner.
+  const qc = useQueryClient();
+  const warm = () =>
+    qc.prefetchQuery({
+      queryKey: ['work-item', item.subject],
+      queryFn: () => apiClient.getWorkItem(item.subject),
+      staleTime: 15 * 1000,
+    });
+
   return (
     <div
       onClick={onOpen}
+      onPointerEnter={warm}
+      onFocus={warm}
       className="cursor-pointer rounded-lg border bg-white px-4 py-3 hover:border-gray-300">
       <div className="flex items-start gap-3">
         <Why label={item.reason.label} kind={item.reason.kind} />
@@ -78,6 +125,7 @@ function Row({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
             <p className="text-[15px] leading-snug text-gray-900">{item.title}</p>
           )}
           <Links item={item} />
+          <Snooze item={item} />
         </div>
       </div>
     </div>
