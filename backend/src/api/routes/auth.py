@@ -148,7 +148,6 @@ async def signup(request: UserSignupRequest):
                 access_token=access_token,
                 refresh_token=refresh_token,
                 token_type="bearer",
-                expires_in=3600
             )
 
     except HTTPException:
@@ -243,7 +242,6 @@ async def login(request: UserLoginRequest):
                 access_token=access_token,
                 refresh_token=refresh_token,
                 token_type="bearer",
-                expires_in=3600,
                 must_change_password=must_change_password
             )
 
@@ -341,7 +339,6 @@ async def refresh_token(
                     access_token=access_token,
                     refresh_token=supplied_refresh,  # Keep same refresh token
                     token_type="bearer",
-                    expires_in=3600
                 )
 
         finally:
@@ -709,7 +706,6 @@ async def google_login(request: GoogleLoginRequest):
                 access_token=access_token,
                 refresh_token=refresh_token,
                 token_type="bearer",
-                expires_in=3600,
             )
 
     except HTTPException:

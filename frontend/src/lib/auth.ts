@@ -11,12 +11,32 @@ export class TokenManager {
   private static readonly REFRESH_KEY = 'refresh_token';
   private static readonly EXPIRY_KEY = 'token_expiry';
 
+  /**
+   * When it runs out is written inside the token, so read it there rather than
+   * being told. Callers that guessed were saying one hour while the session was
+   * good for a month, which would have signed people out mid-work the moment
+   * anything started believing the stored number.
+   */
+  private static expiryFromJwt(token: string): number | null {
+    try {
+      const payload = token.split('.')[1];
+      if (!payload) return null;
+      const json = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
+      const exp = JSON.parse(json)?.exp;
+      return typeof exp === 'number' ? exp * 1000 : null;
+    } catch {
+      return null; // Not ours to interpret; fall back to what we were given.
+    }
+  }
+
   static setTokens(tokenData: TokenData) {
     if (typeof window === 'undefined') return;
 
-    const expiryTime = tokenData.expires_in
-      ? Date.now() + (tokenData.expires_in * 1000)
-      : Date.now() + (60 * 60 * 1000); // Default 1 hour
+    const expiryTime =
+      this.expiryFromJwt(tokenData.access_token) ??
+      (tokenData.expires_in
+        ? Date.now() + tokenData.expires_in * 1000
+        : Date.now() + 60 * 60 * 1000);
 
     localStorage.setItem(this.TOKEN_KEY, tokenData.access_token);
     localStorage.setItem(this.EXPIRY_KEY, expiryTime.toString());

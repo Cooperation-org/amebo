@@ -6,6 +6,8 @@ from pydantic import BaseModel, EmailStr, Field, validator
 from typing import Optional, List
 from datetime import datetime
 
+from src.api.auth_utils import ACCESS_TOKEN_EXPIRE_SECONDS
+
 
 # ============================================================================
 # AUTHENTICATION MODELS
@@ -39,7 +41,7 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
-    expires_in: int = 3600  # seconds
+    expires_in: int = ACCESS_TOKEN_EXPIRE_SECONDS
     must_change_password: bool = False
 
 

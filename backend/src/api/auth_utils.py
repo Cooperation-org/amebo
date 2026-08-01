@@ -35,6 +35,12 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("AMEBO_SESSION_HOURS", "720")) * 60
 REFRESH_TOKEN_EXPIRE_DAYS = 30  # 30 days
 
+# What we tell a client the access token is good for. Derived, never written
+# out by hand: four call sites each said 3600 while the token itself was good
+# for a month, so anything that believed the number would have signed people
+# out an hour after they arrived.
+ACCESS_TOKEN_EXPIRE_SECONDS = ACCESS_TOKEN_EXPIRE_MINUTES * 60
+
 # Session cookie: the session JWT mirrored into an HttpOnly cookie at OIDC
 # callback / token refresh so browser embeds on allowlisted origins
 # (credentials:'include') can authenticate cross-origin. The Authorization

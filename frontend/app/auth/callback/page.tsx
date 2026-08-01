@@ -23,7 +23,9 @@ export default function OidcCallbackPage() {
     const refreshToken = params.get('refresh_token');
 
     if (accessToken) {
-      TokenManager.setTokens({ access_token: accessToken, token_type: 'bearer', expires_in: 3600 });
+      // No expires_in: the token states its own, and this page used to claim an
+      // hour for a session that lasts a month.
+      TokenManager.setTokens({ access_token: accessToken, token_type: 'bearer' });
       if (refreshToken) TokenManager.setRefreshToken(refreshToken);
       // Drop the fragment from the URL/history before navigating on.
       window.history.replaceState(null, '', window.location.pathname);
