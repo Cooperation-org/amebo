@@ -24,26 +24,32 @@ import logging
 import os
 import re
 import subprocess
+import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from src.credentials.connections import _org_context_repo
 
 logger = logging.getLogger(__name__)
 
-BOARD_TTL_S = 60  # same freshness discipline as the manifest cache
+BOARD_TTL_S = 60  # how long a built board is served before a refresh is started
 _MAIN_MD = "MAIN.md"
 _MAX_MD_BYTES = 64 * 1024
 
-# When the working tree is clean we best-effort ff-only pull at most once per
-# TTL so edits pushed from elsewhere show up; a dirty tree or any git failure
-# just reads local (never clobber concurrent human edits, never block the board).
-_pull_attempted: Dict[str, float] = {}  # repo_root -> last monotonic attempt
+# A dashboard request must never wait on the network, so the board is always
+# served from memory and the git pull + re-parse happens on a background thread:
+# the request that notices the board is stale gets the current one immediately
+# and the NEXT request sees the refreshed data. Only the very first build for a
+# repo/dir happens in-request (there is nothing to serve yet), and even that one
+# reads the working tree as it stands rather than pulling.
+_state_lock = threading.Lock()
+_boards: Dict[Tuple[str, str], Dict[str, Any]] = {}  # (repo_root, dir) -> {at, items}
+_refreshing: set = set()  # keys with a refresh in flight — one at a time, no stampede
 
 
 # ---------------------------------------------------------------------------
-# freshness (TTL-gated, clean-tree, ff-only, fail-soft)
+# freshness (off the request path: clean-tree, ff-only, fail-soft)
 # ---------------------------------------------------------------------------
 
 def _git_argv(repo_root: str, *args: str) -> List[str]:
@@ -53,11 +59,9 @@ def _git_argv(repo_root: str, *args: str) -> List[str]:
 
 
 def _maybe_pull(repo_root: str) -> None:
-    now = time.monotonic()
-    last = _pull_attempted.get(repo_root)
-    if last is not None and (now - last) < BOARD_TTL_S:
-        return
-    _pull_attempted[repo_root] = now
+    """Best-effort ff-only pull of the context repo. A dirty tree or any git
+    failure just leaves the working tree alone: never clobber a concurrent human
+    edit, never fail the board over git. Called only from the refresh thread."""
     env = {
         **os.environ,
         "GIT_TERMINAL_PROMPT": "0",
@@ -111,14 +115,17 @@ def _remote_web_base(repo_root: str) -> Optional[str]:
     return None
 
 
-def _main_md_url(repo_root: str, rel_path: str) -> Optional[str]:
+def _main_md_url_prefix(repo_root: str) -> Optional[str]:
+    """``<web base>/blob/<branch>``, or None when the remote can't be read.
+    Resolved once per build: it is the same for every item, and each call costs
+    two git subprocesses."""
     base = _remote_web_base(repo_root)
     if not base:
         return None
     branch = _git(repo_root, "rev-parse", "--abbrev-ref", "HEAD") or "main"
     if branch == "HEAD":
         branch = "main"
-    return f"{base}/blob/{branch}/{rel_path}"
+    return f"{base}/blob/{branch}"
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +223,7 @@ def _clean_value(val: str) -> str:
     return v
 
 
-def _parse_main_md(path: Path, slug: str, dir_name: str, repo_root: str) -> Dict[str, Any]:
+def _parse_main_md(path: Path, slug: str, dir_name: str, url_prefix: Optional[str]) -> Dict[str, Any]:
     raw = path.read_bytes()[:_MAX_MD_BYTES]
     text = raw.decode("utf-8", errors="replace")
     fields = _parse_header(text)
@@ -231,7 +238,7 @@ def _parse_main_md(path: Path, slug: str, dir_name: str, repo_root: str) -> Dict
         # these raw values (kept out of this generic core):
         "crm_ref": _clean_value(fields.get("crm_campaign", "")),
         "taiga": _clean_value(fields.get("taiga", "")),
-        "main_md_url": _main_md_url(repo_root, rel),
+        "main_md_url": f"{url_prefix}/{rel}" if url_prefix else None,
         # ref_path is the doc's repo-relative path — a generic key an optional,
         # config-selected enricher (e.g. the Odoo leaf) uses to attach crm_url.
         "ref_path": rel,
@@ -241,13 +248,70 @@ def _parse_main_md(path: Path, slug: str, dir_name: str, repo_root: str) -> Dict
 
 
 # ---------------------------------------------------------------------------
+# build + background refresh
+# ---------------------------------------------------------------------------
+
+def _build_items(repo_root: str, dir_name: str, board_root: Path) -> List[Dict[str, Any]]:
+    """Walk <board_root>/*/MAIN.md and parse each one. Local reads only."""
+    url_prefix = _main_md_url_prefix(repo_root)
+    items: List[Dict[str, Any]] = []
+    for entry in sorted(board_root.iterdir(), key=lambda p: p.name):
+        if not entry.is_dir() or entry.name == "archived":
+            continue
+        main_md = entry / _MAIN_MD
+        if not main_md.is_file():
+            continue
+        try:
+            items.append(_parse_main_md(main_md, entry.name, dir_name, url_prefix))
+        except Exception:
+            logger.exception("board: failed to parse %s (skipping this one)", main_md)
+            continue
+    return items
+
+
+def _refresh(key: Tuple[str, str], repo_root: str, dir_name: str, board_root: Path) -> None:
+    """Pull and rebuild on a background thread. Anything that goes wrong leaves
+    the last good board in place — a slow git or a vanished dir must never empty
+    the dashboard."""
+    try:
+        _maybe_pull(repo_root)
+        items = _build_items(repo_root, dir_name, board_root)
+        with _state_lock:
+            _boards[key] = {"at": time.monotonic(), "items": items}
+    except Exception:
+        logger.exception("board: refresh failed for %s (serving last good)", board_root)
+    finally:
+        with _state_lock:
+            # move the clock even on failure, so a broken repo backs off a full
+            # TTL instead of starting a refresh on every request
+            if key in _boards:
+                _boards[key]["at"] = time.monotonic()
+            _refreshing.discard(key)
+
+
+def _start_refresh(key: Tuple[str, str], repo_root: str, dir_name: str, board_root: Path) -> None:
+    try:
+        threading.Thread(
+            target=_refresh, args=(key, repo_root, dir_name, board_root),
+            name="board-refresh", daemon=True,
+        ).start()
+    except Exception:
+        # release the claim, else this board would never refresh again
+        with _state_lock:
+            _refreshing.discard(key)
+        logger.exception("board: could not start refresh thread for %s", board_root)
+
+
+# ---------------------------------------------------------------------------
 # the entrypoint
 # ---------------------------------------------------------------------------
 
 def read_board(org_id: int, board_cfg: Dict[str, Any]) -> Dict[str, Any]:
     """Assemble the board for an org from its context repo. Returns
     {"kind": <passthrough>, "items": [...]}. Empty items when unconfigured or
-    the repo/dir is missing — the frontend then hides the section."""
+    the repo/dir is missing — the frontend then hides the section.
+
+    Served from the in-memory board; never waits on git."""
     if not org_id or not isinstance(board_cfg, dict):
         return {"items": []}
     dir_name = board_cfg.get("dir")
@@ -268,19 +332,27 @@ def read_board(org_id: int, board_cfg: Dict[str, Any]) -> Dict[str, Any]:
     if not board_root.is_dir():
         return {"items": [], "kind": board_cfg.get("kind")}
 
-    _maybe_pull(repo_root)
+    key = (repo_root, dir_name)
+    with _state_lock:
+        entry = _boards.get(key)
+        claim = (
+            entry is not None
+            and (time.monotonic() - entry["at"]) >= BOARD_TTL_S
+            and key not in _refreshing
+        )
+        if claim:
+            _refreshing.add(key)
 
-    items: List[Dict[str, Any]] = []
-    for entry in sorted(board_root.iterdir(), key=lambda p: p.name):
-        if not entry.is_dir() or entry.name == "archived":
-            continue
-        main_md = entry / _MAIN_MD
-        if not main_md.is_file():
-            continue
-        try:
-            items.append(_parse_main_md(main_md, entry.name, dir_name, repo_root))
-        except Exception:
-            logger.exception("board: failed to parse %s (skipping this one)", main_md)
-            continue
+    if entry is None:
+        # cold start: nothing cached to serve, so build once here — still no pull
+        items = _build_items(repo_root, dir_name, board_root)
+        with _state_lock:
+            _boards[key] = {"at": time.monotonic(), "items": items}
+    else:
+        items = entry["items"]
+        if claim:
+            _start_refresh(key, repo_root, dir_name, board_root)
 
-    return {"kind": board_cfg.get("kind"), "items": items}
+    # hand out copies: the caller's CRM enricher mutates items in place, and the
+    # cached board is shared with every other request
+    return {"kind": board_cfg.get("kind"), "items": [dict(it) for it in items]}
