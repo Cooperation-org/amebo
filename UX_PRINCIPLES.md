@@ -130,6 +130,35 @@ button is not the agent acting alone — do not gate that.
 
 ---
 
+## 0. Look it up. Do not invent a pattern.
+
+> "find GOOD UX GUIDELINES AND REFER TO THEM. THAT IS THE MOST IMPORTANT THING
+> EVER."
+
+Before building any interface element — a dialog, a form, an autosave, a date
+picker, an empty state, a list, an error — open one of these and follow what it
+says. They are the standard. Nothing here overrides them; the rules below are
+what Golda wants on top of them.
+
+| Look up | Where |
+|---|---|
+| Is this interface usable at all | [Nielsen's 10 usability heuristics](https://www.nngroup.com/articles/ten-usability-heuristics/) and the [NN/g article library](https://www.nngroup.com/articles/) |
+| How a component should behave | [Material Design 3](https://m3.material.io/) and [Apple Human Interface Guidelines](https://developer.apple.com/design/human-interface-guidelines) |
+| Keyboard, focus, screen readers | [WAI-ARIA Authoring Practices](https://www.w3.org/WAI/ARIA/apg/patterns/) — the dialog pattern is not optional |
+| Wording on screen | [GOV.UK content style guide](https://www.gov.uk/guidance/style-guide) and [GOV.UK Design System](https://design-system.service.gov.uk/) |
+| Contrast, targets, motion | [WCAG 2.2](https://www.w3.org/WAI/WCAG22/quickref/) |
+
+Cite which one you followed in the commit or the PR. "I thought it looked
+better" is not a reason. If the guidelines disagree with each other, say so and
+ask.
+
+**The product never explains itself.** No "saves as you leave a field", no
+helper sentence under a box, no tooltip teaching the user your model. Copy that
+explains the product means the design failed. Look up how the standard pattern
+shows that state and use that instead.
+
+---
+
 ## Working this way
 
 - **Show a design, don't describe one.** "this is why i needed to SEE it. your

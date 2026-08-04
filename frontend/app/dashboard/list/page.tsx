@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { ExternalLink } from 'lucide-react';
+import { Clock, ExternalLink } from 'lucide-react';
 import { useWorkList, type WorkItem } from '@/src/hooks/useWorkList';
 import { useEditWorkItem } from '@/src/hooks/useWorkItem';
 import { TaskSheet } from '@/src/components/work/TaskSheet';
@@ -67,31 +67,52 @@ function Links({ item }: { item: WorkItem }) {
 }
 
 /**
- * Push the row out to a later day without opening it. Same three choices, same
- * words, as the sheet's own Later.
+ * Push the row out to a later day without opening it.
+ *
+ * One clock, no words. A word printed on every row is not a label, it is
+ * wallpaper: twenty rows meant "snooze tomorrow in 3 days next week" eighty
+ * times down the page. The standard row pattern is an icon that stays quiet
+ * until you reach for it and opens its choices on press — Material's icon
+ * button plus the ARIA menu-button pattern
+ * (w3.org/WAI/ARIA/apg/patterns/menu-button). The dates only exist while one
+ * row's menu is open, so no word is ever on screen twice.
  *
  * These sit inside a row that opens on click, so every press has to stop there.
  */
 function Snooze({ item }: { item: WorkItem }) {
   const edit = useEditWorkItem();
+  const [open, setOpen] = useState(false);
+
   return (
     <div
       className="mt-1.5 flex items-center gap-1 text-[11px] text-gray-400"
       onClick={(e) => e.stopPropagation()}
     >
-      <span className="uppercase tracking-widest">snooze</span>
-      {LATER_OPTIONS.map(([label, n]) => (
-        <button
-          key={label}
-          type="button"
-          disabled={edit.isPending}
-          title={`Move the due date to ${inDays(n)}`}
-          onClick={() => edit.mutate({ subject: item.subject, due_date: inDays(n) })}
-          className="rounded px-1.5 py-0.5 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
-        >
-          {label}
-        </button>
-      ))}
+      <button
+        type="button"
+        aria-label="Push this out to a later day"
+        aria-expanded={open}
+        disabled={edit.isPending}
+        onClick={() => setOpen((o) => !o)}
+        className="rounded p-1 opacity-0 transition-opacity hover:bg-gray-100 hover:text-gray-700 focus-visible:opacity-100 disabled:opacity-50 group-hover:opacity-100"
+      >
+        <Clock className="h-3.5 w-3.5" />
+      </button>
+      {open &&
+        LATER_OPTIONS.map(([label, n]) => (
+          <button
+            key={label}
+            type="button"
+            disabled={edit.isPending}
+            onClick={() => {
+              edit.mutate({ subject: item.subject, due_date: inDays(n) });
+              setOpen(false);
+            }}
+            className="rounded px-1.5 py-0.5 hover:bg-gray-100 hover:text-gray-700 disabled:opacity-50"
+          >
+            {label}
+          </button>
+        ))}
       {edit.isError && <span className="text-red-700">didn&apos;t save</span>}
     </div>
   );
@@ -113,7 +134,7 @@ function Row({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
       onClick={onOpen}
       onPointerEnter={warm}
       onFocus={warm}
-      className="cursor-pointer rounded-lg border bg-white px-4 py-3 hover:border-gray-300">
+      className="group cursor-pointer rounded-lg border bg-white px-4 py-3 hover:border-gray-300">
       <div className="flex items-start gap-3">
         <Why label={item.reason.label} kind={item.reason.kind} />
         <div className="min-w-0 flex-1">
