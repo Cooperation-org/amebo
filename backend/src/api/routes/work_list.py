@@ -137,11 +137,14 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user)):
 
     # Questions amebo is holding for this person. These had their own page; one
     # list means they belong here, not nowhere.
+    # Only the ones actually holding a question. A 'pending' goal is amebo's own
+    # queued work — it is owned by amebo, so it belongs on nobody's list until
+    # it needs an answer. Golda: "I DO NOT WANT TO SEE things assigned amebo
+    # ... unless it has questions for me."
     from src.db.repositories.goal_repo import GoalRepo
     try:
         repo_g = GoalRepo()
-        waiting = (repo_g.list_for_org(org_id=org_id, status="waiting_user")
-                   + repo_g.list_for_org(org_id=org_id, status="pending"))
+        waiting = repo_g.list_for_org(org_id=org_id, status="waiting_user")
     except Exception as exc:  # noqa: BLE001
         logger.warning("work-list: goals unreadable for org %s: %s", org_id, exc)
         waiting = []
