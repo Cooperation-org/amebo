@@ -289,6 +289,35 @@ def _goal_detail(goal_id: str, org_id: int) -> DetailOut:
     )
 
 
+def _draft_detail(action_id: str, org_id: int) -> DetailOut:
+    """A draft the claw is holding, opened as itself.
+
+    The list has always offered these rows; the detail endpoint only knew how to
+    read 'taiga:' and 'goal:' subjects, so every draft row opened onto
+    "Unreadable subject". What the person needs to see is the words amebo wants
+    to send in their name, and where they would go.
+    """
+    action = PendingActionRepo().get(action_id)
+    if not action or action.get("org_id") != org_id:
+        raise HTTPException(status_code=404, detail="Not on your list")
+
+    payload = action.get("payload") or {}
+    text = payload.get("text") or action.get("preview") or ""
+    return DetailOut(
+        subject=f"draft:{action_id}",
+        kind="draft",
+        ref=0,
+        project=action.get("action_type") or "draft",
+        title=(text.strip().splitlines() or [""])[0][:120] or "(empty draft)",
+        description=text,
+        status=action.get("status"),
+        assignee=action.get("target"),
+        url="",
+        comments=[],
+        statuses=[],
+    )
+
+
 @router.get("/detail", response_model=DetailOut)
 async def get_detail(subject: str,
                      client: Dict[str, Any] = Depends(get_service_or_user)):
@@ -297,6 +326,8 @@ async def get_detail(subject: str,
         raise HTTPException(status_code=403, detail="No organization for this client")
     if subject.startswith("goal:"):
         return _goal_detail(subject.split(":", 1)[1], org_id)
+    if subject.startswith("draft:"):
+        return _draft_detail(subject.split(":", 1)[1], org_id)
     slug, ref = _guard(subject, org_id)
 
     detail = _task_detail(subject, slug, ref, TaigaStoryStore())
@@ -346,6 +377,11 @@ async def edit(body: EditIn,
 
     if body.subject.startswith("goal:"):
         return _edit_goal(body, org_id)
+
+    if body.subject.startswith("draft:"):
+        return _edit_draft(body, org_id,
+                           approver=str(client.get("user") or client.get("email")
+                                        or "list"))
 
     slug, ref = _guard(body.subject, org_id)
 
@@ -401,6 +437,40 @@ async def edit(body: EditIn,
     if not applied:
         raise HTTPException(status_code=400, detail="Nothing to change")
     return EditOut(applied=applied)
+
+
+def _edit_draft(body: "EditIn", org_id: int, *, approver: str) -> "EditOut":
+    """What the human can do to a draft from the list.
+
+    Saying something to a draft is not a note filed against it: it declines this
+    wording and hands the words back to the claw, which redrafts with them. That
+    is what DraftApprovalService.feedback already does, so it is used rather than
+    a second path invented here.
+
+    Sending is deliberately NOT here. Approving a draft acts as the person — it
+    sends the mail, posts the post — so it stays on the pending-actions approve
+    route where the audit trail is, and it is never something a field on this
+    sheet can trigger by accident.
+    """
+    from src.services.draft_approval_service import (DraftApprovalService,
+                                                     PendingActionNotFound)
+    service = DraftApprovalService()
+    action_id = body.subject.split(":", 1)[1]
+
+    try:
+        if body.comment:
+            service.feedback(action_id, approver=approver, org_id=org_id,
+                             feedback=body.comment)
+            return EditOut(applied=["feedback"])
+        if body.archive or body.delete or body.close:
+            service.reject(action_id, approver=approver, org_id=org_id,
+                           reason="declined from the list")
+            return EditOut(applied=["reject"])
+    except PendingActionNotFound as exc:
+        raise HTTPException(status_code=404, detail="Not on your list") from exc
+
+    raise HTTPException(status_code=400,
+                        detail="A draft takes your words or a decline, nothing else")
 
 
 def _edit_goal(body: "EditIn", org_id: int) -> "EditOut":

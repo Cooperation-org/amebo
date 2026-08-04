@@ -194,7 +194,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b bg-gray-50 px-5 py-3">
-          <span className="font-mono text-xs font-bold">#{data?.ref ?? ''}</span>
+          {!!data?.ref && <span className="font-mono text-xs font-bold">#{data.ref}</span>}
           <span className="rounded bg-gray-200 px-2 py-0.5 text-[11px] text-gray-600">
             {data?.project ?? ''}
           </span>
@@ -208,8 +208,11 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
               open in Taiga <ExternalLink className="h-3 w-3" />
             </a>
           )}
+          {/* Only while it is actually happening. A permanent line telling you
+              how saving works is the product explaining itself, which every
+              guideline (and Golda) says not to do. */}
           <span className="ml-auto text-xs text-gray-400">
-            {edit.isPending ? 'saving…' : 'saves as you leave a field'}
+            {edit.isPending ? 'saving…' : ''}
           </span>
           <button type="button" onClick={onClose} className="rounded p-1 hover:bg-gray-200">
             <X className="h-4 w-4" />
@@ -232,6 +235,48 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
           </div>
         ) : isLoading || !data ? (
           <div className="p-6 text-sm text-gray-400">…</div>
+        ) : data.kind === 'draft' ? (
+          /* A draft is words amebo wants to send in your name, so the words are
+             the whole sheet. Saying what is wrong with it hands it back to the
+             claw to write again; sending it lives on the approvals surface,
+             where the audit trail is, and is never a side effect here. */
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5">
+            <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-gray-900">
+              {data.description}
+            </p>
+            <div className="flex gap-2 border-t pt-4">
+              <input
+                value={comment}
+                onChange={(e) => setComment(e.target.value)}
+                placeholder="What should it say instead?"
+                className="flex-1 rounded-md border px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
+              />
+              <button
+                type="button"
+                disabled={!comment.trim() || edit.isPending}
+                onClick={() => {
+                  applyAndClose({ subject: target, comment: comment.trim() });
+                  setComment('');
+                }}
+                className="rounded-md bg-emerald-800 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-900 disabled:opacity-40"
+              >
+                Write it again
+              </button>
+              <button
+                type="button"
+                disabled={edit.isPending}
+                onClick={() => applyAndClose({ subject: target, archive: true })}
+                className="rounded-md border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-50"
+              >
+                Drop it
+              </button>
+            </div>
+            {edit.isError && (
+              <p className="rounded border border-red-200 bg-red-50 p-2 text-xs text-red-900">
+                {String((edit.error as Error)?.message ?? 'That did not go through.')}
+              </p>
+            )}
+          </div>
         ) : (
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-y-auto md:grid-cols-[1fr_300px]">
             <div className="space-y-4 p-5">
