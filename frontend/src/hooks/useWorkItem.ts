@@ -53,7 +53,10 @@ export function useEditWorkItem() {
       // having failed. The server's copy replaces this one when it lands.
       if (body.comment) {
         await qc.cancelQueries({ queryKey: ['work-item'] });
-        for (const key of [body.subject, body.rowSubject].filter(Boolean)) {
+        // A sheet opened from its own row has subject === rowSubject. Writing
+        // the same cache key twice appended the words twice, which read as
+        // having posted the comment twice.
+        for (const key of new Set([body.subject, body.rowSubject].filter(Boolean))) {
           qc.setQueryData<WorkItemDetail>(['work-item', key], (d) =>
             d ? { ...d, comments: [...d.comments, { who: 'you', text: body.comment as string }] } : d,
           );
