@@ -351,7 +351,8 @@ def parse_subject(key: str) -> Optional[tuple]:
 
 def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
                      taiga_host: str, today: Optional[date] = None,
-                     agent_username: Optional[str] = None) -> WorkList:
+                     agent_username: Optional[str] = None,
+                     viewer_username: Optional[str] = None) -> WorkList:
     """Build the list straight from stories already in hand.
 
     The list's real source: every open story with a due date. Sourcing only from
@@ -361,17 +362,28 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
     ``agent_username`` is amebo's own Taiga account. Work handed to amebo is not
     work waiting on a person, so it never appears on a person's list — putting a
     batch of them on the board is what filled Golda's up.
+
+    ``viewer_username`` is the person reading. Given one, the list is theirs:
+    what they own, plus what nobody owns yet (which is waiting on whoever picks
+    it up). Someone else's task is their business, not yours. Without one —
+    nobody mapped this login — the list is not filtered at all, because a list
+    that has silently hidden everything looks broken rather than tidy.
     """
     today = today or date.today()
     live: List[Item] = []
     past: List[Item] = []
     skipped_blocked: List[str] = []
     handed_over = 0
+    someone_elses = 0
     for story in stories:
         if (story.get("status_extra_info") or {}).get("is_closed"):
             continue
-        if agent_username and _display_name(story, "assigned_to") == agent_username:
+        owner = _display_name(story, "assigned_to")
+        if agent_username and owner == agent_username:
             handed_over += 1
+            continue
+        if viewer_username and owner and owner != viewer_username:
+            someone_elses += 1
             continue
         slug = store.project_slug_of(story)
         if not slug:
@@ -397,6 +409,9 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
     if handed_over:
         logger.info("work_list: %d stories held off the list, assigned to %s",
                     handed_over, agent_username)
+    if someone_elses:
+        logger.info("work_list: %d stories belong to someone other than %s",
+                    someone_elses, viewer_username)
     live.sort(key=lambda i: (-i.rank, i.title))
     past.sort(key=lambda i: (i.due or "", i.title))
     return WorkList(live=live, past=past)

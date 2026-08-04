@@ -41,6 +41,7 @@ from src.services.work_list import (
     Item, assemble_stories, goal_task_refs, items_from_drafts, items_from_goals,
     parse_subject, story_url,
 )
+from src.services.viewer_identity import taiga_username
 from src.services.work_list_taiga import TaigaStoryStore
 from src.tools.gated_actuators import (
     execute_taiga_close, execute_taiga_comment, execute_taiga_update,
@@ -147,12 +148,23 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user)):
     live: List[Item] = items_from_goals(waiting)
     past: List[Item] = []
 
+    # Whose list this is. Unmapped viewers get everything, not nothing — see
+    # viewer_identity for where the map lives and why.
+    try:
+        from src.db.repositories.instance_repo import InstanceRepo
+        instance = InstanceRepo().get_by_org(org_id) or {}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("work-list: instance config unreadable for %s: %s", org_id, exc)
+        instance = {}
+    viewer = taiga_username(client, instance.get("config"))
+
     # Source 2: dated work on the boards.
     store = TaigaStoryStore()
     try:
         result = assemble_stories(store.open_dated_stories(), store,
                                   taiga_host=store.host,
-                                  agent_username=os.getenv("TAIGA_USERNAME"))
+                                  agent_username=os.getenv("TAIGA_USERNAME"),
+                                  viewer_username=viewer)
         live.extend(result.live)
         past = result.past
     except Exception as exc:  # noqa: BLE001 - one source failing must not empty
