@@ -29,6 +29,7 @@ half), so a client can re-sort or filter later without a backend change.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -150,7 +151,8 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user)):
     store = TaigaStoryStore()
     try:
         result = assemble_stories(store.open_dated_stories(), store,
-                                  taiga_host=store.host)
+                                  taiga_host=store.host,
+                                  agent_username=os.getenv("TAIGA_USERNAME"))
         live.extend(result.live)
         past = result.past
     except Exception as exc:  # noqa: BLE001 - one source failing must not empty

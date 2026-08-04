@@ -340,19 +340,28 @@ def parse_subject(key: str) -> Optional[tuple]:
 
 
 def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
-                     taiga_host: str, today: Optional[date] = None) -> WorkList:
+                     taiga_host: str, today: Optional[date] = None,
+                     agent_username: Optional[str] = None) -> WorkList:
     """Build the list straight from stories already in hand.
 
     The list's real source: every open story with a due date. Sourcing only from
     drafted deadline pings meant the list emptied out the moment those were
     handled, which is not what "what needs you" means.
+
+    ``agent_username`` is amebo's own Taiga account. Work handed to amebo is not
+    work waiting on a person, so it never appears on a person's list — putting a
+    batch of them on the board is what filled Golda's up.
     """
     today = today or date.today()
     live: List[Item] = []
     past: List[Item] = []
     skipped_blocked: List[str] = []
+    handed_over = 0
     for story in stories:
         if (story.get("status_extra_info") or {}).get("is_closed"):
+            continue
+        if agent_username and _display_name(story, "assigned_to") == agent_username:
+            handed_over += 1
             continue
         slug = store.project_slug_of(story)
         if not slug:
@@ -375,6 +384,9 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
         # Never a silent drop: say what was left out and why.
         logger.info("work_list: %d stories skipped on blocked boards (%s)",
                     len(skipped_blocked), ", ".join(sorted(set(skipped_blocked))))
+    if handed_over:
+        logger.info("work_list: %d stories held off the list, assigned to %s",
+                    handed_over, agent_username)
     live.sort(key=lambda i: (-i.rank, i.title))
     past.sort(key=lambda i: (i.due or "", i.title))
     return WorkList(live=live, past=past)
