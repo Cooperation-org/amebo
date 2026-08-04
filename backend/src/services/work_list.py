@@ -150,6 +150,16 @@ def judged_reason(story: Dict[str, Any]) -> Reason:
 _URL_RE = re.compile(r"https?://[^\s\)>\]]+")
 
 
+def story_url(ui_base: str, project_slug: str, ref: Any) -> str:
+    """Where a person goes to see a story.
+
+    Marten, never Taiga's own interface — Golda: "NO links that way only marten
+    interface svelte good, taiga interface NO". One place builds this so a link
+    to Taiga cannot creep back in through a second one.
+    """
+    return f"{ui_base.rstrip('/')}/p/{project_slug}/board?story={ref}"
+
+
 def links_from_story(story: Dict[str, Any], taiga_host: str,
                      project_slug: str) -> List[Link]:
     """The story itself, plus any URL written into its description. Links found
@@ -157,7 +167,7 @@ def links_from_story(story: Dict[str, Any], taiga_host: str,
     and looked up, which it records in the description with its own marker."""
     ref = story.get("ref")
     links = [Link(f"#{ref} {story.get('subject', '')}".strip(),
-                  f"{taiga_host}/project/{project_slug}/us/{ref}")]
+                  story_url(taiga_host, project_slug, ref))]
     for url in _URL_RE.findall(story.get("description") or ""):
         links.append(Link(_short(url), url))
     return links
@@ -191,7 +201,7 @@ def build_item(story: Dict[str, Any], *, project_slug: str, taiga_host: str,
         quote = Quote(
             who=comment.get("who") or "someone",
             text=comment["text"],
-            url=f"{taiga_host}/project/{project_slug}/us/{ref}",
+            url=story_url(taiga_host, project_slug, ref),
         )
 
     return Item(

@@ -39,7 +39,7 @@ from src.api.middleware.auth import get_service_or_user
 from src.db.repositories.pending_action_repo import PendingActionRepo
 from src.services.work_list import (
     Item, assemble_stories, goal_task_refs, items_from_drafts, items_from_goals,
-    parse_subject,
+    parse_subject, story_url,
 )
 from src.services.work_list_taiga import TaigaStoryStore
 from src.tools.gated_actuators import (
@@ -244,7 +244,7 @@ def _task_detail(subject: str, slug: str, ref: int,
         status=(story.get("status_extra_info") or {}).get("name"),
         due=story.get("due_date"),
         assignee=(story.get("assigned_to_extra_info") or {}).get("username"),
-        url=f"{store.host}/project/{slug}/us/{ref}",
+        url=story_url(store.host, slug, ref),
         comments=[CommentOut(**c) for c in store.comments(story["id"])],
         statuses=[st.get("name") for st in store.statuses(slug) if st.get("name")],
         members=[m.get("username") for m in store.members(slug) if m.get("username")],

@@ -47,6 +47,19 @@ export function useEditWorkItem() {
     },
 
     onMutate: async (body: WorkEditVars) => {
+      // Your words are on screen the moment you press Post. They do reach
+      // Taiga, but Taiga's history feed lags a beat behind the write, so the
+      // refetch that follows came back without them and the post read as
+      // having failed. The server's copy replaces this one when it lands.
+      if (body.comment) {
+        await qc.cancelQueries({ queryKey: ['work-item'] });
+        for (const key of [body.subject, body.rowSubject].filter(Boolean)) {
+          qc.setQueryData<WorkItemDetail>(['work-item', key], (d) =>
+            d ? { ...d, comments: [...d.comments, { who: 'you', text: body.comment as string }] } : d,
+          );
+        }
+      }
+
       // Stop a refetch already in flight from landing on top of this.
       await qc.cancelQueries({ queryKey: ['work-list'] });
       const previous = qc.getQueryData<WorkList>(['work-list']);

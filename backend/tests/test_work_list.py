@@ -8,7 +8,7 @@ from src.services.work_list import (
     parse_subject, JUDGED_CEILING, CLOCK_FLOOR,
 )
 
-HOST = "https://taiga.example.org"
+HOST = "https://marten.example.org"  # the person-facing interface, never Taiga
 TODAY = date(2026, 7, 25)
 
 
@@ -72,7 +72,7 @@ def test_undated_item_falls_back_to_judgement():
 
 def test_story_link_is_always_first_and_unflagged():
     links = links_from_story(story(), HOST, "biz")
-    assert links[0].url == f"{HOST}/project/biz/us/34"
+    assert links[0].url == f"{HOST}/p/biz/board?story=34"
     assert links[0].found is False
 
 
@@ -97,7 +97,7 @@ def test_a_human_comment_becomes_the_headline_with_a_way_back():
                       comment={"who": "Peter", "text": "dns is ready, say go"})
     assert item.quote.who == "Peter"
     assert item.quote.text == "dns is ready, say go"
-    assert item.quote.url == f"{HOST}/project/biz/us/34"
+    assert item.quote.url == f"{HOST}/p/biz/board?story=34"
 
 
 def test_no_comment_means_no_headline_not_invented_prose():

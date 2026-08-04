@@ -30,8 +30,11 @@ class TaigaStoryStore:
         self._client = client or TaigaClient()
         self._payloads: Dict[str, Optional[Dict[str, Any]]] = {}
         self._slugs: Dict[int, Optional[str]] = {}
-        self.host = (host or os.getenv("TAIGA_UI_URL")
-                     or os.getenv("TAIGA_URL", "https://taiga.linkedtrust.us")).rstrip("/")
+        # Where a person is sent to see a story: Marten, never Taiga's own
+        # interface. Golda: "NO links that way only marten interface svelte
+        # good, taiga interface NO."
+        self.host = (host or os.getenv("MARTEN_URL")
+                     or "https://marten.linkedtrust.us").rstrip("/")
 
     def project(self, slug: str) -> Optional[Dict[str, Any]]:
         """The project's full record, fetched once per store. by_slug carries the
