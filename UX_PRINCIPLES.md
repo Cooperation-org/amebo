@@ -130,6 +130,31 @@ button is not the agent acting alone — do not gate that.
 
 ---
 
+## 0a. Never hand a person a generic task
+
+> "do not ever assign generic patterns as tasks. tasks are specific, thought
+> must be invested to make them actionable and prioritized and have useful data.
+> thought must go into a task before you share it with a human. don't slop at
+> humans! The WHOLE POINT of ai is SAVE HUMANS TIME. not slop at them waste
+> human time."
+
+Anything put in front of a person carries the thinking already done. Before it
+reaches a list it has, in itself:
+
+- **The specific thing, named.** "Land and have meeting with client" is a
+  category, not a task. Which client, asked for what.
+- **The link that lets them act** — profile, doc, form, thread. If there isn't
+  one, finding it *is* the work.
+- **The context that saves the lookup** — who, where it came from, what was
+  already said, what happens next.
+- **Why now** rather than later.
+
+Cannot fill those in? Do not offer it. Handing over a half-formed task spends
+the person's time instead of saving it, which is the opposite of the point.
+Same rule for a list, a digest, a Slack ping, a suggestion.
+
+---
+
 ## 0. Look it up. Do not invent a pattern.
 
 > "find GOOD UX GUIDELINES AND REFER TO THEM. THAT IS THE MOST IMPORTANT THING
