@@ -546,6 +546,8 @@ export interface WorkComment {
 export interface WorkItemDetail {
   subject: string;
   ref: number;
+  /** How you name it out loud: '#34' for a story, the claw's short id. */
+  code?: string | null;
   project: string;
   title: string;
   description?: string | null;

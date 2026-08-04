@@ -6,6 +6,7 @@ import { Clock, ExternalLink } from 'lucide-react';
 import { useWorkList, type WorkItem } from '@/src/hooks/useWorkList';
 import { useEditWorkItem } from '@/src/hooks/useWorkItem';
 import { TaskSheet } from '@/src/components/work/TaskSheet';
+import { useOpenTask } from '@/src/hooks/useOpenTask';
 import { apiClient } from '@/src/lib/api';
 import { LATER_OPTIONS, inDays } from '@/src/lib/later';
 
@@ -175,7 +176,8 @@ function PastRow({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
 export default function WorkListPage() {
   const { data, isLoading, isError } = useWorkList();
   // Clicking anywhere on a row opens the whole task over the list.
-  const [open, setOpen] = useState<string | null>(null);
+  // The open task lives in the URL, so it can be shared and reloaded.
+  const { open, setOpen } = useOpenTask();
 
   if (isLoading) return null;
   if (isError) {

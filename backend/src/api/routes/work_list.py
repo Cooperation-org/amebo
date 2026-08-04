@@ -200,6 +200,9 @@ class DetailOut(BaseModel):
     # goal has no board, no assignee and no due date to edit.
     kind: str = "task"
     ref: int
+    # How a person names this item out loud. '#34' for a story, the claw's short
+    # id for a goal. Something with no identifier cannot be referred to at all.
+    code: Optional[str] = None
     project: str
     title: str
     description: Optional[str] = None
@@ -250,6 +253,7 @@ def _task_detail(subject: str, slug: str, ref: int,
     return DetailOut(
         subject=subject,
         ref=ref,
+        code=f"#{ref}",
         project=slug,
         title=story.get("subject") or f"#{ref}",
         description=story.get("description"),
@@ -291,6 +295,10 @@ def _goal_detail(goal_id: str, org_id: int) -> DetailOut:
         subject=f"goal:{goal_id}",
         kind="goal",
         ref=0,
+        # The first block of the uuid, which is how the claws are named
+        # everywhere else (amebo-claw list, /claws/<id>). A goal used to open
+        # with no identifier at all, so there was nothing to say it BY.
+        code=str(goal_id)[:8],
         project="amebo",
         title=goal.get("title") or "(untitled)",
         description=goal.get("description"),
@@ -299,6 +307,10 @@ def _goal_detail(goal_id: str, org_id: int) -> DetailOut:
         comments=[],
         # Only the transitions that mean something for a goal.
         statuses=["pending", "paused", "completed"],
+        # A goal is amebo's work by definition — there is no other hand it can
+        # be put in, and showing an empty owner read as "cannot be assigned".
+        assignee="amebo",
+        members=["amebo"],
         trigger=(goal.get("trigger_config") or {}).get("type"),
     )
 

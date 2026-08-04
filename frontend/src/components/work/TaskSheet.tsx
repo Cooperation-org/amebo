@@ -194,7 +194,7 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-3 border-b bg-gray-50 px-5 py-3">
-          {!!data?.ref && <span className="font-mono text-xs font-bold">#{data.ref}</span>}
+          {!!data?.code && <span className="font-mono text-xs font-bold">{data.code}</span>}
           <span className="rounded bg-gray-200 px-2 py-0.5 text-[11px] text-gray-600">
             {data?.project ?? ''}
           </span>

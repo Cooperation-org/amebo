@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient, type Goal } from '@/src/lib/api';
 import { TaskSheet } from '@/src/components/work/TaskSheet';
+import { useOpenTask } from '@/src/hooks/useOpenTask';
 
 /**
  * Goals — what amebo is working toward, and what it is waiting on.
@@ -57,7 +58,8 @@ export default function GoalsPage() {
     queryFn: () => apiClient.getGoals(),
     staleTime: 30 * 1000,
   });
-  const [open, setOpen] = useState<string | null>(null);
+  // The open task lives in the URL, so it can be shared and reloaded.
+  const { open, setOpen } = useOpenTask();
   const [showDone, setShowDone] = useState(false);
 
   if (isLoading) return null;
