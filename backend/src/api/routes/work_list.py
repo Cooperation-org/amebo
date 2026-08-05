@@ -41,8 +41,8 @@ from pydantic import BaseModel
 from src.api.middleware.auth import get_service_or_user
 from src.db.repositories.pending_action_repo import PendingActionRepo
 from src.services.work_list import (
-    Item, WorkList, assemble_crm, assemble_crm_open_context,
-    assemble_stories, goal_task_refs,
+    Item, LIST_MAX, WorkList, assemble_crm, assemble_crm_open_context,
+    assemble_stories, goal_task_refs, top,
     items_from_drafts, items_from_goals, parse_subject, story_url,
 )
 from src.services.live import publish, subscribe, unsubscribe
@@ -97,6 +97,11 @@ class ItemOut(BaseModel):
 class WorkListOut(BaseModel):
     live: List[ItemOut]
     past: List[ItemOut]
+    # What was scored, before the cap. A page that shows twenty of forty rows has
+    # to be able to say so — a truncated list that looks complete is a lie about
+    # how much is waiting.
+    live_total: int = 0
+    past_total: int = 0
 
 
 def _out(item: Item) -> ItemOut:
@@ -180,8 +185,14 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user)):
 
     live.sort(key=lambda i: (-i.rank, i.title))
     past.sort(key=lambda i: (i.due or "", i.title))
-    return WorkListOut(live=[_out(i) for i in live],
-                       past=[_out(i) for i in past])
+    if len(live) > LIST_MAX or len(past) > LIST_MAX:
+        logger.info("work-list: showing %d of %d live and %d of %d past for "
+                    "org %s — the rest are scored but below the cut",
+                    min(len(live), LIST_MAX), len(live),
+                    min(len(past), LIST_MAX), len(past), org_id)
+    return WorkListOut(live=[_out(i) for i in top(live)],
+                       past=[_out(i) for i in top(past)],
+                       live_total=len(live), past_total=len(past))
 
 
 def _goal_items(org_id: int) -> List[Item]:
@@ -203,12 +214,14 @@ def _goal_items(org_id: int) -> List[Item]:
 
 
 def _board_items(org_id: int, viewer: Optional[str]) -> WorkList:
-    """Dated work on the boards."""
+    """Work on the boards: everything dated, plus this person's own undated
+    tasks. Undated ones cost nothing extra to fetch — the same call already
+    returned them and they were being thrown away."""
     try:
         store = TaigaStoryStore()
         # One listing up front, so naming each story's board costs nothing.
         store.prime_slugs()
-        return assemble_stories(store.open_dated_stories(), store,
+        return assemble_stories(store.open_stories(), store,
                                 taiga_host=store.host,
                                 agent_username=os.getenv("TAIGA_USERNAME"),
                                 viewer_username=viewer)

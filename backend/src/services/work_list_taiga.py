@@ -75,12 +75,14 @@ class TaigaStoryStore:
         what Marten shows rather than a list amebo made up."""
         return (self.project(project_slug) or {}).get("us_statuses") or []
 
-    def open_dated_stories(self, page_size: int = 200) -> List[Dict[str, Any]]:
-        """Every open story with a due date, across the boards amebo can see.
+    def open_stories(self, page_size: int = 200) -> List[Dict[str, Any]]:
+        """Every open story across the boards amebo can see, dated or not.
 
         This is the list's real source. Sourcing only from drafted deadline
         pings meant the list emptied out the moment those were dealt with, which
-        is not what "what needs you" means.
+        is not what "what needs you" means. Undated stories come back too —
+        Golda: it goes in the list even if it has no date — and who they belong
+        on is decided when the list is assembled, not here.
 
         Taiga paginates at 30 by default and reports the true total in
         ``x-pagination-count``; ask for a bigger page and walk until the count is
@@ -92,11 +94,16 @@ class TaigaStoryStore:
             batch, total = self._client._get_paged(
                 f"/api/v1/userstories?status__is_closed=false"
                 f"&page_size={page_size}&page={page}")
-            out.extend(s for s in batch if s.get("due_date"))
+            out.extend(batch)
             if not batch or len(batch) < page_size or (total and page * page_size >= total):
                 break
             page += 1
         return out
+
+    def open_dated_stories(self, page_size: int = 200) -> List[Dict[str, Any]]:
+        """Only the stories somebody put a date on. Kept because a caller that
+        wants deadlines and nothing else should say so rather than filter."""
+        return [s for s in self.open_stories(page_size) if s.get("due_date")]
 
     def prime_slugs(self) -> None:
         """Learn every project's slug in one call.

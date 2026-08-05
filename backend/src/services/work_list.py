@@ -148,20 +148,89 @@ def clock_rank(due: str, today: date) -> float:
     return CLOCK_FLOOR + max(0.0, 365.0 - days)
 
 
-def judged_rank(story: Dict[str, Any]) -> float:
+# An undated task's standing. Golda: it goes in the list even when nobody set a
+# date on it. What earns its place, in her words, is being new or having been
+# open a while — plus somebody having asked something on it.
+UNDATED_FLOOR = 300.0
+UNDATED_OWNED = 60.0            # someone owns it -> it can actually move
+UNDATED_NO_DETAIL = 10.0        # nothing written down to act on
+UNDATED_NEW_DAYS = 5            # under this, it has not been looked at yet
+UNDATED_NEW = 250.0
+UNDATED_ASKED = 120.0           # somebody's comment is waiting on an answer
+UNDATED_STALE_CAP = 180.0       # past six months untouched, older means no more
+
+
+def _days_since(stamp: Optional[str], today: Optional[date]) -> Optional[int]:
+    """Days between an ISO timestamp and today. Taiga sends
+    '2023-01-03T23:27:05.322Z'; only the date half is used, so the timezone
+    never has to be reasoned about."""
+    if not stamp or not today:
+        return None
+    try:
+        return max(0, (today - date.fromisoformat(str(stamp)[:10])).days)
+    except ValueError:
+        return None
+
+
+def judged_rank(story: Dict[str, Any], *, today: Optional[date] = None,
+                comment: Optional[Dict[str, str]] = None,
+                viewer: Optional[str] = None) -> float:
     """The judged half, kept deliberately small and explainable. Nothing here
-    may exceed JUDGED_CEILING, so judgement can never bury a dated item."""
-    score = 0.0
+    may exceed JUDGED_CEILING, so judgement can never bury a dated item.
+
+    A task with no deadline still needs a place in the order, and the only
+    honest signals are how long it has sat there and whether anyone is waiting
+    on it. Missing signals simply score nothing, so a story read through a path
+    that carries no timestamps still ranks rather than falling off.
+    """
+    score = UNDATED_FLOOR
     if story.get("assigned_to"):
-        score += 20.0                       # someone owns it -> it can actually move
+        score += UNDATED_OWNED
     if not story.get("description"):
-        score -= 10.0                       # nothing to act on yet
-    return min(JUDGED_CEILING, max(0.0, score))
+        score -= UNDATED_NO_DETAIL
+
+    age = _days_since(story.get("created_date"), today)
+    if age is not None and age <= UNDATED_NEW_DAYS:
+        # Brand new: nobody has triaged it yet, which is its own kind of waiting.
+        score += UNDATED_NEW
+    else:
+        # Otherwise the longer it has gone untouched, the more it is being
+        # ignored — capped, so the oldest dead story cannot own the top forever.
+        quiet = _days_since(story.get("modified_date"), today)
+        if quiet is not None:
+            score += min(float(quiet), UNDATED_STALE_CAP)
+
+    if _asked_of_viewer(comment, viewer):
+        score += UNDATED_ASKED
+    return min(JUDGED_CEILING - 1.0, max(0.0, score))
 
 
-def judged_reason(story: Dict[str, Any]) -> Reason:
+def _asked_of_viewer(comment: Optional[Dict[str, str]],
+                     viewer: Optional[str]) -> bool:
+    """Somebody other than the reader said the last word on this task, so it is
+    plausibly a question waiting on them. Unknown viewer means no claim either
+    way — a guess here would put strangers' chatter at the top of the list."""
+    if not comment or not viewer:
+        return False
+    who = (comment.get("who") or "").strip()
+    return bool(who) and who != viewer
+
+
+def judged_reason(story: Dict[str, Any], *, today: Optional[date] = None,
+                  comment: Optional[Dict[str, str]] = None,
+                  viewer: Optional[str] = None) -> Reason:
+    """Why an undated task sits where it does, in plain words. A judged rank has
+    to justify itself; a dated one does not."""
+    if _asked_of_viewer(comment, viewer):
+        return Reason(f"{comment['who'].strip()} asked, no deadline", "judgement")
+    age = _days_since(story.get("created_date"), today)
+    if age is not None and age <= UNDATED_NEW_DAYS:
+        return Reason("new, no deadline", "judgement")
     if not story.get("assigned_to"):
         return Reason("no owner", "judgement")
+    quiet = _days_since(story.get("modified_date"), today)
+    if quiet:
+        return Reason(f"no deadline, untouched {quiet} days", "judgement")
     if not story.get("description"):
         return Reason("nothing written down", "judgement")
     return Reason("open", "judgement")
@@ -210,14 +279,19 @@ def _display_name(story: Dict[str, Any], key: str) -> Optional[str]:
 
 
 def build_item(story: Dict[str, Any], *, project_slug: str, taiga_host: str,
-               today: date, comment: Optional[Dict[str, str]] = None) -> Item:
+               today: date, comment: Optional[Dict[str, str]] = None,
+               viewer: Optional[str] = None) -> Item:
     """One story becomes one item. The most recent human comment, if there is
-    one, becomes the headline; otherwise the item leads with the thing itself."""
+    one, becomes the headline; otherwise the item leads with the thing itself.
+
+    ``viewer`` is the person reading, needed only to tell their own last comment
+    from somebody else's question to them."""
     ref = story.get("ref")
     due = story.get("due_date")
     clock = clock_reason(due, today)
-    reason = clock or judged_reason(story)
-    rank = clock_rank(due, today) if clock else judged_rank(story)
+    judged = dict(today=today, comment=comment, viewer=viewer)
+    reason = clock or judged_reason(story, **judged)
+    rank = clock_rank(due, today) if clock else judged_rank(story, **judged)
     past = bool(due and _is_past(due, today))
 
     quote = None
@@ -379,6 +453,22 @@ def _comments_for(store: Any, story_ids: Sequence[Any]) -> Dict[Any, Dict[str, s
         if comment:
             out[story_id] = comment
     return out
+
+
+# How many rows a person is actually shown. Golda: "between three and twenty is
+# good, seven or eight is kind of ideal, never more than twenty because it'll
+# just get stale anyway, and we don't want a big whole big list of stale shit."
+#
+# Everything is still scored and ordered — the cap is on what reaches the
+# screen, not on what is considered. A list nobody reads to the bottom of is the
+# same as no list.
+LIST_MAX = 20
+
+
+def top(items: Sequence[Item], limit: int = LIST_MAX) -> List[Item]:
+    """The rows worth showing, already in order. Never a silent drop: the caller
+    reports the full count alongside so the page can say there is more."""
+    return list(items[:limit])
 
 
 @dataclass
@@ -630,6 +720,23 @@ def parse_subject(key: str) -> Optional[tuple]:
         return None
 
 
+def _undated_belongs(owner: Optional[str], viewer: Optional[str]) -> bool:
+    """Whether an undated task earns a place on this person's list.
+
+    Only their own. The rule for dated work is the opposite — an unowned
+    deadline stays on every list, because a date is coming whether or not
+    anybody has picked it up. Nothing is coming for an undated task, so an
+    unowned one is backlog, and there are 367 of those against 17 dated: put
+    them on everyone's list and the list stops being a list.
+
+    Same reason an unmapped viewer gets none of them. Elsewhere an unmapped
+    viewer sees too much rather than too little, but "too much" here is 839
+    rows, which is not a nuisance, it is an unusable page. Dated work still
+    shows unfiltered, so nobody's list goes blank.
+    """
+    return bool(viewer) and owner == viewer
+
+
 def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
                      taiga_host: str, today: Optional[date] = None,
                      agent_username: Optional[str] = None,
@@ -656,6 +763,7 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
     skipped_blocked: List[str] = []
     handed_over = 0
     someone_elses = 0
+    backlog = 0
 
     # Which stories survive the filters, before anything is asked about them.
     # Their comments are then fetched together rather than one story at a time,
@@ -671,6 +779,9 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
         if viewer_username and owner and owner != viewer_username:
             someone_elses += 1
             continue
+        if not story.get("due_date") and not _undated_belongs(owner, viewer_username):
+            backlog += 1
+            continue
         slug = store.project_slug_of(story)
         if not slug:
             continue
@@ -685,8 +796,12 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
     comments = _comments_for(store, [s.get("id") for s, _ in kept])
     for story, slug in kept:
         item = build_item(story, project_slug=slug, taiga_host=taiga_host,
-                          today=today, comment=comments.get(story.get("id")))
+                          today=today, comment=comments.get(story.get("id")),
+                          viewer=viewer_username)
         (past if item.past else live).append(item)
+    if backlog:
+        logger.info("work_list: %d undated stories left in the backlog "
+                    "(unowned, or nobody mapped this viewer)", backlog)
     if skipped_blocked:
         # Never a silent drop: say what was left out and why.
         logger.info("work_list: %d stories skipped on blocked boards (%s)",
