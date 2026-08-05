@@ -186,7 +186,7 @@ class OdooActivityStore:
                 ("stage_id", "in", list(stages)),
             ]], {"fields": ["name", "user_id", "stage_id", "partner_id",
                             "activity_ids", "date_last_stage_update",
-                            "expected_revenue", "email_from"],
+                            "expected_revenue", "email_from", "campaign_id"],
                  "order": "date_last_stage_update asc",
                  "limit": limit})
         except Exception as exc:  # noqa: BLE001

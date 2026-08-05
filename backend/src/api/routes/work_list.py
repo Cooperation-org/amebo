@@ -94,6 +94,9 @@ class ItemOut(BaseModel):
     due: Optional[str] = None
     assignee: Optional[str] = None
     past: bool
+    # The CRM's campaign, when the record carries one. Shown as-is; amebo never
+    # guesses it.
+    campaign: Optional[str] = None
 
 
 class WorkListOut(BaseModel):
@@ -125,6 +128,7 @@ def _out(item: Item) -> ItemOut:
         due=item.due,
         assignee=item.assignee,
         past=item.past,
+        campaign=item.campaign,
     )
 
 

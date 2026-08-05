@@ -204,3 +204,19 @@ def test_a_crm_that_cannot_answer_still_yields_rows():
 def test_nothing_engaged_is_an_empty_list_not_an_error():
     assert assemble_crm_open_context([], FakeCrm(), today=TODAY,
                                      viewer_uids=[16], stage_names=STAGES) == []
+
+
+# ------------------------------------------------------------------ campaign
+
+def test_the_card_carries_the_crms_campaign():
+    """A campaign is the CRM's fact (crm.lead.campaign_id). Amebo shows it and
+    never decides it."""
+    item = build_open_context_item(lead(campaign_id=[9, "EarnedGov"]),
+                                   today=TODAY, stage_rank=STAGE_RANK)
+    assert item.campaign == "EarnedGov"
+
+
+def test_no_campaign_on_the_record_is_no_campaign_on_the_card():
+    item = build_open_context_item(lead(campaign_id=False), today=TODAY,
+                                   stage_rank=STAGE_RANK)
+    assert item.campaign is None

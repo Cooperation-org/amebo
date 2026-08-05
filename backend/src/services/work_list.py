@@ -95,6 +95,10 @@ class Item:
     due: Optional[str] = None
     assignee: Optional[str] = None
     past: bool = False              # deadline already went by
+    # Which campaign this belongs to, when the record says so. Read off the CRM,
+    # never decided here: a campaign is the CRM's fact (crm.lead.campaign_id) and
+    # amebo only references it.
+    campaign: Optional[str] = None
 
     @property
     def kind(self) -> str:
@@ -716,6 +720,7 @@ def build_open_context_item(lead: Dict[str, Any], *, today: date,
                      url=message.get("url")) if message else None),
         due=None,
         assignee=_odoo_name(lead.get("user_id")),
+        campaign=_odoo_name(lead.get("campaign_id")),
     )
 
 
