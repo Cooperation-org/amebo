@@ -1608,3 +1608,26 @@ rubric's answer rather than the list's.
 
 Tests: +3 in `test_work_list_undated.py`. Full suite 944 passed / 11 skipped.
 Not deployed (backend not restarted).
+
+## NOT BUILDING YET: pin and bury (Golda, 2026-08-05)
+
+Recorded, not built. Golda's thinking, close to her words:
+
+- Two gestures, both of them the person overruling the ranking: **pin** and
+  **bury**. "Either it should always be in the top twenty list, or right now it
+  shouldn't be, but maybe in the future it might again."
+- **Pin**: important, click it, it stays, and re-ranking never makes it
+  disappear.
+- **Bury** is not delete and not forever. It is "not in this top twenty list
+  right now" — pushed down into the backlog, still able to come back later. She
+  was unsure whether it is really a sleep (a timer) or just a push down, and did
+  not settle it.
+- She also floated pinning something *and* still sleeping it, and left that
+  open: "I don't know. We won't do that right now."
+
+Why it matters for the rubric lane: the 20-row cap means the ranking can drop
+something the person decided matters. Pin and bury are the override that makes a
+capped list safe. Whatever the rubric becomes, leave room for a per-person
+override that is not a score — a pin the rubric can outvote is not a pin.
+
+Nobody should build this until Golda says so.
