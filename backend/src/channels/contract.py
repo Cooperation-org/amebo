@@ -27,9 +27,10 @@ from typing import Optional, Dict, Any, List
 class ChannelType(str, Enum):
     """Known channel types. Extensible — new channels add a value here."""
     SLACK = "slack"
+    DISCORD = "discord"
     WEB = "web"
     CLI = "cli"
-    # Future: whatsapp, discord, signal, email, etc.
+    # Future: whatsapp, signal, email, etc.
 
 
 class MessageKind(str, Enum):

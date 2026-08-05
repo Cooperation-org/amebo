@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient, type Goal } from '@/src/lib/api';
 import { TaskSheet } from '@/src/components/work/TaskSheet';
+import { Statements } from '@/src/components/goals/Statements';
 import { useOpenTask } from '@/src/hooks/useOpenTask';
 
 /**
@@ -68,13 +69,18 @@ export default function GoalsPage() {
   const live = goals.filter((g) => LIVE.includes(g.status));
   const done = goals.filter((g) => !LIVE.includes(g.status));
 
-  if (goals.length === 0) {
-    return <p className="text-sm text-gray-500">No goals yet.</p>;
-  }
-
   return (
     <div className="space-y-2">
       <h1 className="sr-only">Goals</h1>
+
+      {/* What the org is aiming at sits above what it is doing about it, and
+          stays on screen when there are no goals yet — it is the thing you fill
+          in first. */}
+      <div className="mb-8">
+        <Statements />
+      </div>
+
+      {goals.length === 0 && <p className="text-sm text-gray-500">No goals yet.</p>}
       {live.map((g) => (
         <Row key={g.id} goal={g} onOpen={() => setOpen(`goal:${g.id}`)} />
       ))}

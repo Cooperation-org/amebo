@@ -490,6 +490,34 @@ class ApiClient {
     });
   }
 
+  // Statements — mission, vision, values, OKRs: what the org is aiming at.
+  // Either the words themselves or a pointer to where they live.
+  async getStatements(): Promise<Statement[]> {
+    return this.request('/api/statements/');
+  }
+
+  async getResolvedStatements(): Promise<ResolvedStatement[]> {
+    return this.request('/api/statements/resolved');
+  }
+
+  async addStatement(body: StatementInput): Promise<Statement> {
+    return this.request('/api/statements/', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async editStatement(id: number, body: StatementPatch): Promise<Statement> {
+    return this.request(`/api/statements/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+  }
+
+  async deleteStatement(id: number): Promise<void> {
+    return this.request(`/api/statements/${id}`, { method: 'DELETE' });
+  }
+
   // Goals (claws) — the needs-input queue is goals in waiting_user status
   async getGoals(status?: string): Promise<Goal[]> {
     const q = status ? `?status=${encodeURIComponent(status)}` : '';
@@ -513,6 +541,54 @@ class ApiClient {
   }
 }
 
+
+/**
+ * A statement: what the org is aiming at, under the team's own name for it.
+ *
+ * `name` is the relation ('mission', 'values', 'Q3 OKRs') and carries the
+ * meaning — nothing parses the document. `body` holds the words when someone
+ * pasted them; `pointer` says where they live otherwise. Exactly one of the two.
+ * `accepted_at` null means amebo proposed it and it does nothing yet.
+ */
+export interface Statement {
+  id: number;
+  org_id: number;
+  holder: string;
+  name: string;
+  body: string | null;
+  pointer: string | null;
+  source: string;
+  informs_priority: boolean;
+  written_by: string;
+  accepted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A switched-on statement with its pointer followed, so the page can show the
+ *  words rather than the link. */
+export interface ResolvedStatement {
+  id: number;
+  name: string;
+  text: string;
+}
+
+export interface StatementInput {
+  name: string;
+  body?: string;
+  pointer?: string;
+  source?: string;
+  informs_priority?: boolean;
+}
+
+export interface StatementPatch {
+  name?: string;
+  body?: string;
+  pointer?: string;
+  source?: string;
+  informs_priority?: boolean;
+  accept?: boolean;
+}
 
 export interface WhiteboardEntry {
   id: number;
