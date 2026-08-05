@@ -504,6 +504,64 @@ def top(items: Sequence[Item], limit: int = LIST_MAX,
     return kept
 
 
+# How close a deadline has to be before it digs a buried item back out. Burying
+# is "not now", not "never" — Golda: "we're not burying it forever, just it
+# shouldn't be in this top twenty list right now, but maybe in the future it
+# might again." A date coming due is the future arriving, and it is the one
+# thing a person cannot be assumed to have meant to hide from.
+BURIED_WAKES_WITHIN_DAYS = 2
+
+
+def wakes_from_burial(item: "Item", today: date) -> bool:
+    """Whether a buried item has earned its way back on its own."""
+    if not item.due:
+        return False
+    try:
+        return (date.fromisoformat(item.due) - today).days <= BURIED_WAKES_WITHIN_DAYS
+    except ValueError:
+        return False
+
+
+@dataclass
+class MarkedList:
+    """One person's list once their own pins and burials are applied."""
+    pinned: List[Item] = field(default_factory=list)
+    live: List[Item] = field(default_factory=list)
+    buried: List[Item] = field(default_factory=list)
+
+
+def apply_marks(items: Sequence["Item"], marks: Dict[str, str], *,
+                today: Optional[date] = None) -> "MarkedList":
+    """Split a ranked list into what this person pinned, what is left, and what
+    they pushed down.
+
+    A pin is an override, not a score. No rank changes — pinned rows are lifted
+    out before the cap is applied, so pinning three things does not cost three
+    of the twenty. That is the whole point: a pin the ranking can outvote is not
+    a pin.
+
+    Burial is the same override pointing the other way, and it expires by itself
+    when a deadline comes due rather than having to be remembered.
+    """
+    today = today or date.today()
+    pinned: List[Item] = []
+    live: List[Item] = []
+    buried: List[Item] = []
+    for item in items:
+        state = marks.get(item.subject)
+        if state == "pinned":
+            pinned.append(item)
+        elif state == "buried" and not wakes_from_burial(item, today):
+            buried.append(item)
+        else:
+            live.append(item)
+    # Pinned rows keep the order the person pinned them in — the marks mapping
+    # already carries it, oldest first. Everything else keeps its rank order.
+    order = {subject: i for i, subject in enumerate(marks)}
+    pinned.sort(key=lambda i: order.get(i.subject, 0))
+    return MarkedList(pinned=pinned, live=live, buried=buried)
+
+
 @dataclass
 class WorkList:
     live: List[Item] = field(default_factory=list)

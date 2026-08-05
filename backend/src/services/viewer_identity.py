@@ -53,6 +53,19 @@ def identity_in(system: str, client: Dict[str, Any],
     return account
 
 
+def viewer_person(client: Dict[str, Any]) -> Optional[str]:
+    """Who the reader is, as amebo knows them: their login email, lowercased.
+
+    The key anything personal is stored under — pins, burials — and the same key
+    the identity maps are written against, so one person has one key across all
+    of it. A service key is not a person and gets None, which is what keeps a
+    machine from inheriting somebody's pins.
+    """
+    if client.get("auth") != "user":
+        return None
+    return (client.get("email") or "").strip().lower() or None
+
+
 def taiga_username(client: Dict[str, Any],
                    instance_config: Optional[Dict[str, Any]]) -> Optional[str]:
     return identity_in("taiga", client, instance_config)

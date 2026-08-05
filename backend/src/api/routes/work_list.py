@@ -13,6 +13,8 @@ Endpoints:
     GET  /api/work-list/          live + past items, live sorted by rank
     GET  /api/work-list/detail    one item's full record + what people said on it
     POST /api/work-list/edit      apply a change the human just pressed
+    POST /api/work-list/mark      pin or bury a row for the person reading
+    DELETE /api/work-list/mark    unpin or unbury it again
 
 Writes here are NOT gated. The draft-approval gate exists to stop the claw acting
 unilaterally; when the human presses the button there is nothing to gate. They run
@@ -41,12 +43,12 @@ from pydantic import BaseModel
 from src.api.middleware.auth import get_service_or_user
 from src.db.repositories.pending_action_repo import PendingActionRepo
 from src.services.work_list import (
-    Item, LIST_MAX, WorkList, assemble_crm, assemble_crm_open_context,
-    assemble_stories, goal_task_refs, top,
+    Item, LIST_MAX, WorkList, apply_marks, assemble_crm,
+    assemble_crm_open_context, assemble_stories, goal_task_refs, top,
     items_from_drafts, items_from_goals, parse_subject, story_url,
 )
 from src.services.live import publish, subscribe, unsubscribe
-from src.services.viewer_identity import crm_logins, taiga_username
+from src.services.viewer_identity import crm_logins, taiga_username, viewer_person
 from src.services.work_list_taiga import TaigaStoryStore
 from src.tools.gated_actuators import (
     execute_taiga_close, execute_taiga_comment, execute_taiga_create,
@@ -95,8 +97,14 @@ class ItemOut(BaseModel):
 
 
 class WorkListOut(BaseModel):
+    # What this person pinned. Shown above the list and never counted against
+    # the cap, so pinning three things does not cost three of the twenty.
+    pinned: List[ItemOut] = []
     live: List[ItemOut]
     past: List[ItemOut]
+    # What they pushed down. Not deleted and not hidden — it has its own bucket,
+    # because a row the person can never find again is a row they lost.
+    buried: List[ItemOut] = []
     # What was scored, before the cap. A page that shows twenty of forty rows has
     # to be able to say so — a truncated list that looks complete is a lie about
     # how much is waiting.
@@ -185,14 +193,33 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user)):
 
     live.sort(key=lambda i: (-i.rank, i.title))
     past.sort(key=lambda i: (i.due or "", i.title))
-    if len(live) > LIST_MAX or len(past) > LIST_MAX:
+
+    # The reader's own pins and burials, applied last: they overrule the ranking
+    # rather than competing with it, so they are read after everything is scored
+    # and sorted.
+    marked = apply_marks(live, _marks(org_id, viewer_person(client)))
+
+    if len(marked.live) > LIST_MAX or len(past) > LIST_MAX:
         logger.info("work-list: showing %d of %d live and %d of %d past for "
                     "org %s — the rest are scored but below the cut",
-                    min(len(live), LIST_MAX), len(live),
+                    min(len(marked.live), LIST_MAX), len(marked.live),
                     min(len(past), LIST_MAX), len(past), org_id)
-    return WorkListOut(live=[_out(i) for i in top(live)],
+    return WorkListOut(pinned=[_out(i) for i in marked.pinned],
+                       live=[_out(i) for i in top(marked.live)],
                        past=[_out(i) for i in top(past)],
-                       live_total=len(live), past_total=len(past))
+                       buried=[_out(i) for i in marked.buried],
+                       live_total=len(marked.live), past_total=len(past))
+
+
+def _marks(org_id: int, person: Optional[str]) -> Dict[str, str]:
+    """This person's pins and burials. A store that cannot answer loses the
+    overrides, not the list."""
+    try:
+        from src.db.repositories.work_list_mark_repo import WorkListMarkRepo
+        return WorkListMarkRepo().for_person(org_id=org_id, person=person)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("work-list: marks unreadable for org %s: %s", org_id, exc)
+        return {}
 
 
 def _goal_items(org_id: int) -> List[Item]:
@@ -894,3 +921,72 @@ async def feedback(body: FeedbackIn,
 
     publish(org_id, "work-list")
     return FeedbackOut(filed=board)
+
+
+# ------------------------------------------------------------------ pin / bury
+
+
+class MarkIn(BaseModel):
+    # The row, by its subject URI — 'taiga:board#34', 'crm:lead/46', 'goal:...'.
+    subject: str
+    # 'pinned' keeps it on the list whatever the ranking decides. 'buried'
+    # takes it out of the top list without deleting it: it stays in its own
+    # bucket and comes back on its own when a deadline comes due.
+    state: str
+
+
+class MarkOut(BaseModel):
+    subject: str
+    state: Optional[str] = None      # None once the mark is cleared
+
+
+@router.post("/mark", response_model=MarkOut)
+async def set_mark(body: MarkIn,
+                   client: Dict[str, Any] = Depends(get_service_or_user)):
+    """Pin a row, or bury it.
+
+    The person overruling the ranking. The list caps at twenty rows, so without
+    this the ranking can drop something the reader decided matters, which is the
+    UX rule the other way up: what the person meant wins over what we scored.
+
+    A pin is not a score. It lifts the row out before the cap is applied, so
+    pinning three things does not cost three of the twenty, and no rubric can
+    outvote it. Burying is the same gesture pointing down, and it is neither a
+    delete nor forever.
+    """
+    org_id = client.get("org_id")
+    if not org_id:
+        raise HTTPException(status_code=403, detail="No organization for this client")
+    person = viewer_person(client)
+    if not person:
+        # A pin belongs to a human. A service key has no list of its own to
+        # rearrange, and letting it write one would rearrange somebody else's.
+        raise HTTPException(status_code=403, detail="Only a signed-in person can pin")
+
+    from src.db.repositories.work_list_mark_repo import STATES, WorkListMarkRepo
+    if body.state not in STATES:
+        raise HTTPException(status_code=400,
+                            detail=f"state must be one of {', '.join(STATES)}")
+    WorkListMarkRepo().set(org_id=org_id, person=person,
+                           subject=body.subject, state=body.state)
+    publish(org_id, "work-list")
+    return MarkOut(subject=body.subject, state=body.state)
+
+
+@router.delete("/mark", response_model=MarkOut)
+async def clear_mark(subject: str,
+                     client: Dict[str, Any] = Depends(get_service_or_user)):
+    """Unpin, or dig it back up. One press, and the row falls straight back into
+    its ranked place — nothing a person can do here is hard to undo."""
+    org_id = client.get("org_id")
+    if not org_id:
+        raise HTTPException(status_code=403, detail="No organization for this client")
+    person = viewer_person(client)
+    if not person:
+        raise HTTPException(status_code=403, detail="Only a signed-in person can pin")
+
+    from src.db.repositories.work_list_mark_repo import WorkListMarkRepo
+    if not WorkListMarkRepo().clear(org_id=org_id, person=person, subject=subject):
+        raise HTTPException(status_code=404, detail="Nothing marked here")
+    publish(org_id, "work-list")
+    return MarkOut(subject=subject, state=None)
