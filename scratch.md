@@ -1728,3 +1728,21 @@ retrieval, it is the surface: a list of clickable topics that is genuinely short
 
 Open and hers to answer: what the aspects are drawn from, and how few is few
 enough to not be noise.
+
+### Correction: the workers.vc CRM database DOES exist — 2026-08-05
+
+My earlier line "no such database exists" was wrong, and wrong in a way worth
+remembering: I probed `odoo-cli` / `localhost:8069`, which is the **VM 200**
+Odoo. The team CRMs are a **different install on VM 517 (10.0.0.17)**, built by
+earnkit, sharing no databases with this one.
+
+Verified: `crm-vc` exists (https://crm-vc.workers.vc returns the Odoo login;
+dbfilter is `^%d$`, so hostname = database name). It is the only one — probed
+whatscookin, linkedtrust, rtv, demo, test, earnkit, govkit, alonovo, cohort,
+workers, wc; all redirect to the database selector, which means absent.
+
+Written up permanently in cobox `app-registry.md` ("Team CRMs on workers.vc"),
+including the credential-free way to check which databases exist.
+
+`crm_world` still needs installing there; no SSH from VM 200 (publickey denied,
+by design), so a human with access runs it.
