@@ -432,6 +432,21 @@ class ApiClient {
     });
   }
 
+  /** Pin a row above the list, or bury it below. Applies immediately. */
+  async markWorkItem(subject: string, state: WorkMarkState): Promise<{ subject: string; state: string | null }> {
+    return this.request('/api/work-list/mark', {
+      method: 'POST',
+      body: JSON.stringify({ subject, state }),
+    });
+  }
+
+  /** Unpin, or dig it back up. One press, either way. */
+  async clearWorkMark(subject: string): Promise<{ subject: string; state: string | null }> {
+    return this.request(`/api/work-list/mark?subject=${encodeURIComponent(subject)}`, {
+      method: 'DELETE',
+    });
+  }
+
   /** What is wrong with the list, in the person's own words. Filed as work on
    *  the team's board — not into a store of its own that nobody sweeps. */
   async sayWhatsWrong(body: { text: string; subject?: string }): Promise<{ filed: string }> {
@@ -546,9 +561,19 @@ export interface WorkItem {
   past: boolean;
 }
 
+/** A person's own override on a row. Not a score, and never a delete. */
+export type WorkMarkState = 'pinned' | 'buried';
+
 export interface WorkList {
+  /** Lifted above the list, in the order they were pinned, never capped. */
+  pinned: WorkItem[];
   live: WorkItem[];
   past: WorkItem[];
+  /** Pushed down. Kept where the person can find it and reverse it. */
+  buried: WorkItem[];
+  /** How many were scored before the cap, so the page can say "20 of 47". */
+  live_total: number;
+  past_total: number;
 }
 
 export interface WorkComment {

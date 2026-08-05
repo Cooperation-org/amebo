@@ -3,11 +3,15 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
-import { Clock, ExternalLink, MessageCircleQuestion, Plus, Send, User } from 'lucide-react';
+import {
+  ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Clock, ExternalLink,
+  MessageCircleQuestion, Pin, PinOff, Plus, Send, User,
+} from 'lucide-react';
 import { useWorkList, type WorkItem } from '@/src/hooks/useWorkList';
 import { useWorkListLive } from '@/src/hooks/useWorkListLive';
 import { useSayWhatsWrong } from '@/src/hooks/useSayWhatsWrong';
 import { useEditWorkItem } from '@/src/hooks/useWorkItem';
+import { useMarkWorkItem } from '@/src/hooks/useWorkListMark';
 import { TaskSheet } from '@/src/components/work/TaskSheet';
 import { useOpenTask } from '@/src/hooks/useOpenTask';
 import { apiClient } from '@/src/lib/api';
@@ -113,10 +117,7 @@ function Snooze({ item }: { item: WorkItem }) {
   const [open, setOpen] = useState(false);
 
   return (
-    <div
-      className="mt-1.5 flex items-center gap-1 text-[11px] text-gray-400"
-      onClick={(e) => e.stopPropagation()}
-    >
+    <>
       <button
         type="button"
         aria-label="Push this out to a later day"
@@ -143,11 +144,85 @@ function Snooze({ item }: { item: WorkItem }) {
           </button>
         ))}
       {edit.isError && <span className="text-red-700">didn&apos;t save</span>}
+    </>
+  );
+}
+
+/**
+ * The controls on a row, on one line. They only exist while the pointer is on
+ * the row; a strip of buttons printed on twenty rows is wallpaper.
+ *
+ * Every press stops here: the row itself opens the task on click.
+ */
+function Controls({ item, state = null }:
+                  { item: WorkItem; state?: 'pinned' | 'buried' | null }) {
+  return (
+    <div
+      className="mt-1.5 flex items-center gap-1 text-[11px] text-gray-400"
+      onClick={(e) => e.stopPropagation()}
+    >
+      <Mark item={item} state={state} />
+      {/* A follow-up's date lives in the CRM and there is no write path to it
+          yet, so the contact card does not offer a control that would fail. Its
+          own record is one click away on the row. */}
+      {item.kind !== 'contact' && state !== 'buried' && <Snooze item={item} />}
     </div>
   );
 }
 
-function Row({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
+/**
+ * Pin the row above the list, or push it below it.
+ *
+ * Same shape as the push-out control beside it: quiet icons that appear when
+ * you reach for the row, no words repeated twenty times down the page. Both
+ * are one press each way — pin and unpin, bury and dig back up — with no
+ * dialog in between, because the standard pattern for a reversible action is
+ * to do it and offer undo rather than ask first.
+ *
+ * `state` is what this row already is, so the same control reads and reverses.
+ */
+function Mark({ item, state }: { item: WorkItem; state: 'pinned' | 'buried' | null }) {
+  const mark = useMarkWorkItem();
+  const press = (next: 'pinned' | 'buried' | null) => (e: React.MouseEvent) => {
+    e.stopPropagation();
+    mark.mutate({ subject: item.subject, state: next });
+  };
+  const button =
+    'rounded p-1 opacity-0 transition-opacity hover:bg-gray-100 hover:text-gray-700 ' +
+    'focus-visible:opacity-100 disabled:opacity-50 group-hover:opacity-100';
+
+  if (state === 'pinned') {
+    return (
+      <button type="button" aria-label="Unpin this" disabled={mark.isPending}
+              onClick={press(null)} className={`${button} opacity-100`}>
+        <PinOff className="h-3.5 w-3.5" />
+      </button>
+    );
+  }
+  if (state === 'buried') {
+    return (
+      <button type="button" aria-label="Put this back on the list" disabled={mark.isPending}
+              onClick={press(null)} className={`${button} opacity-100`}>
+        <ChevronsUp className="h-3.5 w-3.5" />
+      </button>
+    );
+  }
+  return (
+    <>
+      <button type="button" aria-label="Pin this to the top" disabled={mark.isPending}
+              onClick={press('pinned')} className={button}>
+        <Pin className="h-3.5 w-3.5" />
+      </button>
+      <button type="button" aria-label="Push this down, off the list for now"
+              disabled={mark.isPending} onClick={press('buried')} className={button}>
+        <ChevronsDown className="h-3.5 w-3.5" />
+      </button>
+    </>
+  );
+}
+
+function Row({ item, onOpen, state = null }:
+             { item: WorkItem; onOpen: () => void; state?: 'pinned' | 'buried' | null }) {
   // Fetch the task while the pointer is still on its way to the click, so the
   // sheet opens onto the record instead of onto a spinner.
   const qc = useQueryClient();
@@ -163,7 +238,9 @@ function Row({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
       onClick={onOpen}
       onPointerEnter={warm}
       onFocus={warm}
-      className="group cursor-pointer rounded-lg border bg-white px-4 py-3 hover:border-gray-300">
+      className={`group cursor-pointer rounded-lg border px-4 py-3 hover:border-gray-300 ${
+        state === 'buried' ? 'bg-gray-50' : 'bg-white'
+      }`}>
       <div className="flex items-start gap-3">
         <Why label={item.reason.label} kind={item.reason.kind} />
         <Kind kind={item.kind} />
@@ -176,10 +253,7 @@ function Row({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
             <p className="text-[15px] leading-snug text-gray-900">{item.title}</p>
           )}
           <Links item={item} />
-          {/* A follow-up's date lives in the CRM and there is no write path to
-              it yet, so the contact card does not offer a control that would
-              fail. Its own record is one click away on the row. */}
-          {item.kind !== 'contact' && <Snooze item={item} />}
+          <Controls item={item} state={state} />
         </div>
       </div>
     </div>
@@ -206,6 +280,45 @@ function PastRow({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
   );
 }
 
+
+/**
+ * What this person pushed down.
+ *
+ * Burying is "not now", never "never", so it has to be somewhere they can find
+ * and reverse — hidden with no way back would be a delete wearing a softer
+ * word. A collapsed section with its count on the header is the standard
+ * disclosure pattern (w3.org/WAI/ARIA/apg/patterns/disclosure), and it stays
+ * shut until asked for so the page still reads as the list.
+ *
+ * A buried row digs itself back out on its own when its deadline comes within
+ * two days. That is the server's doing; nothing here has to help.
+ */
+function Buried({ items, onOpen }: { items: WorkItem[]; onOpen: (s: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const Chevron = open ? ChevronDown : ChevronRight;
+
+  return (
+    <div className="pt-6">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-gray-400 hover:text-gray-600"
+      >
+        <Chevron className="h-3.5 w-3.5" />
+        pushed down ({items.length})
+      </button>
+      {open && (
+        <div className="space-y-2 pt-2">
+          {items.map((item) => (
+            <Row key={item.subject} item={item} state="buried"
+                 onOpen={() => onOpen(item.subject)} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * Say what is wrong with the list, from the list.
@@ -275,8 +388,10 @@ export default function WorkListPage() {
 
   const live = data?.live ?? [];
   const past = data?.past ?? [];
+  const pinned = data?.pinned ?? [];
+  const buried = data?.buried ?? [];
 
-  if (live.length === 0 && past.length === 0) {
+  if (live.length === 0 && past.length === 0 && pinned.length === 0 && buried.length === 0) {
     // A team that just started has an empty board, and an empty page reads as
     // broken software. The way out of empty is a first task, so the page offers
     // that rather than explaining itself. Still offer the say-so too: "nothing
@@ -300,9 +415,28 @@ export default function WorkListPage() {
   return (
     <div className="space-y-2">
       <h1 className="sr-only">Your list</h1>
+
+      {/* Pinned first, in the order they were pinned. The server keeps these out
+          of the cap, so a pin never costs one of the twenty. */}
+      {pinned.map((item) => (
+        <Row key={item.subject} item={item} state="pinned"
+             onOpen={() => setOpen(item.subject)} />
+      ))}
+      {pinned.length > 0 && <div className="h-px bg-gray-200" />}
+
       {live.map((item) => (
         <Row key={item.subject} item={item} onOpen={() => setOpen(item.subject)} />
       ))}
+
+      {/* A truncated list that looks complete is a lie about how much is
+          waiting, so say the number. */}
+      {(data?.live_total ?? 0) > live.length && (
+        <p className="pt-1 text-xs text-gray-500">
+          {live.length} of {data?.live_total}
+        </p>
+      )}
+
+      {buried.length > 0 && <Buried items={buried} onOpen={setOpen} />}
 
       {past.length > 0 && (
         <>
