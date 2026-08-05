@@ -193,6 +193,7 @@ class GoalDispatcher:
         # Build context and pursue.
         try:
             org_context = self._load_org_context(goal["org_id"])
+            self._record_statements_used(goal_id, org_context.get("statements") or [])
             instance = self._load_instance(goal["org_id"])
             summary, tool_calls = self._pursue(goal, instance, org_context)
             # Close the dispatch with a self-summary so the NEXT dispatch carries
@@ -351,28 +352,41 @@ class GoalDispatcher:
         finally:
             DatabaseConnection.return_connection(conn)
 
-    def _load_org_context(self, org_id: int) -> Dict[str, List[str]]:
+    def _load_org_context(self, org_id: int) -> Dict[str, Any]:
         """
-        Load the org's semantic context from abra: vision, values, and any
-        currently-hot context. Returned as plain strings per category so
-        the dispatcher can decide how to compose them into the prompt.
+        Load what the org is aiming at, for the prompt the goal is pursued under.
+
+        Two roads, and the explicit one wins. If the org has statements switched
+        on (migration 031 — mission, values, OKRs, named and edited by the team
+        on the goals page), those ARE the context and nothing is guessed. Only an
+        org that has said nothing falls back to the old vector search for the
+        literal words "vision" and "values", which is a guess and was never
+        visible to the people it steered.
 
         Keys returned:
-            vision      — list of vision content blobs
-            values      — list of values content blobs
-            current     — list of currently hot context content blobs
+            statements  — [(name, words, statement_id)] the team switched on
+            vision      — list of vision content blobs      (fallback only)
+            values      — list of values content blobs      (fallback only)
+            current     — list of currently hot context blobs
 
-        Empty lists when nothing is stored, so callers can compose without
-        special-casing presence.
+        All empty when nothing is stored: an org with no mission pursues goals
+        exactly as it did before any of this existed.
         """
-        repo = BindingRepo(org_id=org_id)
-        out: Dict[str, List[str]] = {"vision": [], "values": [], "current": []}
+        out: Dict[str, Any] = {
+            "statements": [], "vision": [], "values": [], "current": [],
+        }
 
-        for key, query in (
+        from src.services import statements as statement_service
+        out["statements"] = statement_service.live_context(org_id)
+
+        repo = BindingRepo(org_id=org_id)
+        queries = (("current", "current context"),) if out["statements"] else (
             ("vision", "vision"),
             ("values", "values"),
             ("current", "current context"),
-        ):
+        )
+
+        for key, query in queries:
             try:
                 results = repo.search_content(query, limit=3) or []
             except Exception as exc:
@@ -389,6 +403,26 @@ class GoalDispatcher:
                     out[key].append(content)
 
         return out
+
+    def _record_statements_used(self, goal_id: str,
+                                statements: List[tuple]) -> None:
+        """Write down which of the org's statements steered this run.
+
+        Someone who disagrees with what the claw did has to be able to see what
+        it was aiming at, and get from there back to the row to change it. Names
+        and ids only — the words themselves stay in one place. Best-effort, like
+        every other piece of bookkeeping in this method.
+        """
+        if not statements:
+            return
+        try:
+            self._goal_repo.append_event(
+                goal_id=goal_id, actor_type="claw", action="statements_used",
+                result_summary=", ".join(name for name, _, _ in statements),
+                metadata={"statement_ids": [sid for _, _, sid in statements]},
+            )
+        except Exception:
+            logger.exception("Failed to record statements_used for %s", goal_id)
 
     # ----------------------------------------------------------- Pursuit
 
@@ -437,7 +471,7 @@ class GoalDispatcher:
     def _build_system_prompt(
         self,
         instance: Optional[Dict[str, Any]],
-        org_context: Dict[str, List[str]],
+        org_context: Dict[str, Any],
     ) -> str:
         parts: List[str] = []
 
@@ -448,6 +482,12 @@ class GoalDispatcher:
                 "You are acting on behalf of an org to pursue an explicit goal. "
                 "Stay aligned with the org's vision and values."
             )
+
+        # The team's own statements, under the team's own headings. These are
+        # their words: quote them, never paraphrase them back at them.
+        if org_context.get("statements"):
+            from src.services import statements as statement_service
+            parts.append(statement_service.as_prompt_sections(org_context["statements"]))
 
         if org_context["vision"]:
             parts.append("## Vision\n" + "\n\n".join(org_context["vision"]))

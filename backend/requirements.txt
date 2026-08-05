@@ -2,6 +2,9 @@
 slack-sdk==3.27.1
 slack-bolt==1.18.1
 
+# Discord Integration
+discord.py==2.7.1
+
 # Database
 psycopg2-binary==2.9.9
 sqlalchemy==2.0.25  # Optional: ORM if you prefer

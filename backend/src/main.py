@@ -52,7 +52,9 @@ class SlackHelperApp:
     def __init__(self):
         self.fastapi_server: Optional[Server] = None
         self.slack_task: Optional[asyncio.Task] = None
+        self.discord_task: Optional[asyncio.Task] = None
         self.scheduler_task: Optional[asyncio.Task] = None
+        self.discord_bot = None  # DiscordBot instance, when configured
         self.scheduler = None  # TaskScheduler instance
         self.shutdown_event = asyncio.Event()
 
@@ -147,6 +149,33 @@ class SlackHelperApp:
         except Exception as e:
             logger.error(f"Slack listener error: {e}", exc_info=True)
             raise
+
+    async def start_discord_bot(self):
+        """
+        Start the Discord gateway bot (mentions, thread replies, slash commands).
+
+        Silently skipped when DISCORD_BOT_TOKEN is unset, so deployments
+        without a Discord server are unaffected. A Discord failure must not
+        take Slack down with it, so it is caught and logged here rather than
+        raised into the gather() that kills the process.
+        """
+        from src.services.discord_bot import build_bot
+
+        bot = build_bot()
+        if bot is None:
+            logger.info("Discord not configured - skipping")
+            return
+
+        self.discord_bot = bot
+        token = os.getenv("DISCORD_BOT_TOKEN")
+        logger.info("Starting Discord bot (instance=%s)", bot.instance_slug)
+        try:
+            await bot.start(token)
+        except asyncio.CancelledError:
+            logger.info("Discord bot shutdown requested")
+            await bot.close()
+        except Exception as e:
+            logger.error(f"Discord bot error: {e}", exc_info=True)
 
     async def initialize_workspace(self):
         """
@@ -313,7 +342,14 @@ class SlackHelperApp:
         )
         tasks.append(self.slack_task)
 
-        # 3. Background scheduler
+        # 3. Discord bot (gateway) - no-op unless DISCORD_BOT_TOKEN is set
+        self.discord_task = asyncio.create_task(
+            self.start_discord_bot(),
+            name="discord-bot"
+        )
+        tasks.append(self.discord_task)
+
+        # 4. Background scheduler
         self.scheduler_task = asyncio.create_task(
             self.start_scheduler(),
             name="scheduler"
@@ -366,6 +402,13 @@ class SlackHelperApp:
 
         if self.slack_task and not self.slack_task.done():
             tasks_to_cancel.append(self.slack_task)
+
+        if self.discord_bot is not None and not self.discord_bot.is_closed():
+            logger.info("Closing Discord gateway connection...")
+            await self.discord_bot.close()
+
+        if self.discord_task and not self.discord_task.done():
+            tasks_to_cancel.append(self.discord_task)
 
         if self.scheduler_task and not self.scheduler_task.done():
             tasks_to_cancel.append(self.scheduler_task)
