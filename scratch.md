@@ -1667,3 +1667,33 @@ module is the first caller and should be deleted. The constants in both files
 are the same numbers on purpose so the divergence is easy to spot.
 
 Frontend still to do on pin/bury: the API is live and nothing calls it yet.
+
+## GOLDA'S SHAPE FOR THE LIST: rank deep, show shallow, spread across campaigns
+
+Design direction, 2026-08-05, close to her words. Rubric lane owns this.
+
+- "There should be sort of like more than twenty total that are ranked, that the
+  filtering might drill into. Like there should be some from each campaign, some
+  from each category. There might be a hundred ranked things that you only show
+  the top ones."
+- So: rank a deep pool, show a shallow slice, and make the visible slice
+  **representative** — some from each campaign — rather than the raw top twenty.
+  A single hot campaign must not take every slot.
+- A campaign filter is then a drill-down into the same ranked pool, not a
+  different ranking. One idea of important, many views of it. Filtering to
+  EarnedGov shows the top EarnedGov rows in the order they already had.
+
+Already true today, no work needed: everything is scored and ordered, the cap is
+display-only, and `live_total`/`past_total` report the full depth. `top()`
+already reserves slots so one band cannot take the whole page — the campaign
+spread is the same mechanism with a different key.
+
+**What blocks a campaign lens, and it is a question for Golda, not a coding
+decision:** campaign is a real, well-maintained fact on CRM records — 1092 of
+1237 leads carry `campaign_id` (ExpandNetwork 448, LinkedTrust 206, AE Organizer
+Feedback 103, BuildRelations 88, EarnedGov 71, Indivisible 46, Impact 43,
+ContractWork 40, SNAP 33; only 110 leads carry tags). A **Taiga story has no
+campaign field at all**. So a campaign filter built today would silently cover
+CRM rows and drop every task, which reads as broken rather than filtered.
+
+How work gets tagged to a campaign is the open question. Do not guess it.
