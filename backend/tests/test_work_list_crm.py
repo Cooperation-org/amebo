@@ -145,3 +145,68 @@ def test_a_broken_message_lookup_still_yields_rows():
     result = assemble_crm([activity()], Broken(), today=TODAY)
     assert len(result.live) == 1
     assert result.live[0].quote is None
+
+
+# ------------------------------------------------------------------ their words, cleaned
+
+from src.services.work_list_crm import _clean, human_words  # noqa: E402
+
+# The two shapes real chatter arrives in, from the CRM: what the mail poller
+# stamps on a record, and the header block a forwarded mail carries with it.
+FORWARDED = (
+    "via email-poller · forwarded by gvelez17@gmail.com · original from "
+    "jkitchens@credentialengine.org\n\n"
+    "---------- Forwarded message ---------\n"
+    "From: Jeanne Kitchens &lt;jkitchens@credentialengine.org&gt;\n"
+    "Date: Thu, Jul 9, 2026, 11:07 AM\n"
+    "Subject: Re: Semantic search follow-up?\n"
+    "To: Golda Velez &lt;gvelez17@gmail.com&gt;\n\n"
+    "Golda, our RFP is out"
+)
+
+WRAPPED_CC = (
+    "via email-poller · forwarded by gvelez17@gmail.com · original from "
+    "jkitchens@credentialengine.org\n\n"
+    "---------- Forwarded message ---------\n"
+    "From: Jeanne Kitchens\n"
+    "Date: Thu, Jun 4, 2026 at 8:41 PM\n"
+    "Subject: Re: Semantic search follow-up?\n"
+    "To: Golda Velez\n"
+    "Cc: Amos Mwangi\n,\nMuhammad Hany\n,\ngitonga miriam\n\n"
+    "Golda, thank you for following up."
+)
+
+
+def test_amebos_own_stamp_never_becomes_the_headline():
+    _who, text = human_words(_clean(FORWARDED))
+    assert not text.startswith("via email-poller")
+    assert "forwarded by" not in text
+
+
+def test_the_words_are_attributed_to_who_wrote_them():
+    """Not to whoever forwarded the mail into the CRM."""
+    who, _text = human_words(_clean(FORWARDED))
+    assert who == "Jeanne Kitchens"
+
+
+def test_the_mail_header_block_is_not_the_message():
+    _who, text = human_words(_clean(FORWARDED))
+    assert text == "Golda, our RFP is out"
+
+
+def test_a_wrapped_cc_list_is_still_header_not_message():
+    """A long Cc: runs onto lines carrying no key. Those used to read as the
+    start of the message, so the card opened with ', Muhammad Hany'."""
+    who, text = human_words(_clean(WRAPPED_CC))
+    assert who == "Jeanne Kitchens"
+    assert text == "Golda, thank you for following up."
+
+
+def test_plain_chatter_is_left_alone():
+    who, text = human_words(_clean("<p>Spoke to her today, she's in.</p>"))
+    assert who is None
+    assert text == "Spoke to her today, she's in."
+
+
+def test_line_structure_survives_and_entities_are_decoded():
+    assert _clean("<p>one</p><p>two &amp; three</p>") == "one\ntwo & three"

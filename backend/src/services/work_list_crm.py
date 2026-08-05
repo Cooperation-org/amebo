@@ -25,6 +25,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from html import unescape as _unescape
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -38,8 +39,79 @@ def form_url(model: str, record_id: Any) -> str:
     return f"{ODOO_PUBLIC_URL}/web#id={record_id}&model={model}&view_type=form"
 
 
+_BREAK_RE = re.compile(r"<\s*(br|/p|/div|/li)\b[^>]*>", re.I)
+_TAG_RE = re.compile(r"<[^>]+>")
+
+# Amebo's own stamp on chatter it wrote (see mail_poller/poller.py). It is a
+# label the app generated, not something a person said, so it never becomes the
+# headline on a card.
+_PROVENANCE_RE = re.compile(r"^\s*via [\w.-]+ ·[^\n]*\n?", re.I)
+
+# A forwarded mail carries its own header block. The person's words start after
+# it, and the name on the From: line is who actually said them — not whoever
+# forwarded it into the CRM.
+_FWD_MARKER_RE = re.compile(
+    r"-{2,}\s*Forwarded message\s*-{2,}|Begin forwarded message:?|"
+    r"-{2,}\s*Original Message\s*-{2,}", re.I)
+_HEADER_LINE_RE = re.compile(r"^\s*(From|Date|Sent|Subject|To|Cc|Bcc):", re.I)
+_FROM_NAME_RE = re.compile(r"^\s*From:\s*([^<\n]+?)\s*(?:<|$)", re.I | re.MULTILINE)
+
+# How far past the last header key to keep looking for the blank line that
+# closes the block. A wrapped Cc: list runs to a few lines; beyond that the
+# blank line is not a header separator and the message starts straight away.
+_HEADER_WRAP_LINES = 8
+
+
 def _clean(html: str) -> str:
-    return re.sub(r"<[^>]+>", " ", html or "").replace("&nbsp;", " ").strip()
+    """HTML chatter as readable text, with its line structure kept.
+
+    Breaks become newlines rather than spaces: a forwarded mail's header block
+    is only separable from the message when its lines are still lines.
+    """
+    text = _BREAK_RE.sub("\n", html or "")
+    text = _TAG_RE.sub(" ", text)
+    text = _unescape(text).replace("\xa0", " ")
+    text = re.sub(r"[ \t]+", " ", text)
+    # A tag either side of a break leaves the space that stood in for it sitting
+    # against the newline, which then shows up as an indent on every line.
+    text = re.sub(r" *\n *", "\n", text)
+    return re.sub(r"\n{3,}", "\n\n", text).strip()
+
+
+def human_words(text: str) -> tuple:
+    """(who actually said it or None, what they said).
+
+    Strips what amebo stamped on the record and what the mail client wrote,
+    leaving the part a person typed. Golda's rule for every surface: their
+    words, never app-generated labels.
+    """
+    body = _PROVENANCE_RE.sub("", text or "", count=1).strip()
+    who = None
+
+    marker = _FWD_MARKER_RE.search(body)
+    if marker:
+        after = body[marker.end():]
+        name = _FROM_NAME_RE.search(after)
+        if name:
+            who = name.group(1).strip() or None
+        # Where the header block ends. Not simply "after the last From:/To:
+        # line" — a long Cc: wraps onto lines of its own that carry no key, and
+        # those read as the start of the message when they are not. A mail body
+        # begins after the blank line that closes the headers, so that is what
+        # is looked for.
+        lines = after.splitlines()
+        last_header = -1
+        for i, line in enumerate(lines):
+            if _HEADER_LINE_RE.match(line):
+                last_header = i
+        if last_header >= 0:
+            start = last_header + 1
+            for i in range(start, min(len(lines), start + _HEADER_WRAP_LINES)):
+                if not lines[i].strip():
+                    start = i + 1
+                    break
+            body = "\n".join(lines[start:]).strip() or body
+    return who, body
 
 
 class OdooActivityStore:
@@ -94,13 +166,14 @@ class OdooActivityStore:
             rid = row.get("res_id")
             if rid in out:
                 continue
-            text = _clean(row.get("body"))
+            said_by, text = human_words(_clean(row.get("body")))
             if not text:
                 continue
             author = row.get("author_id")
             out[rid] = {
-                "who": author[1] if isinstance(author, (list, tuple)) and len(author) > 1
-                       else "someone",
+                # Whoever the mail says wrote it, before whoever pasted it in.
+                "who": said_by or (author[1] if isinstance(author, (list, tuple))
+                                   and len(author) > 1 else "someone"),
                 "text": text,
                 "url": form_url(res_model, rid),
             }
@@ -134,13 +207,13 @@ class OdooActivityStore:
             return []
         out: List[Dict[str, str]] = []
         for row in rows:
-            text = _clean(row.get("body"))
+            said_by, text = human_words(_clean(row.get("body")))
             if not text:
                 continue
             author = row.get("author_id")
             out.append({
-                "who": author[1] if isinstance(author, (list, tuple)) and len(author) > 1
-                       else "someone",
+                "who": said_by or (author[1] if isinstance(author, (list, tuple))
+                                   and len(author) > 1 else "someone"),
                 "text": text,
                 "when": row.get("date") or "",
             })
