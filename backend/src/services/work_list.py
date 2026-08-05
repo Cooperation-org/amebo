@@ -472,6 +472,138 @@ def assemble_crm(activities: Sequence[Dict[str, Any]], store: Any, *,
     return WorkList(live=live, past=past)
 
 
+# Where an engaged-but-unscheduled CRM record sits in the judged half. Below a
+# question amebo is holding for you (JUDGED_CEILING) because a person waiting on
+# an answer beats a record waiting on a next step, and well clear of the clock
+# band, because none of this is dated.
+OPEN_CONTEXT_FLOOR = 400.0
+OPEN_CONTEXT_STAGE_STEP = 60.0   # each stage further along is more real
+OPEN_CONTEXT_QUIET_CAP = 180.0   # past six months quiet, longer stops meaning more
+
+
+def _quiet_days(stamp: Optional[str], today: date) -> Optional[int]:
+    """Days since the record last moved. Odoo writes '2026-03-03 12:00:00'; only
+    the date half matters here."""
+    if not stamp:
+        return None
+    try:
+        return max(0, (today - date.fromisoformat(str(stamp)[:10])).days)
+    except ValueError:
+        return None
+
+
+def build_open_context_item(lead: Dict[str, Any], *, today: date,
+                            stage_rank: Dict[int, int],
+                            message: Optional[Dict[str, str]] = None) -> Item:
+    """An opportunity someone engaged and then left without a next step.
+
+    It has no date, so it cannot rank on the clock. What stands in for one: how
+    far along it is (a record at 'Connected' has more waiting on it than one at
+    'Reached Out') and how long it has been quiet. Both are stated in the label,
+    because a judged rank has to justify itself.
+    """
+    stage = lead.get("stage_id")
+    stage_id = stage[0] if isinstance(stage, (list, tuple)) and stage else None
+    stage_name = (stage[1] if isinstance(stage, (list, tuple)) and len(stage) > 1
+                  else "")
+    quiet = _quiet_days(lead.get("date_last_stage_update"), today)
+
+    rank = OPEN_CONTEXT_FLOOR
+    rank += OPEN_CONTEXT_STAGE_STEP * stage_rank.get(stage_id, 0)
+    rank += min(float(quiet or 0), OPEN_CONTEXT_QUIET_CAP)
+    rank = min(JUDGED_CEILING - 1.0, rank)
+
+    if quiet is None:
+        label = f"{stage_name.lower()}, nothing scheduled".strip(", ")
+    else:
+        label = f"{stage_name.lower()}, nothing scheduled for {quiet} days"
+
+    partner = lead.get("partner_id")
+    partner_name = (partner[1] if isinstance(partner, (list, tuple))
+                    and len(partner) > 1 else None)
+
+    links = [Link(label=partner_name or "the record",
+                  url=_crm_form_url("crm.lead", lead.get("id")))]
+
+    return Item(
+        subject=f"crm:lead/{lead.get('id')}",
+        title=(lead.get("name") or "").strip() or partner_name or "(opportunity)",
+        reason=Reason(label.strip(", "), "judgement"),
+        rank=rank,
+        links=links,
+        quote=(Quote(who=message["who"], text=message["text"],
+                     url=message.get("url")) if message else None),
+        due=None,
+        assignee=_odoo_name(lead.get("user_id")),
+    )
+
+
+def assemble_crm_open_context(leads: Sequence[Dict[str, Any]], store: Any, *,
+                              today: Optional[date] = None,
+                              viewer_uids: Optional[Sequence[int]] = None,
+                              stage_names: Optional[Dict[int, str]] = None
+                              ) -> List[Item]:
+    """Engaged opportunities with no next step, filtered to the viewer.
+
+    Same viewer rule as the follow-up source: ids not names, and an unowned
+    record stays on every list because it is waiting on whoever picks it up.
+    Nothing here is dated, so nothing here can be past — it all comes back as
+    one live list.
+    """
+    today = today or date.today()
+    wanted = set(viewer_uids or ())
+    mine = [l for l in leads
+            if not wanted or _odoo_uid(l.get("user_id")) in (None, *wanted)]
+    if not mine:
+        return []
+
+    # Further along the pipeline ranks higher. The order comes from the CRM's own
+    # stage sequence, so adding a stage in Odoo does not need a change here.
+    ordered = sorted((stage_names or {}).keys())
+    stage_rank = {sid: i for i, sid in enumerate(ordered)}
+
+    # The person's own last words, read off the contact the opportunity hangs on
+    # — a lead record carries no chatter of its own. One query for the page.
+    quotes: Dict[int, Dict[str, str]] = {}
+    partner_ids = [_odoo_uid(l.get("partner_id")) for l in mine]
+    partner_ids = [p for p in partner_ids if p]
+    if partner_ids:
+        try:
+            quotes = store.last_messages("res.partner", partner_ids)
+        except Exception as exc:  # noqa: BLE001 - the quote is a nicety
+            logger.debug("work_list: no CRM messages for contacts: %s", exc)
+
+    items = [build_open_context_item(
+                l, today=today, stage_rank=stage_rank,
+                message=quotes.get(_odoo_uid(l.get("partner_id"))))
+             for l in mine]
+    items.sort(key=lambda i: (-i.rank, i.title))
+    return items
+
+
+def _crm_form_url(model: str, record_id: Any) -> str:
+    from src.services.work_list_crm import form_url
+    return form_url(model, record_id)
+
+
+def _odoo_name(rel: Any) -> Optional[str]:
+    """The display half of an Odoo relation, or None when it is unset. Odoo
+    returns an empty relation as ``False``."""
+    if isinstance(rel, (list, tuple)) and len(rel) > 1:
+        return rel[1]
+    return None
+
+
+def _odoo_uid(rel: Any) -> Optional[int]:
+    """The id half of an Odoo relation. ``False`` is an int in Python, so the
+    bool has to be ruled out first or an unset relation reads as id 0."""
+    if isinstance(rel, bool) or rel is None:
+        return None
+    if isinstance(rel, (list, tuple)):
+        return rel[0] if rel else None
+    return rel if isinstance(rel, int) else None
+
+
 def _activity_uid(activity: Dict[str, Any]) -> Optional[int]:
     """The Odoo user id on a follow-up, or None when it has no owner.
 

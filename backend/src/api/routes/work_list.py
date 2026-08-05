@@ -41,7 +41,8 @@ from pydantic import BaseModel
 from src.api.middleware.auth import get_service_or_user
 from src.db.repositories.pending_action_repo import PendingActionRepo
 from src.services.work_list import (
-    Item, WorkList, assemble_crm, assemble_stories, goal_task_refs,
+    Item, WorkList, assemble_crm, assemble_crm_open_context,
+    assemble_stories, goal_task_refs,
     items_from_drafts, items_from_goals, parse_subject, story_url,
 )
 from src.services.live import publish, subscribe, unsubscribe
@@ -217,17 +218,37 @@ def _board_items(org_id: int, viewer: Optional[str]) -> WorkList:
 
 
 def _crm_items(org_id: int, logins: List[str]) -> WorkList:
-    """Follow-ups someone scheduled in the CRM. A dated one ranks on the same
-    clock as a story, so a call due tomorrow lands beside a task due tomorrow
-    instead of in a CRM section nobody opens."""
+    """What the CRM is holding for this person: follow-ups someone scheduled,
+    and conversations that were engaged and then left without a next step.
+
+    A dated follow-up ranks on the same clock as a story, so a call due tomorrow
+    lands beside a task due tomorrow instead of in a CRM section nobody opens.
+    The undated ones rank below every dated row but above nothing, which is where
+    they used to sit — the CRM holds three scheduled follow-ups and over a
+    thousand open opportunities, so follow-ups alone left the CRM invisible here.
+
+    One store, one set of viewer ids, both sources: a second connection per list
+    would cost more than the rows are worth.
+    """
     try:
         from src.services.work_list_crm import OdooActivityStore
         crm = OdooActivityStore()
-        return assemble_crm(crm.open_activities(), crm,
-                            viewer_uids=crm.uids_for_logins(logins))
+        uids = crm.uids_for_logins(logins)
+        scheduled = assemble_crm(crm.open_activities(), crm, viewer_uids=uids)
     except Exception as exc:  # noqa: BLE001
         logger.warning("work-list: crm source failed for org %s: %s", org_id, exc)
         return WorkList()
+
+    # Open context fails on its own: a broken stage read loses these rows and
+    # leaves the scheduled follow-ups standing.
+    try:
+        stages = crm.stages_past_first()
+        scheduled.live.extend(assemble_crm_open_context(
+            crm.open_context(), crm, viewer_uids=uids, stage_names=stages))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("work-list: crm open context failed for org %s: %s",
+                       org_id, exc)
+    return scheduled
 
 
 def _draft_rows(org_id: int) -> List[Dict[str, Any]]:
@@ -451,6 +472,59 @@ def _crm_detail(activity_id: str) -> DetailOut:
     )
 
 
+def _crm_lead_detail(lead_id: str) -> DetailOut:
+    """An opportunity with no next step, opened as itself.
+
+    Same read-only shape as a scheduled follow-up: who it is, what they last
+    said, and one way through to the record. Scheduling the next step is a CRM
+    write and goes through a registered executor, not through this endpoint.
+    """
+    from src.services.work_list_crm import OdooActivityStore, form_url
+
+    try:
+        ref = int(lead_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Unreadable subject")
+
+    store = OdooActivityStore()
+    lead = store.lead(ref)
+    if not lead or not lead.get("active", True):
+        raise HTTPException(status_code=404, detail="Opportunity not found")
+
+    partner = lead.get("partner_id")
+    partner_id = (partner[0] if isinstance(partner, (list, tuple)) and partner
+                  else None)
+    partner_name = (partner[1] if isinstance(partner, (list, tuple))
+                    and len(partner) > 1 else None)
+    # A lead carries no chatter of its own; what was said lives on the contact.
+    comments = [CommentOut(who=m["who"], text=m["text"], when=m["when"] or None)
+                for m in (store.messages("res.partner", partner_id)
+                          if partner_id else [])]
+
+    owner = lead.get("user_id")
+    stage = lead.get("stage_id")
+    return DetailOut(
+        subject=f"crm:lead/{ref}",
+        kind="contact",
+        ref=ref,
+        # How a person names this out loud: the stage it is sitting in.
+        code=(stage[1] if isinstance(stage, (list, tuple)) and len(stage) > 1
+              else None),
+        project=partner_name or "the CRM",
+        title=(lead.get("name") or "").strip() or partner_name or "(opportunity)",
+        description=lead.get("description") or None,
+        status=(stage[1] if isinstance(stage, (list, tuple)) and len(stage) > 1
+                else None),
+        due=None,
+        assignee=(owner[1] if isinstance(owner, (list, tuple)) and len(owner) > 1
+                  else None),
+        url=form_url("crm.lead", ref),
+        comments=comments,
+        statuses=[],
+        members=[],
+    )
+
+
 @router.get("/detail", response_model=DetailOut)
 async def get_detail(subject: str,
                      client: Dict[str, Any] = Depends(get_service_or_user)):
@@ -463,6 +537,8 @@ async def get_detail(subject: str,
         return _draft_detail(subject.split(":", 1)[1], org_id)
     if subject.startswith("crm:activity/"):
         return _crm_detail(subject.split("/", 1)[1])
+    if subject.startswith("crm:lead/"):
+        return _crm_lead_detail(subject.split("/", 1)[1])
     slug, ref = _guard(subject, org_id)
 
     detail = _task_detail(subject, slug, ref, TaigaStoryStore())

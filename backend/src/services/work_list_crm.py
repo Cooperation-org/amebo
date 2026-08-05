@@ -12,10 +12,18 @@ not:
   so it ranks on the same clock and sits in the same list rather than in a CRM
   section of its own.
 
-  **Out: undated leads.** There are over a thousand of them. A list that needs
-  a person is not a backlog, and dumping the pipeline into it is exactly what
-  the grooming pass had to undo. A lead reaches the list when someone schedules
-  something on it, which is the moment it starts waiting on a human.
+  **In: engaged opportunities nobody scheduled anything on** (``crm.lead`` past
+  the first stage, no ``mail.activity``). Someone moved this record forward and
+  then left no next step, so it is waiting on a person without saying so. This
+  is the CRM's open context: today the CRM holds 1237 open opportunities and
+  3 scheduled follow-ups, so a list sourced only from follow-ups shows almost
+  nothing while real conversations go cold.
+
+  **Out: the raw pipeline.** The 1220 records still sitting in the first stage
+  are a backlog, not a list of what needs a person, and dumping them in is
+  exactly what the grooming pass had to undo. A record earns a row by having
+  been engaged — moved past the first stage — or by having something scheduled
+  on it.
 
 Only reads. Writes a human presses go through the registered executors.
 """
@@ -140,6 +148,64 @@ class OdooActivityStore:
             "order": "date_deadline asc",
             "limit": limit,
         })
+
+    def stages_past_first(self) -> Dict[int, str]:
+        """{stage id -> name} for every open stage after the first one.
+
+        Read from the CRM rather than hardcoded: the first stage is whatever has
+        the lowest sequence, which is where new records land and where the
+        ungroomed pipeline sits. Won stages are left out because a closed deal is
+        not waiting on anyone.
+        """
+        try:
+            stages = self._kw("crm.stage", "search_read", [[]], {
+                "fields": ["name", "sequence", "is_won"], "order": "sequence asc"})
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("work_list_crm: stages unreadable: %s", exc)
+            return {}
+        if not stages:
+            return {}
+        first = stages[0].get("sequence")
+        return {s["id"]: s.get("name") or "" for s in stages
+                if s.get("sequence") != first and not s.get("is_won")}
+
+    def open_context(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """Engaged opportunities with no scheduled follow-up, longest quiet first.
+
+        The filter on ``activity_ids`` is what keeps this source from doubling
+        the follow-up source: a record someone has already scheduled something on
+        appears there, as the follow-up it is, and never here.
+        """
+        stages = self.stages_past_first()
+        if not stages:
+            return []
+        try:
+            rows = self._kw("crm.lead", "search_read", [[
+                ("type", "=", "opportunity"),
+                ("active", "=", True),
+                ("stage_id", "in", list(stages)),
+            ]], {"fields": ["name", "user_id", "stage_id", "partner_id",
+                            "activity_ids", "date_last_stage_update",
+                            "expected_revenue", "email_from"],
+                 "order": "date_last_stage_update asc",
+                 "limit": limit})
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("work_list_crm: open context unreadable: %s", exc)
+            return []
+        return [r for r in rows if not r.get("activity_ids")]
+
+    def lead(self, lead_id: int) -> Optional[Dict[str, Any]]:
+        """One opportunity, or None when it is gone or was archived. A row opened
+        from a stale list is a normal 404, not an error."""
+        try:
+            rows = self._kw("crm.lead", "read", [[int(lead_id)]], {
+                "fields": ["name", "description", "user_id", "stage_id",
+                           "partner_id", "date_last_stage_update",
+                           "expected_revenue", "email_from", "active"]})
+        except Exception as exc:  # noqa: BLE001
+            logger.info("work_list_crm: lead %r unreadable: %s", lead_id, exc)
+            return None
+        return rows[0] if rows else None
 
     def last_messages(self, res_model: str,
                       res_ids: List[int]) -> Dict[int, Dict[str, str]]:
