@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Clock, ExternalLink, MessageCircleQuestion, Send, User } from 'lucide-react';
+import Link from 'next/link';
+import { Clock, ExternalLink, MessageCircleQuestion, Plus, Send, User } from 'lucide-react';
 import { useWorkList, type WorkItem } from '@/src/hooks/useWorkList';
 import { useWorkListLive } from '@/src/hooks/useWorkListLive';
 import { useSayWhatsWrong } from '@/src/hooks/useSayWhatsWrong';
@@ -276,11 +277,21 @@ export default function WorkListPage() {
   const past = data?.past ?? [];
 
   if (live.length === 0 && past.length === 0) {
-    // Still offer the say-so: "nothing waiting on you" is itself sometimes the
-    // thing that is wrong, and there would be nowhere to say it.
+    // A team that just started has an empty board, and an empty page reads as
+    // broken software. The way out of empty is a first task, so the page offers
+    // that rather than explaining itself. Still offer the say-so too: "nothing
+    // waiting on you" is itself sometimes the thing that is wrong, and there
+    // would be nowhere to say it.
     return (
       <div>
         <p className="text-sm text-gray-500">Nothing waiting on you.</p>
+        <Link
+          href="/chat"
+          className="mt-3 inline-flex items-center gap-2 rounded-md bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-700"
+        >
+          <Plus className="h-4 w-4" />
+          Make a task
+        </Link>
         <WhatsWrong about={null} />
       </div>
     );
