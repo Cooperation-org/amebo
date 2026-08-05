@@ -1508,3 +1508,49 @@ sitting on:
 So a per-person inbox on workers.vc is still two jobs — deploy current main, and
 fill the identity map — but only the first one has to happen through the repo.
 The map can be written from here against that deployment's database.
+
+## WORLD MODEL: events and spaces are real CRM tables now — 2026-08-05 (architecture session)
+
+Golda's call, after working through where a model of the world belongs. Short
+version: **entities were already `res.partner`; events and spaces are now real
+Odoo models with schemas.** Not abra (that is her naming layer into the world,
+per-person, not authoritative), not LinkedTrust nodes (that is the publish /
+assertion layer, and a claim-derived graph is the wrong thing to query for
+"what is happening in six weeks").
+
+Module: `crm_world`, repo `Cooperation-org/odoo-crm-world`, checked out at
+`/opt/odoo/custom-addons/crm_world`. **Installed on `linkedtrust_crm`.**
+
+- `world.space` — a place with membership you can enter and be heard in (slack,
+  discord, forum, mailing list, social, repo, venue, city). Test against an org:
+  you enter a space; you reach an org through its people. Fields: uri, kind,
+  url, owner_id (res.partner), partner_ids (people we know there), joined,
+  last_verified. This is what unblocks the social-listening claw — "where are
+  their Slacks" now has somewhere to be stored.
+- `world.event` — happens at a time, not ours to move (conference, call,
+  application window, funding deadline, launch). Test against a task: a task is
+  finished, an event merely happens. Fields: uri, kind, date_start, date_end,
+  `date_ids` (one row per dated moment: papers close, early rate ends),
+  computed+stored+indexed `next_date`, space_id, organizer_id, speaker_ids,
+  attendee_ids, stance (watching/applying/attending/passed), tag_ids,
+  source_url, last_verified.
+- `res.partner` gains space_ids, speaking_event_ids, attending_event_ids,
+  owned_space_ids and a World tab.
+
+**Deliberately NOT on the event: lead time.** An event has dates. When it should
+surface is a stance and differs per team, so it belongs to the rubric, not the
+fact. Same rule as sources-carry-facts in the inbox plan.
+
+For the work list: `world.event` is a source, subject scheme `crm:event/<id>`,
+facts = next_date, kind, stance, speaker overlap with our contacts, last_verified.
+It lands after the source registry, like everything else.
+
+**Staleness is the real risk.** `last_verified` exists on both models; a claw has
+to own refreshing it or this is the stale conference markdown table with better
+indexes.
+
+**workers.vc: blocked, not done.** The per-team pattern is `crm-{slug}` and no
+such database exists yet (probed crm-vc, crm-workersvc, crm-workers,
+workersvc_crm, crm-whatscookin — none). Standing up a second CRM database is
+Golda's call, not something to do sideways. Once it exists: `ODOO_DB=<db>
+odoo-cli module-install crm_world`, same addon path, no code change.
