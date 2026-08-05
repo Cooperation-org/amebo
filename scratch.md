@@ -1746,3 +1746,28 @@ including the credential-free way to check which databases exist.
 
 `crm_world` still needs installing there; no SSH from VM 200 (publickey denied,
 by design), so a human with access runs it.
+
+## HANDOFF: the list has two opposite problems — 2026-08-05
+
+Full note: `/opt/shared/projects/plans/amebo/8-5-2026-handoff-two-opposite-problems.md`
+
+Golda: "sometimes you don't have any, and sometimes you have way too many."
+
+The list was designed against LinkedTrust's board (869 open, 367 undated and
+unowned) so `_undated_belongs` keeps unowned undated work off every list. On
+workers.vc (`crm-vc`, VM 517) the board is new — maybe zero rows, maybe six —
+and that same rule produces an empty page, which reads as broken software.
+
+The real test is not ownership, it is **room**. Fill in order and stop when full:
+yours dated, yours undated, unowned dated (unchanged — a date is coming
+regardless), then **unowned undated only while there is room under the cap**.
+Never somebody else's work, at either extreme. LinkedTrust fills up long before
+the last band, so nothing regresses; workers.vc reaches it and shows its board.
+
+Consequence for the code: the cap stops being a slice applied after the sort and
+becomes the budget assembly spends — either move it into assembly or have
+assembly return bands and let the caller fill. Prefer the second; `work_list.py`
+staying pure is worth keeping.
+
+Sits after the source registry and the rubric object. Empty-page design is an
+open question for Golda and must NOT be answered with generated copy.
