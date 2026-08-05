@@ -8,6 +8,7 @@ Thread context is maintained by ConversationManager.
 
 import json
 import logging
+import os
 import uuid
 from datetime import datetime
 
@@ -77,8 +78,22 @@ async def chat_message(req: ChatRequest, current_user: dict = Depends(get_curren
     session_id = req.session_id or str(uuid.uuid4())
 
     # Resolve the instance from the verified SSO org — secure, not client-supplied.
+    #
+    # A person on no team (workers.vc applicant pool) has org_id NULL and still
+    # gets an amebo: this deployment's default instance, named by
+    # AMEBO_DEFAULT_INSTANCE_SLUG. That instance's own config — its
+    # identity_prompt and allowed_tools — is what it knows about people who have
+    # not joined a venture yet. org_context stays None below, so every org-scoped
+    # tool keeps refusing them; this decides which amebo answers, never what it
+    # may touch. Unset on other deployments -> unchanged behaviour.
     instance_repo = InstanceRepo()
-    instance = instance_repo.get_by_org(current_user['org_id'])
+    instance = None
+    if current_user.get('org_id') is not None:
+        instance = instance_repo.get_by_org(current_user['org_id'])
+    else:
+        default_slug = os.getenv('AMEBO_DEFAULT_INSTANCE_SLUG', '').strip()
+        if default_slug:
+            instance = instance_repo.get_by_slug(default_slug)
     if not instance:
         raise HTTPException(
             status_code=404,

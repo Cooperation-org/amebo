@@ -127,3 +127,72 @@ class GovKitDirectory:
             org_slug=data.get("org_slug") or self.org_slug,
             taiga_username=data.get("taiga_username") or "",
         )
+
+
+@dataclass(frozen=True)
+class Identity:
+    """A login as GovKit knows it. Read-only here — GovKit owns this row."""
+
+    display_name: str
+    email: str
+    pool: bool                      # holds an accepted applicant-pool invite
+    memberships: Tuple[Dict, ...]   # ({org_slug, org_name, role, audience}, ...)
+
+
+class GovKitPeople:
+    """Ask GovKit who an OIDC subject is, across every org on that install.
+
+    Not org-scoped, unlike GovKitDirectory: the whole point is the person who
+    belongs to NO org. Somebody in the workers pool holds an accepted pool
+    invite and no membership anywhere, which is a real state and not an
+    absence — but from outside a browser it used to be indistinguishable from
+    a stranger, so amebo turned them away.
+
+        GET {base}/api/v1/accounts/s2s/identity/{provider}/{subject}/
+
+    None means "GovKit did not answer, or does not know this subject". A
+    caller must treat None as UNKNOWN, never as denied: an outage returns it
+    too. No cache — this is read once at sign-in, not per message.
+    """
+
+    def __init__(self, base_url: Optional[str] = None, token: Optional[str] = None):
+        self.base_url = (base_url or os.getenv("GOVKIT_BASE_URL", "")).rstrip("/")
+        self.token = token or os.getenv("GOVKIT_S2S_TOKEN", "")
+
+    @property
+    def configured(self) -> bool:
+        return bool(self.base_url and self.token)
+
+    def identity(self, subject: str, provider: str = "linkedtrust") -> Optional[Identity]:
+        if not self.configured or not subject:
+            return None
+
+        url = f"{self.base_url}/api/v1/accounts/s2s/identity/{provider}/{subject}/"
+        try:
+            resp = requests.get(
+                url,
+                headers={"Authorization": f"Bearer {self.token}"},
+                timeout=REQUEST_TIMEOUT_SECONDS,
+            )
+        except requests.RequestException as exc:
+            logger.warning("GovKit identity unreachable (%s): %s", url, exc)
+            return None
+
+        if resp.status_code == 404:
+            return None
+        if resp.status_code != 200:
+            logger.warning("GovKit identity returned %s for %s", resp.status_code, subject)
+            return None
+
+        try:
+            data = resp.json()
+        except ValueError:
+            logger.warning("GovKit identity returned non-JSON for %s", subject)
+            return None
+
+        return Identity(
+            display_name=data.get("display_name") or data.get("email") or "",
+            email=data.get("email") or "",
+            pool=bool(data.get("pool")),
+            memberships=tuple(data.get("memberships") or ()),
+        )

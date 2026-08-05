@@ -742,6 +742,25 @@ def _front(path: str) -> str:
     return f"{FRONTEND_URL}{path}"
 
 
+def _is_in_the_pool(subject: str) -> bool:
+    """Does GovKit say this login was screened into the applicant pool?
+
+    Fails CLOSED. GovKit returns None both for "never heard of them" and for
+    "I am down", and those must not admit anyone; an outage turning strangers
+    into members would be a worse bug than a pool person having to sign in
+    again in five minutes. Dormant with no GOVKIT_BASE_URL / GOVKIT_S2S_TOKEN,
+    so deployments with no GovKit behave exactly as before.
+    """
+    try:
+        from src.integrations.govkit_directory import GovKitPeople
+
+        identity = GovKitPeople().identity(subject)
+    except Exception:  # noqa: BLE001 — never let this break sign-in
+        logger.exception("OIDC: GovKit pool check failed for sub=%s", subject)
+        return False
+    return bool(identity and identity.pool)
+
+
 def _auth_fail_redirect(next_url, error: str) -> RedirectResponse:
     """A non-success auth outcome (pending approval, expired, mismatch, ...).
 
@@ -945,22 +964,44 @@ async def oidc_callback(request: Request, code: str = None, state: str = None, e
                     )
 
                 if user is None:
-                    # An unknown identity gets NO org and NO user row. Orgs are
-                    # minted in exactly two places (golda 2026-07-25, matching
-                    # the rule GovKit already follows in orgs/invites.py): a
-                    # founder bringing a venture, and a deliberate operator /
-                    # add-team run. Never as a side effect of somebody logging
-                    # in. This branch used to mint "<name>'s workspace" plus an
-                    # inactive user, which (a) littered the registry with
-                    # single-person orgs nobody asked for and (b) poisoned the
-                    # person's row so no later provisioning could admit them.
+                    # Belonging to no org is a real state, not an absence.
+                    # Somebody in the workers pool has been screened in and
+                    # holds an accepted pool invite; GovKit says so, and they
+                    # get a person record and a session here (golda 2026-08-05:
+                    # "they should get a person record and a session, and then
+                    # we can put some nudges, rules, claws for them").
                     #
-                    # The honest answer is "you have no team here yet" — the
-                    # caller renders it as the route into one.
+                    # NO org is minted either way. Orgs are minted in exactly
+                    # two places (golda 2026-07-25, matching the rule GovKit
+                    # already follows in orgs/invites.py): a founder bringing a
+                    # venture, and a deliberate operator / add-team run. Never
+                    # as a side effect of somebody logging in. This branch used
+                    # to mint "<name>'s workspace" plus an inactive user, which
+                    # (a) littered the registry with single-person orgs nobody
+                    # asked for and (b) poisoned the person's row so no later
+                    # provisioning could admit them.
+                    #
+                    # org_id stays NULL, so every org-scoped tool keeps
+                    # refusing them through OrgResolver, which is correct.
+                    if not _is_in_the_pool(ident.sub):
+                        logger.info(
+                            "OIDC: no amebo membership for sub=%s (%s) — no org minted; "
+                            "they need a venture or a team invite", ident.sub, email)
+                        return _auth_fail_redirect(next_url, "no_org")
+
+                    cur.execute(
+                        "INSERT INTO platform_users "
+                        "(org_id, email, full_name, role, is_active, email_verified, "
+                        " auth_provider, auth_provider_id) "
+                        "VALUES (NULL, %s, %s, 'member', true, true, 'linkedtrust', %s) "
+                        "RETURNING user_id, org_id, email, role, is_active",
+                        (email, ident.name, ident.sub),
+                    )
+                    user = cur.fetchone()
+                    conn.commit()
                     logger.info(
-                        "OIDC: no amebo membership for sub=%s (%s) — no org minted; "
-                        "they need a venture or a team invite", ident.sub, email)
-                    return _auth_fail_redirect(next_url, "no_org")
+                        "OIDC: sub=%s (%s) is in the workers pool — admitted with no org",
+                        ident.sub, email)
 
                 if not user["is_active"]:
                     logger.info("OIDC: inactive user %s denied", email)
