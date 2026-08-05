@@ -371,4 +371,11 @@ class GoalEngine:
             result_summary=summary,
             metadata=metadata,
         )
+        # A goal only appears on a person's list while it is waiting on them, so
+        # crossing that line either way changes what they see. This is the one
+        # change worth pushing hardest: a question amebo just asked should not
+        # sit unseen until the next refresh.
+        if "waiting_user" in (current, to_status):
+            from src.services.live import publish
+            publish((updated or goal).get("org_id"), "work-list")
         return updated

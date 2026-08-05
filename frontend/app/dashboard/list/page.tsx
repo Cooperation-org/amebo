@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Clock, ExternalLink, MessageCircleQuestion, Send, User } from 'lucide-react';
 import { useWorkList, type WorkItem } from '@/src/hooks/useWorkList';
+import { useWorkListLive } from '@/src/hooks/useWorkListLive';
 import { useEditWorkItem } from '@/src/hooks/useWorkItem';
 import { TaskSheet } from '@/src/components/work/TaskSheet';
 import { useOpenTask } from '@/src/hooks/useOpenTask';
@@ -205,6 +206,8 @@ function PastRow({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
 
 export default function WorkListPage() {
   const { data, isLoading, isError } = useWorkList();
+  // Anything amebo changes shows up at once instead of on the next refresh.
+  useWorkListLive();
   // Clicking anywhere on a row opens the whole task over the list.
   // The open task lives in the URL, so it can be shared and reloaded.
   const { open, setOpen } = useOpenTask();

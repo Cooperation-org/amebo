@@ -28,11 +28,14 @@ half), so a client can re-sort or filter later without a backend change.
 
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 import os
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from src.api.middleware.auth import get_service_or_user
@@ -41,6 +44,7 @@ from src.services.work_list import (
     Item, assemble_crm, assemble_stories, goal_task_refs, items_from_drafts,
     items_from_goals, parse_subject, story_url,
 )
+from src.services.live import publish, subscribe, unsubscribe
 from src.services.viewer_identity import crm_logins, taiga_username
 from src.services.work_list_taiga import TaigaStoryStore
 from src.tools.gated_actuators import (
@@ -465,6 +469,12 @@ class EditOut(BaseModel):
     applied: List[str]
 
 
+def _changed(org_id: int, result: EditOut) -> EditOut:
+    """Hand back what was applied, and wake anyone watching this org's list."""
+    publish(org_id, "work-list")
+    return result
+
+
 @router.post("/edit", response_model=EditOut)
 async def edit(body: EditIn,
                client: Dict[str, Any] = Depends(get_service_or_user)):
@@ -478,13 +488,16 @@ async def edit(body: EditIn,
     if not org_id:
         raise HTTPException(status_code=403, detail="No organization for this client")
 
+    # Every path out of here changes what the list says, so every path out of
+    # here tells the open browsers to look again. One place, so a new branch
+    # cannot forget.
     if body.subject.startswith("goal:"):
-        return _edit_goal(body, org_id)
+        return _changed(org_id, _edit_goal(body, org_id))
 
     if body.subject.startswith("draft:"):
-        return _edit_draft(body, org_id,
-                           approver=str(client.get("user") or client.get("email")
-                                        or "list"))
+        return _changed(org_id, _edit_draft(
+            body, org_id,
+            approver=str(client.get("user") or client.get("email") or "list")))
 
     slug, ref = _guard(body.subject, org_id)
 
@@ -539,7 +552,7 @@ async def edit(body: EditIn,
 
     if not applied:
         raise HTTPException(status_code=400, detail="Nothing to change")
-    return EditOut(applied=applied)
+    return _changed(org_id, EditOut(applied=applied))
 
 
 def _edit_draft(body: "EditIn", org_id: int, *, approver: str) -> "EditOut":
@@ -627,3 +640,53 @@ def _stand_down(*, repo: PendingActionRepo, org_id: int, subject: str,
         repo.set_decision(action_id=str(action["id"]), org_id=org_id,
                           to_status="rejected", approver=approver,
                           decision_reason="handled from the list")
+
+
+# ------------------------------------------------------------------ live
+
+
+# A comment line keeps the connection warm. Proxies and phone radios drop an
+# idle stream; browsers then reconnect, which works but loses a second or two
+# each time and looks like a stall.
+_KEEPALIVE_SECONDS = 25
+
+
+@router.get("/stream")
+async def stream(client: Dict[str, Any] = Depends(get_service_or_user)):
+    """Say "look again" the moment amebo changes something on this org's list.
+
+    Server-sent events rather than a socket: this is one direction only — the
+    browser has a perfectly good REST API for everything it wants to say back —
+    and SSE is plain HTTP, so it needs no new protocol through nginx, carries
+    the session cookie by itself, and reconnects on its own when a laptop wakes.
+
+    The event carries no content, only the fact that something moved. The
+    browser then refetches the list through the same endpoint it always used,
+    so there is one assembly path and no second copy of the list to keep true.
+    """
+    org_id = client.get("org_id")
+    if not org_id:
+        raise HTTPException(status_code=403, detail="No organization for this client")
+
+    async def events():
+        queue = subscribe(org_id)
+        try:
+            # Say hello at once: a stream that sends nothing until something
+            # changes is indistinguishable from one that never connected.
+            yield "event: ready\ndata: {}\n\n"
+            while True:
+                try:
+                    what = await asyncio.wait_for(queue.get(), _KEEPALIVE_SECONDS)
+                except asyncio.TimeoutError:
+                    yield ": keepalive\n\n"
+                    continue
+                yield f"event: changed\ndata: {json.dumps({'what': what})}\n\n"
+        finally:
+            unsubscribe(org_id, queue)
+
+    return StreamingResponse(events(), media_type="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        # nginx buffers proxied responses by default, which holds every event
+        # until the buffer fills — for a stream that means nothing arrives.
+        "X-Accel-Buffering": "no",
+    })
