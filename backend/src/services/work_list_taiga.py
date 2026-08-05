@@ -14,7 +14,8 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List, Optional, Sequence
 
 from src.services.followup_claw import TaigaClient
 
@@ -30,6 +31,10 @@ class TaigaStoryStore:
         self._client = client or TaigaClient()
         self._payloads: Dict[str, Optional[Dict[str, Any]]] = {}
         self._slugs: Dict[int, Optional[str]] = {}
+        # Filled by prime_slugs() from one listing: the slugs of boards Taiga
+        # has blocked, which is all the list loop needs to know about them.
+        self._blocked: set = set()
+        self._primed = False
         # Where a person is sent to see a story: Marten, never Taiga's own
         # interface. Golda: "NO links that way only marten interface svelte
         # good, taiga interface NO."
@@ -93,6 +98,37 @@ class TaigaStoryStore:
             page += 1
         return out
 
+    def prime_slugs(self) -> None:
+        """Learn every project's slug in one call.
+
+        Without this, naming the board a story sits on costs a request per
+        board, made one after another while the page waits. Taiga will list all
+        the projects amebo can see at once, so it is asked once.
+
+        Only the two facts the list itself needs are taken from that call — the
+        slug, and whether the board is blocked. NOT the whole record: the list
+        endpoint leaves out ``us_statuses``, so caching its lighter payload as
+        if it were the full one would leave the detail sheet with no statuses
+        and the archive action reporting a board has nowhere to archive to.
+
+        Fail-soft: if the list will not load, everything still resolves one at a
+        time, just slowly.
+        """
+        if self._primed:
+            return
+        try:
+            projects = self._client._get("/api/v1/projects") or []
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("work_list: could not list projects: %s", exc)
+            return
+        for project in projects:
+            slug = project.get("slug")
+            if project.get("id") is not None:
+                self._slugs[project["id"]] = slug
+            if slug and project.get("blocked_code"):
+                self._blocked.add(slug)
+        self._primed = True
+
     def project_slug_of(self, story: Dict[str, Any]) -> Optional[str]:
         """The slug for a story's project, cached, so building an item does not
         cost one API call per row."""
@@ -114,6 +150,8 @@ class TaigaStoryStore:
         stories cannot be acted on at all — which is why they do not belong in a
         list of what needs a person.
         """
+        if self._primed:
+            return project_slug in self._blocked
         project = self.project(project_slug) or {}
         return bool(project.get("blocked_code") or project.get("is_blocked"))
 
@@ -156,6 +194,36 @@ class TaigaStoryStore:
             })
         out.reverse()
         return out
+
+    # Taiga keeps history per story, so there is no one call that fetches the
+    # last word on thirty of them. Asked one after another that was the slowest
+    # part of opening the list; asked together it is one round trip's worth of
+    # waiting. Bounded because Taiga is shared with the rest of the team and a
+    # list refresh must not read as a burst of load to them.
+    _COMMENT_FETCHERS = 8
+
+    def last_comments(self, story_ids: Sequence[int]) -> Dict[int, Dict[str, str]]:
+        """{story_id -> its newest human comment}, fetched together.
+
+        A story whose history will not load is left out rather than failing the
+        list: the row is still real work, it just leads with its own title.
+        """
+        ids = [i for i in dict.fromkeys(story_ids) if i]
+        if not ids:
+            return {}
+        out: Dict[int, Dict[str, str]] = {}
+        with ThreadPoolExecutor(max_workers=min(self._COMMENT_FETCHERS, len(ids))) as pool:
+            for story_id, comment in zip(ids, pool.map(self._safe_comment, ids)):
+                if comment:
+                    out[story_id] = comment
+        return out
+
+    def _safe_comment(self, story_id: int) -> Optional[Dict[str, str]]:
+        try:
+            return self.last_comment(story_id)
+        except Exception as exc:  # noqa: BLE001 - one unreadable history
+            logger.debug("work_list: no comments for %s: %s", story_id, exc)
+            return None
 
     def last_comment(self, story_id: int) -> Optional[Dict[str, str]]:
         """The newest human comment on the story, or None.

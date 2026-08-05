@@ -356,6 +356,31 @@ def items_from_goals(goals: Sequence[Dict[str, Any]]) -> List[Item]:
     return items
 
 
+def _comments_for(store: Any, story_ids: Sequence[Any]) -> Dict[Any, Dict[str, str]]:
+    """The last word on each story, asked for together when the store can do
+    that and one at a time when it cannot — a fake store in a test implements
+    only ``last_comment``, and a missing comment must never cost a row."""
+    ids = [i for i in story_ids if i]
+    if not ids:
+        return {}
+    batch = getattr(store, "last_comments", None)
+    if callable(batch):
+        try:
+            return batch(ids)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("work_list: batch comment fetch failed: %s", exc)
+    out: Dict[Any, Dict[str, str]] = {}
+    for story_id in ids:
+        try:
+            comment = store.last_comment(story_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("work_list: no comments for %s: %s", story_id, exc)
+            continue
+        if comment:
+            out[story_id] = comment
+    return out
+
+
 @dataclass
 class WorkList:
     live: List[Item] = field(default_factory=list)
@@ -499,6 +524,11 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
     skipped_blocked: List[str] = []
     handed_over = 0
     someone_elses = 0
+
+    # Which stories survive the filters, before anything is asked about them.
+    # Their comments are then fetched together rather than one story at a time,
+    # which was the slowest thing about opening the list.
+    kept: List[tuple] = []
     for story in stories:
         if (story.get("status_extra_info") or {}).get("is_closed"):
             continue
@@ -518,13 +548,12 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
         if getattr(store, "project_blocked", None) and store.project_blocked(slug):
             skipped_blocked.append(slug)
             continue
-        comment = None
-        try:
-            comment = store.last_comment(story["id"])
-        except Exception as exc:                      # noqa: BLE001
-            logger.debug("work_list: no comments for %s: %s", story.get("id"), exc)
+        kept.append((story, slug))
+
+    comments = _comments_for(store, [s.get("id") for s, _ in kept])
+    for story, slug in kept:
         item = build_item(story, project_slug=slug, taiga_host=taiga_host,
-                          today=today, comment=comment)
+                          today=today, comment=comments.get(story.get("id")))
         (past if item.past else live).append(item)
     if skipped_blocked:
         # Never a silent drop: say what was left out and why.

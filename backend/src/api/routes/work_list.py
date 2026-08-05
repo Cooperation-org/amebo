@@ -41,8 +41,8 @@ from pydantic import BaseModel
 from src.api.middleware.auth import get_service_or_user
 from src.db.repositories.pending_action_repo import PendingActionRepo
 from src.services.work_list import (
-    Item, assemble_crm, assemble_stories, goal_task_refs, items_from_drafts,
-    items_from_goals, parse_subject, story_url,
+    Item, WorkList, assemble_crm, assemble_stories, goal_task_refs,
+    items_from_drafts, items_from_goals, parse_subject, story_url,
 )
 from src.services.live import publish, subscribe, unsubscribe
 from src.services.viewer_identity import crm_logins, taiga_username
@@ -140,76 +140,103 @@ def subjects_for_org(repo: PendingActionRepo, org_id: int) -> List[str]:
 
 @router.get("/", response_model=WorkListOut)
 async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user)):
+    """Everything waiting on this person, from every system that holds some of it.
+
+    The sources know nothing about each other, so they are read at the same time
+    rather than one after another: the list used to cost the sum of four systems
+    answering and now costs the slowest one. Each still fails on its own — a
+    source that is down loses its own rows and nothing else, because a list that
+    goes blank when the CRM hiccups is worse than one missing a card.
+    """
     org_id = client.get("org_id")
     if not org_id:
         raise HTTPException(status_code=403, detail="No organization for this client")
 
-    # Questions amebo is holding for this person. These had their own page; one
-    # list means they belong here, not nowhere.
-    # Only the ones actually holding a question. A 'pending' goal is amebo's own
-    # queued work — it is owned by amebo, so it belongs on nobody's list until
-    # it needs an answer. Golda: "I DO NOT WANT TO SEE things assigned amebo
-    # ... unless it has questions for me."
-    from src.db.repositories.goal_repo import GoalRepo
-    try:
-        repo_g = GoalRepo()
-        waiting = repo_g.list_for_org(org_id=org_id, status="waiting_user")
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("work-list: goals unreadable for org %s: %s", org_id, exc)
-        waiting = []
-    live: List[Item] = items_from_goals(waiting)
-    past: List[Item] = []
-
-    # Whose list this is. Unmapped viewers get everything, not nothing — see
-    # viewer_identity for where the map lives and why.
+    # Whose list this is, and where the identity map lives, is needed before the
+    # sources can be asked — it is one indexed read, not a round trip.
     try:
         from src.db.repositories.instance_repo import InstanceRepo
         instance = InstanceRepo().get_by_org(org_id) or {}
     except Exception as exc:  # noqa: BLE001
         logger.warning("work-list: instance config unreadable for %s: %s", org_id, exc)
         instance = {}
-    viewer = taiga_username(client, instance.get("config"))
+    config = instance.get("config")
 
-    # Source 2: dated work on the boards.
-    store = TaigaStoryStore()
+    goals, boards, crm, drafts = await asyncio.gather(
+        asyncio.to_thread(_goal_items, org_id),
+        asyncio.to_thread(_board_items, org_id, taiga_username(client, config)),
+        asyncio.to_thread(_crm_items, org_id, crm_logins(client, config)),
+        asyncio.to_thread(_draft_rows, org_id),
+    )
+
+    live: List[Item] = [*goals, *boards.live, *crm.live]
+    past: List[Item] = [*boards.past, *crm.past]
+    # Drafts last on purpose: a draft about a task already listed is not a
+    # second row, so it needs to see everything else first.
+    live.extend(items_from_drafts(
+        drafts, already=[i.subject for i in live] + [i.subject for i in past]))
+
+    live.sort(key=lambda i: (-i.rank, i.title))
+    past.sort(key=lambda i: (i.due or "", i.title))
+    return WorkListOut(live=[_out(i) for i in live],
+                       past=[_out(i) for i in past])
+
+
+def _goal_items(org_id: int) -> List[Item]:
+    """Questions amebo is holding for this person. These had their own page; one
+    list means they belong here, not nowhere.
+
+    Only the ones actually holding a question. A 'pending' goal is amebo's own
+    queued work — it is owned by amebo, so it belongs on nobody's list until it
+    needs an answer. Golda: "I DO NOT WANT TO SEE things assigned amebo ...
+    unless it has questions for me."
+    """
     try:
-        result = assemble_stories(store.open_dated_stories(), store,
-                                  taiga_host=store.host,
-                                  agent_username=os.getenv("TAIGA_USERNAME"),
-                                  viewer_username=viewer)
-        live.extend(result.live)
-        past = result.past
-    except Exception as exc:  # noqa: BLE001 - one source failing must not empty
-        # the list; the others are still real work.
-        logger.warning("work-list: taiga source failed for org %s: %s", org_id, exc)
+        from src.db.repositories.goal_repo import GoalRepo
+        return items_from_goals(
+            GoalRepo().list_for_org(org_id=org_id, status="waiting_user"))
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("work-list: goals unreadable for org %s: %s", org_id, exc)
+        return []
 
-    # Source 3: follow-ups someone scheduled in the CRM. A dated one ranks on
-    # the same clock as a story, so a call due tomorrow lands beside a task due
-    # tomorrow instead of in a CRM section nobody opens.
+
+def _board_items(org_id: int, viewer: Optional[str]) -> WorkList:
+    """Dated work on the boards."""
+    try:
+        store = TaigaStoryStore()
+        # One listing up front, so naming each story's board costs nothing.
+        store.prime_slugs()
+        return assemble_stories(store.open_dated_stories(), store,
+                                taiga_host=store.host,
+                                agent_username=os.getenv("TAIGA_USERNAME"),
+                                viewer_username=viewer)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("work-list: taiga source failed for org %s: %s", org_id, exc)
+        return WorkList()
+
+
+def _crm_items(org_id: int, logins: List[str]) -> WorkList:
+    """Follow-ups someone scheduled in the CRM. A dated one ranks on the same
+    clock as a story, so a call due tomorrow lands beside a task due tomorrow
+    instead of in a CRM section nobody opens."""
     try:
         from src.services.work_list_crm import OdooActivityStore
         crm = OdooActivityStore()
-        crm_result = assemble_crm(
-            crm.open_activities(), crm,
-            viewer_uids=crm.uids_for_logins(crm_logins(client, instance.get("config"))))
-        live.extend(crm_result.live)
-        past.extend(crm_result.past)
-    except Exception as exc:  # noqa: BLE001 - the CRM being down must not empty
-        # the rest of the list.
+        return assemble_crm(crm.open_activities(), crm,
+                            viewer_uids=crm.uids_for_logins(logins))
+    except Exception as exc:  # noqa: BLE001
         logger.warning("work-list: crm source failed for org %s: %s", org_id, exc)
+        return WorkList()
 
-    # Source 4: drafts the claw is holding that are not about a task already
-    # listed above.
+
+def _draft_rows(org_id: int) -> List[Dict[str, Any]]:
+    """Drafts the claw is holding. Turned into rows by the caller, which is the
+    only place that knows what else is already on the list."""
     try:
-        drafts = PendingActionRepo().list_for_org(org_id=org_id, status="pending")
-        live.extend(items_from_drafts(
-            drafts, already=[i.subject for i in live] + [i.subject for i in past]))
+        return PendingActionRepo().list_for_org(org_id=org_id, status="pending")
     except Exception as exc:  # noqa: BLE001
         logger.warning("work-list: drafts source failed for org %s: %s", org_id, exc)
-
-    live.sort(key=lambda i: (-i.rank, i.title))
-    return WorkListOut(live=[_out(i) for i in live],
-                       past=[_out(i) for i in past])
+        return []
 
 
 # ------------------------------------------------------------------ detail
