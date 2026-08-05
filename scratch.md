@@ -1631,3 +1631,39 @@ capped list safe. Whatever the rubric becomes, leave room for a per-person
 override that is not a score — a pin the rubric can outvote is not a pin.
 
 Nobody should build this until Golda says so.
+
+## PIN + BURY SHIPPED, and the workers.vc tasks card — 2026-08-05 (tactical session)
+
+Golda asked for both now. Both landed.
+
+**Pin and bury** (amebo `31918942`, migration 030 applied, service restarted):
+`work_list_marks(org_id, person, subject, state)`, person = amebo login email,
+one mark per person per subject. `apply_marks()` in work_list.py splits a ranked
+list into pinned / live / buried. Pinned rows are lifted out **before** `top()`,
+so pinning does not spend the twenty and no rank can outvote a pin. Buried rows
+keep their own bucket in the response and dig themselves back out when a
+deadline lands within 2 days (`BURIED_WAKES_WITHIN_DAYS`) — burying is "not
+now", never "never". `POST /api/work-list/mark`, `DELETE /api/work-list/mark`.
+A service key gets no marks and cannot write one.
+
+**The workers.vc "tasks to do" card** (govkit `22ad28b`, not deployed): it was
+stale because `OpenTasksView` returned tasks in whatever order the Taiga adapter
+walked its projects, and `<govkit-tasks data-limit="6">` shows the first six.
+`OpenTaskDTO` was also dropping `due_date`/`created_date`/`modified_date`
+entirely, so nothing could be ordered. Both fixed; new
+`apps/tasksources/ordering.py` sorts most-important-first.
+
+### For the architecture session — a real duplication, deliberately taken on
+
+`govkit/apps/tasksources/ordering.py` reimplements amebo's ranking rule
+(deadline first, then new, then longest untouched, six-month cap). Two copies of
+"important" is exactly the kind of drift BOUNDARIES exists to prevent, and I did
+it anyway because the alternative — govkit calling amebo's work list — is a
+cross-app dependency and an architecture decision that is not mine to make.
+
+The decision to make: **does the ranked list become a service other apps read,
+or does each app rank its own tracker data?** If the former, govkit's ordering
+module is the first caller and should be deleted. The constants in both files
+are the same numbers on purpose so the divergence is easy to spot.
+
+Frontend still to do on pin/bury: the API is live and nothing calls it yet.
