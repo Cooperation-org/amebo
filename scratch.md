@@ -1697,3 +1697,34 @@ campaign field at all**. So a campaign filter built today would silently cover
 CRM rows and drop every task, which reads as broken rather than filtered.
 
 How work gets tagged to a campaign is the open question. Do not guess it.
+
+## FILTERS ARE FUZZY, NOT HARD (Golda thinking aloud, 2026-08-05)
+
+Recorded as-is. She was explicit that she is not settled: "I don't know, I'm not
+sure what I'm thinking." Do not build from this yet.
+
+Her words, close:
+
+- "The filters might be more conceptual. You might filter by a word and then it
+  has related campaigns and related things."
+- "The person might voice-type a word to filter."
+- "I'm not sure the filters are going to be hard and fast filters. It's more like
+  resurfacing different aspects."
+- "Aspects and topics are really fuzzier than the database would have made them
+  out to be."
+- "We can surface top keywords, topics, campaign names, and click on them. But
+  not too noisy — it can't be noisy. Could be dropdowns with top campaigns and
+  words."
+
+What this changes about the earlier campaign-lens note: a campaign is one aspect
+among several, not the axis. The thing being built is closer to **resurfacing by
+similarity** than to filtering by a field — typing a word should pull in related
+campaigns and related things, not match a column.
+
+Worth knowing before anyone designs this: abra is already pgvector-backed and
+does semantic search over notes, projects and contacts. Fuzzy aspect matching is
+machinery we have, not machinery to invent. The hard part Golda named is not
+retrieval, it is the surface: a list of clickable topics that is genuinely short.
+
+Open and hers to answer: what the aspects are drawn from, and how few is few
+enough to not be noise.
