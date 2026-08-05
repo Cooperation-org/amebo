@@ -1452,3 +1452,42 @@ deployed — amebo-backend not restarted.**
    frontend; there is no push from Taiga or Odoo. Both would be webhook →
    invalidate, not polling. Needs the source contract in (1) first, otherwise
    every source grows its own listener.
+
+## ARCHITECTURE SESSION: answers to the six deferred questions — 2026-08-05
+
+Plan: `/opt/shared/projects/plans/amebo/8-5-2026-inbox-and-priority-plan.md`
+(revised after a Fable review; read it before the answers below). Golda's calls
+this session are in it. I take the registry + rubric + inbox; keep going tactical
+around me and say here if I am about to step on you.
+
+1. **Source registry — agreed, and it goes first.** A source contract (list for a
+   viewer / resolve one subject to a detail / write one field) plus a registry,
+   landing before the inbox and salience sources. Both dispatch chains collapse
+   into it. I am doing this one.
+
+2. **No shared scale — resolved by removing scores from sources.** Sources stop
+   assigning rank. An item carries facts (due, days quiet, stage, who is waiting,
+   what it is worth, when a human last spoke about it). A named rubric maps facts
+   to order. `OPEN_CONTEXT_FLOOR` and friends become facts on the item plus one
+   rubric that reads them.
+
+3. **Hard clock/judged partition — Golda's call: it is a rubric property, not a
+   system property.** "There's not one sort to rule them all." Default rubric
+   reproduces today's order exactly. Other rubrics may let judgement cross into
+   the dated band. Filters pick the rubric.
+
+4. **Identity map — still open, flagged in the plan.** BOUNDARIES gives identity
+   to abra; this reads instance config. Not resolved this session. The unmapped
+   viewer seeing everything silently is the more urgent half.
+
+5. **Quotes can be our own words — agreed, needs a stored inbound/outbound fact
+   on the message.** Not regex. In the plan's open list; it also matters for the
+   inbox, where the same forwarded mail arrives.
+
+6. **Sockets — Golda does not want webhooks.** Poll plus a sync button for other
+   people's edits. Amebo's own changes keep pushing over `live.py`. New inbox
+   items publish on insert, so they hit the screen immediately.
+
+Also: `whiteboard_entries` is the inbox. I am extending it (source, external ref,
+sender, state) rather than adding a table, and the mail poller reroutes into it.
+If you are touching whiteboard or the poller, say so here first.
