@@ -195,3 +195,51 @@ def test_a_short_list_is_left_alone():
     from src.services.work_list import top
     items = assemble([story()]).live
     assert len(top(items)) == 1
+
+
+# ------------------------------------- a full page of deadlines hides nothing
+
+def _ranked(subject, rank):
+    from src.services.work_list import Item, Reason
+    kind = "clock" if rank >= 1000.0 else "judgement"
+    return Item(subject=subject, title=subject,
+                reason=Reason(label=subject, kind=kind), rank=rank)
+
+
+def _sorted(items):
+    return sorted(items, key=lambda i: (-i.rank, i.title))
+
+
+def test_undated_rows_keep_slots_when_the_deadlines_would_fill_the_page():
+    """A draft waiting on approval cannot be invisible because someone has
+    twenty deadlines: no judged item may score into the clock band, so the
+    plain top-twenty would drop every one of them with nothing on the page
+    saying so."""
+    from src.services.work_list import CLOCK_FLOOR, LIST_MIN_UNDATED, top
+    dated = [_ranked(f"taiga:b#{i}", CLOCK_FLOOR + i) for i in range(30)]
+    undated = [_ranked(f"draft:{i}", 900.0 - i) for i in range(8)]
+    out = top(_sorted(dated + undated))
+
+    assert len(out) == 20
+    assert sum(1 for i in out if i.rank < CLOCK_FLOOR) == LIST_MIN_UNDATED
+    # the ones that gave way are the deadlines furthest out, never the soonest
+    assert out[0].rank == max(i.rank for i in dated)
+    assert "taiga:b#0" not in [i.subject for i in out]
+
+
+def test_the_reserve_is_not_a_quota_when_there_is_nothing_waiting():
+    from src.services.work_list import CLOCK_FLOOR, top
+    dated = [_ranked(f"taiga:b#{i}", CLOCK_FLOOR + i) for i in range(30)]
+    out = top(_sorted(dated))
+    assert len(out) == 20
+    assert all(i.rank >= CLOCK_FLOOR for i in out)
+
+
+def test_undated_rows_already_on_the_page_are_not_doubled():
+    from src.services.work_list import CLOCK_FLOOR, top
+    dated = [_ranked(f"taiga:b#{i}", CLOCK_FLOOR + i) for i in range(18)]
+    undated = [_ranked(f"draft:{i}", 900.0 - i) for i in range(6)]
+    out = top(_sorted(dated + undated))
+    assert len(out) == 20
+    assert len(set(i.subject for i in out)) == 20
+    assert sum(1 for i in out if i.rank < CLOCK_FLOOR) == 5

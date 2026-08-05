@@ -463,12 +463,45 @@ def _comments_for(store: Any, story_ids: Sequence[Any]) -> Dict[Any, Dict[str, s
 # screen, not on what is considered. A list nobody reads to the bottom of is the
 # same as no list.
 LIST_MAX = 20
+LIST_MIN_UNDATED = 5    # a page full of deadlines must not hide everything else
 
 
-def top(items: Sequence[Item], limit: int = LIST_MAX) -> List[Item]:
+def top(items: Sequence[Item], limit: int = LIST_MAX,
+        reserve: int = LIST_MIN_UNDATED) -> List[Item]:
     """The rows worth showing, already in order. Never a silent drop: the caller
-    reports the full count alongside so the page can say there is more."""
-    return list(items[:limit])
+    reports the full count alongside so the page can say there is more.
+
+    Taking the first ``limit`` off a rank-sorted list would let a full page of
+    deadlines hide every undated row, because no judged item may score into the
+    clock band. That is not a ranking preference going the wrong way, it is a
+    person never being shown a draft waiting on their approval or a goal holding
+    a question for them, with nothing on the page to say so. So up to ``reserve``
+    slots are kept for undated rows when there are any, and the dated rows that
+    give way are the ones furthest out — the soonest deadline is never dropped.
+
+    Both numbers are policy, not mechanism: a rubric that ranks differently
+    passes its own.
+    """
+    items = list(items)
+    if len(items) <= limit:
+        return items
+
+    cut, rest = items[:limit], items[limit:]
+    waiting = [i for i in rest if i.rank < CLOCK_FLOOR]
+    short = reserve - sum(1 for i in cut if i.rank < CLOCK_FLOOR)
+    if short <= 0 or not waiting:
+        return cut
+
+    # Give way from the back of the clock band: furthest-out deadlines first.
+    droppable = [i for i in reversed(cut) if i.rank >= CLOCK_FLOOR]
+    swaps = min(short, len(waiting), len(droppable))
+    if not swaps:
+        return cut
+
+    dropped = set(id(i) for i in droppable[:swaps])
+    kept = [i for i in cut if id(i) not in dropped] + waiting[:swaps]
+    kept.sort(key=lambda i: (-i.rank, i.title))
+    return kept
 
 
 @dataclass

@@ -1588,3 +1588,23 @@ things to take rather than rediscover:
   per-source scores you plan to delete. The facts behind them are the ones worth
   keeping on the item: days untouched, days since created, whether the last word
   was somebody else's, stage, and who owns it. Nothing else is load-bearing.
+
+## RUBRIC LANE: the cap could hide every undated row — fixed 2026-08-05
+
+Reviewed the cap + undated landing against the architecture. It fits; one thing
+was brittle and would have failed silently.
+
+`top()` took the first twenty off a rank-sorted list, and no judged item may
+score into the clock band. So a viewer with twenty dated rows would see **no**
+undated row at all — including a draft waiting on their approval and a goal
+holding a question for them — with nothing on the page to say so. Not a ranking
+preference going the wrong way; a person never being asked.
+
+`top()` now keeps up to `LIST_MIN_UNDATED = 5` slots for undated rows when any
+are waiting, and the dated rows that give way are the ones furthest out, so the
+soonest deadline is never dropped. Both numbers are policy passed in, not
+mechanism: when the rubric object lands it passes its own, and this becomes one
+rubric's answer rather than the list's.
+
+Tests: +3 in `test_work_list_undated.py`. Full suite 944 passed / 11 skipped.
+Not deployed (backend not restarted).
