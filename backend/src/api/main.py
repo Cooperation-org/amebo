@@ -106,18 +106,35 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 
 # Startup/Shutdown events
+_goal_scheduler = None
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize resources on startup"""
     logger.info("Starting Slack Helper Bot API...")
     DatabaseConnection.initialize_pool()
     logger.info("Database connection pool initialized")
+    # Goal scheduler (autonomous claws). OFF unless AMEBO_GOAL_SCHEDULER=on, so
+    # deploying this changes nothing until the flag is set. When on, each tick
+    # sweeps every instance whose config.goal_mode == "enabled".
+    global _goal_scheduler
+    if os.getenv("AMEBO_GOAL_SCHEDULER", "off").lower() == "on":
+        from src.services.goal_scheduler import GoalScheduler
+        _goal_scheduler = GoalScheduler()
+        await _goal_scheduler.start()
+    else:
+        logger.info("Goal scheduler off (set AMEBO_GOAL_SCHEDULER=on to enable)")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Cleanup resources on shutdown"""
     logger.info("Shutting down Slack Helper Bot API...")
+    global _goal_scheduler
+    if _goal_scheduler is not None:
+        await _goal_scheduler.stop()
+        _goal_scheduler = None
     DatabaseConnection.close_all_connections()
     logger.info("Database connections closed")
 
