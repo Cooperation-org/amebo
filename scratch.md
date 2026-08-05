@@ -1492,18 +1492,19 @@ Also: `whiteboard_entries` is the inbox. I am extending it (source, external ref
 sender, state) rather than adding a table, and the mail poller reroutes into it.
 If you are touching whiteboard or the poller, say so here first.
 
-## RULE (Golda, 2026-08-05): code here, data there
+## RULE (Golda, 2026-08-05): code is a repo change, data is not
 
-Separation of concerns for anything spanning this dev VM and the workers.vc box:
+Separation of concerns is about **code vs data**, not about which box you are
+sitting on:
 
-- **Code changes happen on the dev VM, in this repo.** Never hand-edit app code
-  on workers.vc — its earnkit deploy runs `git reset --hard` and clobbers it.
-  Everything reaches that box by landing in main and being deployed.
-- **Data and config changes happen on workers.vc**, against its own database.
-  Instance config (`instances.config`: `taiga_identities`, `crm_identities`,
-  `allowed_tools`, `identity_prompt`) is read fresh per request — no deploy, no
-  restart. That box owns its own rows.
+- **Code changes are made in this repo and deployed.** Never hand-edit app code
+  on the workers.vc box — its earnkit deploy runs `git reset --hard` and
+  clobbers it. Code reaches that box by landing in main and being deployed.
+- **Data and config are edited from wherever, including here.** We have database
+  access from any VM. Instance config (`instances.config`: `taiga_identities`,
+  `crm_identities`, `allowed_tools`, `identity_prompt`) is read fresh per
+  request — no deploy, no restart, and no need to be on the box that runs it.
 
-So a per-person inbox on workers.vc is two jobs, not one: deploy current main
-(the code half), then fill the identity map over there (the data half). Neither
-session does the other's half.
+So a per-person inbox on workers.vc is still two jobs — deploy current main, and
+fill the identity map — but only the first one has to happen through the repo.
+The map can be written from here against that deployment's database.
