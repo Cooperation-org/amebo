@@ -1395,3 +1395,60 @@ config (I11), not a core constant.
   actual login (fixed horizon, not sliding).
 - Tests: +6 in test_cohort_dash_auth.py (39 total). Full suite 777 passed /
   11 pre-existing skips / 0 failed. Live service still NOT restarted.
+
+## WORK LIST: CRM open context landed — 2026-08-05 (tactical session)
+
+Shipped (23d0e76), tests green (922 passed / 11 pre-existing skips). **Not
+deployed — amebo-backend not restarted.**
+
+- New source in `work_list_crm.OdooActivityStore.open_context()`: open
+  opportunity past the first stage with no `mail.activity` on it. Ranked by
+  `assemble_crm_open_context` in `work_list.py`, band 400–998
+  (`OPEN_CONTEXT_FLOOR`), stage step 60, quiet days capped at 180. Detail sheet
+  at `crm:lead/<id>`.
+- Why: the CRM has **3** scheduled follow-ups and **1237** open opportunities.
+  Follow-ups alone made the CRM invisible on the list. Engaged-and-unscheduled
+  is 17 records team-wide (Golda 4), which is a list, not a backlog.
+- Stage set read from `crm.stage` by sequence, not hardcoded. Only 'Identified'
+  (1220 records) is excluded as first stage.
+
+### For the architecture session — things a tactical patch should not decide
+
+1. **Sources are hand-wired, not registered.** `get_work_list` gathers four
+   named functions and every new source means editing that route, its imports,
+   and the detail dispatcher's `if subject.startswith(...)` chain. A source
+   contract (list items for viewer / resolve one subject to a detail) with a
+   registry would make Slack mentions, mail intake, whiteboard and LinkedTrust
+   commitments additive instead of surgical. This is the change that unblocks
+   "sweep everything amebo could surface."
+
+2. **The judged half has no shared scale.** Every source invents its own
+   constants against `JUDGED_CEILING` (goals 999 / 899, drafts 999, dated-CRM
+   fallback 799, open context 400–998). They were never designed relative to
+   each other, so cross-source order in the undated band is an accident. Needs
+   one scoring vocabulary (who is waiting, how long, what it is worth) that all
+   sources express in.
+
+3. **Undated can never beat dated.** `CLOCK_FLOOR`/`JUDGED_CEILING` are a hard
+   partition, so a six-figure conversation gone quiet ranks below a trivial task
+   due Friday, permanently. Golda has flagged this as wrong. Whether judgement
+   may cross into the clock band is an architecture call, not a constant tweak.
+
+4. **Per-user is only as good as the identity map.** `viewer_identity` reads
+   `crm_identities` / `taiga_identities` off the instance config. An unmapped
+   login is *not filtered at all* — it sees the whole team's rows and looks like
+   a bug. Two open questions: where the map belongs (BOUNDARIES says abra owns
+   identity, this reads instance config), and what an unmapped viewer should
+   see. Today: everything, silently.
+
+5. **Quotes on CRM cards can be our own words.** `last_messages` reads
+   `res.partner` chatter, which is almost entirely mail Golda forwarded in, so a
+   card can quote us back to ourselves ("LinkedIn DM sent by Golda Velez — ...").
+   Direction is only recoverable from the forwarded `From:` header that
+   `human_words` already parses. Wants an explicit inbound/outbound fact on the
+   message, not more regex.
+
+6. **Sockets / live push (Golda asked).** `useWorkListLive.ts` exists on the
+   frontend; there is no push from Taiga or Odoo. Both would be webhook →
+   invalidate, not polling. Needs the source contract in (1) first, otherwise
+   every source grows its own listener.
