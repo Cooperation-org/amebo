@@ -127,10 +127,71 @@ and whether a fix deploys straight or waits, are open.
 
 ## Still open
 
-- Rescheduling a CRM follow-up. The card is read-only because there is no write
-  path to `mail.activity` yet — `odoo-cli schedule` creates a new activity
-  rather than moving the existing one, which would leave two.
-- The fixing half of the feedback loop.
-- Per-user Taiga tokens in the browser. Worth revisiting on its merits
-  (attribution: edits from the list are currently made by amebo's account), but
-  measured, it was not what made the list feel slow.
+Ordered by what a person would notice first.
+
+### Rescheduling a CRM follow-up
+
+Contact cards are read-only and carry no push-out control, so the one thing you
+most want to do to a follow-up — move it a week — has to be done in Odoo.
+
+`odoo-cli schedule` **creates** an activity; it cannot move an existing one, so
+using it here would leave two. Needs either a new `odoo-cli` verb that writes
+`date_deadline` on a given `mail.activity`, or a `crm_reschedule` executor
+registered alongside the others. Either way it goes through the executor
+registry like every other write — not straight from the route.
+
+### The fixing half of the feedback loop
+
+Saying what is wrong works and files a story. What happens next does not exist.
+Two questions are still Golda's to answer:
+
+- does the fixing session run on demand, or on a clock?
+- does a fix deploy straight, or wait for someone?
+
+(The third — how little a person may say — is answered: two words, because the
+open row goes with them.)
+
+### Per-user Taiga tokens, for attribution
+
+Every edit made from the list is written by amebo's Taiga account, so the board
+history says amebo changed things a person changed. That is the real argument
+for per-user tokens.
+
+It is **not** a speed argument. Measured: an edit costs about 0.2s and the
+opening cost about 6s, so browser-side tokens would have fixed the thing that
+was not broken.
+
+### One idea of "important", two implementations
+
+`govkit/apps/tasksources/ordering.py` reimplements this ranking rule. The
+constants are deliberately identical so the drift is easy to spot.
+
+The decision, which is an architecture call and not a coding one: **does the
+ranked list become a service other apps read, or does each app rank its own
+tracker data?** If the first, govkit's ordering module is the first caller and
+should be deleted.
+
+### A campaign lens
+
+Rank deep, show shallow, and make the visible slice representative — some from
+each campaign — rather than the raw top rows. The mechanism already exists;
+`top()` reserves slots so one band cannot take the whole page.
+
+What blocks it is data, not code: 1092 of 1237 CRM leads carry `campaign_id`,
+and **a Taiga story has no campaign field at all**. A campaign filter built
+today would silently cover CRM rows and drop every task, which reads as broken
+rather than filtered. How work gets tagged to a campaign is a question for
+Golda. Do not guess it.
+
+### The remaining two and a half seconds
+
+Almost all of it is one Taiga query for every open story, which is Taiga's own
+speed. The next real win is asking it for less, or holding the answer between
+requests — not more concurrency, which is spent.
+
+### More than one process
+
+Change notices live in memory, which is correct for one uvicorn process with one
+event loop. A second process silently halves who hears them. Putting Postgres
+LISTEN/NOTIFY behind `publish()`/`subscribe()` is the whole change; nothing else
+has to move.
