@@ -38,10 +38,10 @@ from pydantic import BaseModel
 from src.api.middleware.auth import get_service_or_user
 from src.db.repositories.pending_action_repo import PendingActionRepo
 from src.services.work_list import (
-    Item, assemble_stories, goal_task_refs, items_from_drafts, items_from_goals,
-    parse_subject, story_url,
+    Item, assemble_crm, assemble_stories, goal_task_refs, items_from_drafts,
+    items_from_goals, parse_subject, story_url,
 )
-from src.services.viewer_identity import taiga_username
+from src.services.viewer_identity import crm_logins, taiga_username
 from src.services.work_list_taiga import TaigaStoryStore
 from src.tools.gated_actuators import (
     execute_taiga_close, execute_taiga_comment, execute_taiga_update,
@@ -74,6 +74,10 @@ class ReasonOut(BaseModel):
 
 class ItemOut(BaseModel):
     subject: str
+    # 'task' | 'goal' | 'draft' | 'contact'. The list is not task-only; a card
+    # says what it is so the reader can tell a person from a board row at a
+    # glance. Derived from the subject, never stored twice.
+    kind: str = "task"
     title: str
     reason: ReasonOut
     rank: float
@@ -92,6 +96,7 @@ class WorkListOut(BaseModel):
 def _out(item: Item) -> ItemOut:
     return ItemOut(
         subject=item.subject,
+        kind=item.kind,
         title=item.title,
         reason=ReasonOut(label=item.reason.label, kind=item.reason.kind),
         rank=item.rank,
@@ -174,7 +179,22 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user)):
         # the list; the others are still real work.
         logger.warning("work-list: taiga source failed for org %s: %s", org_id, exc)
 
-    # Source 3: drafts the claw is holding that are not about a task already
+    # Source 3: follow-ups someone scheduled in the CRM. A dated one ranks on
+    # the same clock as a story, so a call due tomorrow lands beside a task due
+    # tomorrow instead of in a CRM section nobody opens.
+    try:
+        from src.services.work_list_crm import OdooActivityStore
+        crm = OdooActivityStore()
+        crm_result = assemble_crm(
+            crm.open_activities(), crm,
+            viewer_uids=crm.uids_for_logins(crm_logins(client, instance.get("config"))))
+        live.extend(crm_result.live)
+        past.extend(crm_result.past)
+    except Exception as exc:  # noqa: BLE001 - the CRM being down must not empty
+        # the rest of the list.
+        logger.warning("work-list: crm source failed for org %s: %s", org_id, exc)
+
+    # Source 4: drafts the claw is holding that are not about a task already
     # listed above.
     try:
         drafts = PendingActionRepo().list_for_org(org_id=org_id, status="pending")
@@ -347,6 +367,58 @@ def _draft_detail(action_id: str, org_id: int) -> DetailOut:
     )
 
 
+def _crm_detail(activity_id: str) -> DetailOut:
+    """A scheduled CRM follow-up, opened as itself.
+
+    The contact, not the reminder, is what a person needs on screen: who it is,
+    what was said to them last, and one way through to the record. Read-only for
+    now — rescheduling a follow-up is a CRM write and has to go through a
+    registered executor like every other write, not through this endpoint.
+    """
+    from src.services.work_list_crm import OdooActivityStore, form_url
+
+    try:
+        ref = int(activity_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Unreadable subject")
+
+    store = OdooActivityStore()
+    act = store.activity(ref)
+    if not act:
+        raise HTTPException(status_code=404, detail="Follow-up not found")
+
+    model, rid = act.get("res_model"), act.get("res_id")
+    comments = [CommentOut(who=m["who"], text=m["text"], when=m["when"] or None)
+                for m in (store.messages(model, rid) if model and rid else [])]
+
+    owner = act.get("user_id")
+    activity_type = act.get("activity_type_id")
+    return DetailOut(
+        subject=f"crm:activity/{ref}",
+        kind="contact",
+        ref=ref,
+        # How a person names this out loud: the follow-up's own type ("To-Do",
+        # "Call"), the way a story is named by its number.
+        code=(activity_type[1] if isinstance(activity_type, (list, tuple))
+              and len(activity_type) > 1 else None),
+        # The contact is the context a follow-up sits in, the way a board is for
+        # a story.
+        project=act.get("res_name") or "the CRM",
+        title=(act.get("summary") or "").strip() or act.get("res_name") or "(follow-up)",
+        description=act.get("note") or None,
+        status=None,
+        due=act.get("date_deadline") or None,
+        assignee=(owner[1] if isinstance(owner, (list, tuple)) and len(owner) > 1
+                  else None),
+        url=form_url(model, rid) if model and rid else "",
+        comments=comments,
+        # A follow-up has no board of statuses and no member list to reassign
+        # within, so the sheet offers neither rather than an empty dropdown.
+        statuses=[],
+        members=[],
+    )
+
+
 @router.get("/detail", response_model=DetailOut)
 async def get_detail(subject: str,
                      client: Dict[str, Any] = Depends(get_service_or_user)):
@@ -357,6 +429,8 @@ async def get_detail(subject: str,
         return _goal_detail(subject.split(":", 1)[1], org_id)
     if subject.startswith("draft:"):
         return _draft_detail(subject.split(":", 1)[1], org_id)
+    if subject.startswith("crm:activity/"):
+        return _crm_detail(subject.split("/", 1)[1])
     slug, ref = _guard(subject, org_id)
 
     detail = _task_detail(subject, slug, ref, TaigaStoryStore())

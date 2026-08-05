@@ -64,6 +64,26 @@ class Reason:
     kind: str  # 'clock' | 'judgement'
 
 
+# What a subject's scheme means. The list is not task-only — Golda: "amebo
+# supposed to be unifying all the things ... cards be different types ...
+# intention centric". A card's type is already written in its subject, so it is
+# read back out of the subject rather than stored a second time where the two
+# could disagree.
+KINDS = {
+    "taiga": "task",        # a story on a board
+    "goal": "goal",         # a question a claw is holding
+    "draft": "draft",       # something amebo wants to send as you
+    "crm": "contact",       # a follow-up someone scheduled on a CRM record
+}
+
+
+def kind_of(subject: str) -> str:
+    """'crm:activity/19' -> 'contact'. Unknown schemes read as 'task' so a new
+    source shows up as an ordinary row instead of breaking the page."""
+    scheme = subject.split(":", 1)[0] if ":" in subject else ""
+    return KINDS.get(scheme, "task")
+
+
 @dataclass
 class Item:
     subject: str                    # stable URI, e.g. 'taiga:my-project#34'
@@ -75,6 +95,10 @@ class Item:
     due: Optional[str] = None
     assignee: Optional[str] = None
     past: bool = False              # deadline already went by
+
+    @property
+    def kind(self) -> str:
+        return kind_of(self.subject)
 
 
 class StoryStore(Protocol):
@@ -336,6 +360,106 @@ def items_from_goals(goals: Sequence[Dict[str, Any]]) -> List[Item]:
 class WorkList:
     live: List[Item] = field(default_factory=list)
     past: List[Item] = field(default_factory=list)
+
+
+def build_crm_item(activity: Dict[str, Any], *, today: date,
+                   record_url: str,
+                   message: Optional[Dict[str, str]] = None) -> Item:
+    """One scheduled follow-up becomes one card.
+
+    It is dated by construction, so it ranks on the same clock as a story: a
+    call due tomorrow sits beside a task due tomorrow, which is the whole point
+    of one list. The record it hangs off — the person or company — is the link,
+    and the last thing anyone actually said on that record is the headline.
+    """
+    due = activity.get("date_deadline") or None
+    reason = clock_reason(due, today) or Reason("no date", "judgement")
+    rank = clock_rank(due, today) if due else JUDGED_CEILING - 200
+    who = activity.get("user_id")
+    name = who[1] if isinstance(who, (list, tuple)) and len(who) > 1 else None
+
+    quote = None
+    if message and message.get("text"):
+        quote = Quote(who=message.get("who") or "someone",
+                      text=message["text"][:400],
+                      url=message.get("url") or record_url)
+
+    record = (activity.get("res_name") or "").strip()
+    return Item(
+        subject=f"crm:activity/{activity.get('id')}",
+        title=(activity.get("summary") or "").strip() or record or "(follow-up)",
+        reason=reason,
+        rank=rank,
+        links=[Link(record or "in the CRM", record_url)] if record_url else [],
+        quote=quote,
+        due=due,
+        assignee=name,
+        past=bool(due and _is_past(due, today)),
+    )
+
+
+def assemble_crm(activities: Sequence[Dict[str, Any]], store: Any, *,
+                 today: Optional[date] = None,
+                 viewer_uids: Optional[Sequence[int]] = None) -> WorkList:
+    """Scheduled CRM follow-ups, filtered to the viewer, ranked on the clock.
+
+    ``viewer_uids`` are the Odoo user ids of the person reading — ids, never
+    names, because two accounts in this CRM both read "Golda Velez" and
+    matching on the name would hand one person the other's follow-ups.
+
+    Plural because one human can hold more than one account in the same system
+    (here: an ``admin`` login and a named one), and work scheduled on either is
+    still theirs. Empty (nobody mapped this login) filters nothing out, matching
+    how the board source treats an unmapped viewer: too much beats an empty page.
+    """
+    from src.services.work_list_crm import form_url
+
+    today = today or date.today()
+    wanted = set(viewer_uids or ())
+    mine = [a for a in activities
+            if not wanted or _activity_uid(a) in (None, *wanted)]
+
+    # One message lookup per model, not per row.
+    quotes: Dict[str, Dict[int, Dict[str, str]]] = {}
+    by_model: Dict[str, List[int]] = {}
+    for a in mine:
+        model = a.get("res_model")
+        if model and a.get("res_id"):
+            by_model.setdefault(model, []).append(a["res_id"])
+    for model, ids in by_model.items():
+        try:
+            quotes[model] = store.last_messages(model, ids)
+        except Exception as exc:  # noqa: BLE001 - the quote is a nicety
+            logger.debug("work_list: no CRM messages for %s: %s", model, exc)
+            quotes[model] = {}
+
+    live: List[Item] = []
+    past: List[Item] = []
+    for a in mine:
+        model, rid = a.get("res_model"), a.get("res_id")
+        url = form_url(model, rid) if model and rid else ""
+        item = build_crm_item(a, today=today, record_url=url,
+                              message=quotes.get(model, {}).get(rid))
+        (past if item.past else live).append(item)
+
+    live.sort(key=lambda i: (-i.rank, i.title))
+    past.sort(key=lambda i: (i.due or "", i.title))
+    return WorkList(live=live, past=past)
+
+
+def _activity_uid(activity: Dict[str, Any]) -> Optional[int]:
+    """The Odoo user id on a follow-up, or None when it has no owner.
+
+    Odoo returns an empty relation as ``False``, and in Python ``False`` is an
+    int — so the bool has to be ruled out first or an unowned follow-up reads
+    as user 0 and falls off everybody's list.
+    """
+    who = activity.get("user_id")
+    if isinstance(who, bool) or who is None:
+        return None
+    if isinstance(who, (list, tuple)):
+        return who[0] if who else None
+    return who if isinstance(who, int) else None
 
 
 def parse_subject(key: str) -> Optional[tuple]:

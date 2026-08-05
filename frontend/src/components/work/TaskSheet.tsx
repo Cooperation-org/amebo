@@ -205,7 +205,8 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
               rel="noreferrer"
               className="inline-flex items-center gap-1 text-xs text-emerald-800 hover:underline"
             >
-              open in Taiga <ExternalLink className="h-3 w-3" />
+              {data?.kind === 'contact' ? 'open in the CRM' : 'open in Taiga'}{' '}
+              <ExternalLink className="h-3 w-3" />
             </a>
           )}
           {/* Only while it is actually happening. A permanent line telling you
@@ -276,6 +277,50 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                 {String((edit.error as Error)?.message ?? 'That did not go through.')}
               </p>
             )}
+          </div>
+        ) : data.kind === 'contact' ? (
+          /* A follow-up someone scheduled on a person in the CRM. The person is
+             what you came to see: what was last said to them, and one way
+             through to their record. Nothing here is editable — the CRM holds
+             this record and there is no write path to it yet, and a field that
+             throws away what you typed is worse than a field you cannot type
+             in. */
+          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
+            <div>
+              <p className="text-[17px] font-semibold leading-snug text-gray-900">
+                {data.title}
+              </p>
+              {data.due && (
+                <p className="mt-1 font-mono text-xs text-gray-500">due {data.due}</p>
+              )}
+              {data.assignee && (
+                <p className="mt-0.5 text-xs text-gray-500">{data.assignee}</p>
+              )}
+            </div>
+            {data.description && (
+              <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-gray-800">
+                {data.description}
+              </p>
+            )}
+            <div>
+              <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
+                Thread
+              </p>
+              {data.comments.length === 0 ? (
+                <p className="text-sm text-gray-400">Nobody has said anything here.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {data.comments.map((c, i) => (
+                    <li key={i} className="text-sm leading-snug text-gray-800">
+                      <span className="font-semibold">{c.who}:</span> {c.text}
+                      {c.when && (
+                        <span className="ml-2 font-mono text-[11px] text-gray-400">{c.when}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
           </div>
         ) : (
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-y-auto md:grid-cols-[1fr_300px]">

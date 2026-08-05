@@ -22,14 +22,20 @@ is a nuisance, seeing nothing looks like the product is broken.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 
-def taiga_username(client: Dict[str, Any],
-                   instance_config: Optional[Dict[str, Any]]) -> Optional[str]:
-    """The viewer's Taiga username, or None when nobody has mapped them yet.
+def identity_in(system: str, client: Dict[str, Any],
+                instance_config: Optional[Dict[str, Any]]) -> Optional[str]:
+    """The viewer's account name in ``system``, or None when nobody has mapped
+    them yet.
+
+    One map per system, all of them ``config.<system>_identities`` keyed by the
+    amebo login: ``taiga_identities`` -> a Taiga username, ``crm_identities`` ->
+    an Odoo login. Same shape for every source the list grows, so adding one is
+    config, not code.
 
     ``client`` is what the auth dependency handed the route. A service key is
     not a person and never gets a personal list.
@@ -39,9 +45,26 @@ def taiga_username(client: Dict[str, Any],
     email = (client.get("email") or "").strip().lower()
     if not email:
         return None
-    mapping = (instance_config or {}).get("taiga_identities") or {}
-    username = mapping.get(email)
-    if not username:
-        logger.info("work-list: no taiga identity mapped for %s — showing "
-                    "everything rather than an empty list", email)
-    return username
+    mapping = (instance_config or {}).get(f"{system}_identities") or {}
+    account = mapping.get(email)
+    if not account:
+        logger.info("work-list: no %s identity mapped for %s — showing "
+                    "everything rather than an empty list", system, email)
+    return account
+
+
+def taiga_username(client: Dict[str, Any],
+                   instance_config: Optional[Dict[str, Any]]) -> Optional[str]:
+    return identity_in("taiga", client, instance_config)
+
+
+def crm_logins(client: Dict[str, Any],
+               instance_config: Optional[Dict[str, Any]]) -> List[str]:
+    """The viewer's Odoo logins. A list, because one human can hold more than
+    one account in the same CRM (an ``admin`` login and a named one), and work
+    scheduled on either is still theirs. ``crm_identities`` accepts a single
+    login or a list of them."""
+    mapped = identity_in("crm", client, instance_config)
+    if not mapped:
+        return []
+    return [mapped] if isinstance(mapped, str) else list(mapped)

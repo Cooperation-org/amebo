@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Clock, ExternalLink } from 'lucide-react';
+import { Clock, ExternalLink, MessageCircleQuestion, Send, User } from 'lucide-react';
 import { useWorkList, type WorkItem } from '@/src/hooks/useWorkList';
 import { useEditWorkItem } from '@/src/hooks/useWorkItem';
 import { TaskSheet } from '@/src/components/work/TaskSheet';
@@ -22,6 +22,31 @@ import { LATER_OPTIONS, inDays } from '@/src/lib/later';
  * What went past its date drops to the bottom and offers to be closed, so a
  * missed deadline is visible without nagging from the top.
  */
+
+/**
+ * What kind of card this is, when it is not the usual kind.
+ *
+ * Tasks are most of the list, so a task carries no marker: a symbol printed on
+ * every row is wallpaper, not information — the same reason the push-out
+ * control lost its words. The rows that are NOT board rows get one quiet icon,
+ * which is the thing worth seeing at a glance: this one is a person, not a
+ * ticket.
+ */
+function Kind({ kind }: { kind: WorkItem['kind'] }) {
+  const marks = {
+    contact: [User, 'a follow-up on a person, from the CRM'],
+    goal: [MessageCircleQuestion, 'a question amebo is holding for you'],
+    draft: [Send, 'something amebo wants to send as you'],
+  } as const;
+  const mark = marks[kind as keyof typeof marks];
+  if (!mark) return null;
+  const [Icon, what] = mark;
+  return (
+    <span title={what} aria-label={what} className="mt-1 shrink-0 text-gray-400">
+      <Icon className="h-3.5 w-3.5" />
+    </span>
+  );
+}
 
 /** Red for the clock, blue for a judgement call — so you can see which is which. */
 function Why({ label, kind }: { label: string; kind: string }) {
@@ -138,6 +163,7 @@ function Row({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
       className="group cursor-pointer rounded-lg border bg-white px-4 py-3 hover:border-gray-300">
       <div className="flex items-start gap-3">
         <Why label={item.reason.label} kind={item.reason.kind} />
+        <Kind kind={item.kind} />
         <div className="min-w-0 flex-1">
           {item.quote ? (
             <p className="text-[15px] leading-snug text-gray-900">
@@ -147,7 +173,10 @@ function Row({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
             <p className="text-[15px] leading-snug text-gray-900">{item.title}</p>
           )}
           <Links item={item} />
-          <Snooze item={item} />
+          {/* A follow-up's date lives in the CRM and there is no write path to
+              it yet, so the contact card does not offer a control that would
+              fail. Its own record is one click away on the row. */}
+          {item.kind !== 'contact' && <Snooze item={item} />}
         </div>
       </div>
     </div>
@@ -164,6 +193,7 @@ function PastRow({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
         <span className="mt-0.5 shrink-0 rounded border bg-gray-100 px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-gray-500">
           {item.reason.label}
         </span>
+        <Kind kind={item.kind} />
         <div className="min-w-0 flex-1">
           <p className="text-sm text-gray-700">{item.title}</p>
           <Links item={item} />
