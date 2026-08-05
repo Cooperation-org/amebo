@@ -1554,3 +1554,37 @@ such database exists yet (probed crm-vc, crm-workersvc, crm-workers,
 workersvc_crm, crm-whatscookin — none). Standing up a second CRM database is
 Golda's call, not something to do sideways. Once it exists: `ODOO_DB=<db>
 odoo-cli module-install crm_world`, same addon path, no code change.
+
+## WORK LIST: undated tasks in, list capped at 20 — 2026-08-05 (tactical session)
+
+Shipped (d5e4696), 941 tests pass, service restarted, live.
+
+- `TaigaStoryStore.open_stories()` returns everything open; `open_dated_stories()`
+  is now a filter over it. Same fetch as before — the undated rows were being
+  thrown away, so this costs no extra call. 869 open, 17 dated.
+- Undated stories reach the list **only when assigned to the viewer**
+  (`_undated_belongs`). Unowned undated is backlog (367 rows). An unmapped viewer
+  gets dated work only — the usual "too much beats empty" rule inverts at 839
+  rows.
+- `judged_rank`/`judged_reason` now take `today`, `comment`, `viewer` (all
+  keyword, all defaulted, old one-arg calls unchanged). Signals: new under 5 days,
+  days untouched capped at 180, someone else's last comment. Band 300–998, still
+  strictly under every dated row.
+- **Cap: `LIST_MAX = 20`, `top()` in work_list.py.** Golda: "between three and
+  twenty is good, seven or eight is kind of ideal, never more than twenty."
+  Applied in the route after the merge sort, with `live_total`/`past_total` on
+  `WorkListOut` so a capped list cannot look complete.
+
+### Heads-up for the rubric lane
+
+This lands in your territory on purpose, because Golda asked for it now. Two
+things to take rather than rediscover:
+
+- The cap is a **product constraint, not an implementation detail**. Whatever the
+  rubric becomes, ~7-8 rows is the target and 20 is the ceiling. That makes the
+  rubric's job "pick the best twenty", which is a different problem from "sort
+  everything" and probably simplifies it.
+- The undated band constants (`UNDATED_*`, `OPEN_CONTEXT_*`) are exactly the
+  per-source scores you plan to delete. The facts behind them are the ones worth
+  keeping on the item: days untouched, days since created, whether the last word
+  was somebody else's, stage, and who owns it. Nothing else is load-bearing.
