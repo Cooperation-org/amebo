@@ -432,6 +432,15 @@ class ApiClient {
     });
   }
 
+  /** What is wrong with the list, in the person's own words. Filed as work on
+   *  the team's board — not into a store of its own that nobody sweeps. */
+  async sayWhatsWrong(body: { text: string; subject?: string }): Promise<{ filed: string }> {
+    return this.request('/api/work-list/feedback', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
+  }
+
   async getPendingActions(): Promise<PendingAction[]> {
     return this.request('/api/pending-actions/');
   }

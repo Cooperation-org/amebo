@@ -48,7 +48,8 @@ from src.services.live import publish, subscribe, unsubscribe
 from src.services.viewer_identity import crm_logins, taiga_username
 from src.services.work_list_taiga import TaigaStoryStore
 from src.tools.gated_actuators import (
-    execute_taiga_close, execute_taiga_comment, execute_taiga_update,
+    execute_taiga_close, execute_taiga_comment, execute_taiga_create,
+    execute_taiga_update,
 )
 
 logger = logging.getLogger(__name__)
@@ -717,3 +718,90 @@ async def stream(client: Dict[str, Any] = Depends(get_service_or_user)):
         # until the buffer fills — for a stream that means nothing arrives.
         "X-Accel-Buffering": "no",
     })
+
+
+# ------------------------------------------------------------------ feedback
+
+
+class FeedbackIn(BaseModel):
+    # What is wrong, in the person's own words. Two words is a real answer.
+    text: str
+    # The row it is about, when one is open. Optional: plenty of what is wrong
+    # with a list is about the list, not about any one row on it.
+    subject: Optional[str] = None
+
+
+class FeedbackOut(BaseModel):
+    filed: str
+
+
+@router.post("/feedback", response_model=FeedbackOut)
+async def feedback(body: FeedbackIn,
+                   client: Dict[str, Any] = Depends(get_service_or_user)):
+    """Say what is wrong with the list, from the list.
+
+    Filed as a story on the team's own board, because that is where work lives
+    (BOUNDARIES: tasks are Taiga's, and amebo only references them). Not into a
+    table of its own: a note nobody sweeps is a note nobody reads.
+
+    Two words is enough — "wrong person", "opens blank" — and the row it came
+    from goes with it, so the words do not have to carry the context as well.
+    The one thing pushed back on is a couple of words about nothing in
+    particular, which nobody could act on later.
+
+    This files it. Fixing it is a person's or a session's job, and deliberately
+    not this endpoint's: whether that runs on demand or on a clock, and whether
+    a fix deploys straight or waits, are open questions, and nothing here
+    presumes an answer to them.
+    """
+    org_id = client.get("org_id")
+    if not org_id:
+        raise HTTPException(status_code=403, detail="No organization for this client")
+
+    said = (body.text or "").strip()
+    if not said:
+        raise HTTPException(status_code=400, detail="Say what is wrong.")
+    if not body.subject and len(said.split()) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Which row is this about? Open it, or say a bit more.")
+
+    try:
+        from src.db.repositories.instance_repo import InstanceRepo
+        config = (InstanceRepo().get_by_org(org_id) or {}).get("config") or {}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("work-list: instance config unreadable for %s: %s", org_id, exc)
+        config = {}
+    board = config.get("feedback_board")
+    if not board:
+        # Never guess a board. Filing onto the wrong one is worse than saying
+        # plainly that nobody has said where these should go.
+        raise HTTPException(
+            status_code=501,
+            detail="No board is set for feedback (instance config: feedback_board).")
+
+    who = str(client.get("email") or client.get("user") or "someone")
+    context = [f"Said from the list by {who}."]
+    if body.subject:
+        context.append(f"About: {body.subject}")
+        if body.subject.startswith("taiga:"):
+            parsed = parse_subject(body.subject.replace("taiga:", "", 1))
+            if parsed:
+                context.append(story_url(TaigaStoryStore().host, parsed[0], parsed[1]))
+
+    try:
+        execute_taiga_create({"org_id": org_id, "payload": {
+            "project": board,
+            # Their words are the title. Amebo writing its own summary here is
+            # exactly the paraphrase that loses what was meant.
+            "subject": said if len(said) <= 120 else said[:117] + "...",
+            "description": "\n".join(context + ([said] if len(said) > 120 else [])),
+        }})
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("work-list: could not file feedback for org %s: %s", org_id, exc)
+        raise HTTPException(
+            status_code=502,
+            detail="That did not get filed. Nothing was lost — try again.")
+
+    publish(org_id, "work-list")
+    return FeedbackOut(filed=board)

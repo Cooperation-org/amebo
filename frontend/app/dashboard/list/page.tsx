@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Clock, ExternalLink, MessageCircleQuestion, Send, User } from 'lucide-react';
 import { useWorkList, type WorkItem } from '@/src/hooks/useWorkList';
 import { useWorkListLive } from '@/src/hooks/useWorkListLive';
+import { useSayWhatsWrong } from '@/src/hooks/useSayWhatsWrong';
 import { useEditWorkItem } from '@/src/hooks/useWorkItem';
 import { TaskSheet } from '@/src/components/work/TaskSheet';
 import { useOpenTask } from '@/src/hooks/useOpenTask';
@@ -204,6 +205,60 @@ function PastRow({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
   );
 }
 
+
+/**
+ * Say what is wrong with the list, from the list.
+ *
+ * One line at the foot of the page rather than a control on every row: what is
+ * wrong is as often about the list as about any one thing on it, and a button
+ * repeated twenty times is wallpaper. Whatever row is open goes along with the
+ * words, so two words are enough — "wrong person", "opens blank".
+ *
+ * It stays quiet until used. The placeholder is the whole instruction; a line
+ * of prose explaining a text box is the product explaining itself.
+ */
+function WhatsWrong({ about }: { about: string | null }) {
+  const [text, setText] = useState('');
+  const say = useSayWhatsWrong();
+
+  const send = () => {
+    const said = text.trim();
+    if (!said) return;
+    say.mutate({ text: said, subject: about ?? undefined }, { onSuccess: () => setText('') });
+  };
+
+  return (
+    <div className="pt-8">
+      <div className="flex gap-2">
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && send()}
+          placeholder={about ? "what's wrong with this one?" : "what's wrong?"}
+          aria-label="Say what is wrong with the list"
+          className="flex-1 rounded-md border bg-transparent px-3 py-2 text-sm placeholder:text-gray-400 focus:border-emerald-600 focus:bg-white focus:outline-none"
+        />
+        <button
+          type="button"
+          disabled={!text.trim() || say.isPending}
+          onClick={send}
+          className="rounded-md border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-40"
+        >
+          Say it
+        </button>
+      </div>
+      {say.isError && (
+        <p className="mt-1.5 text-xs text-red-800">
+          {String((say.error as Error)?.message ?? 'That did not get filed.')}
+        </p>
+      )}
+      {say.isSuccess && !text && (
+        <p className="mt-1.5 text-xs text-gray-500">Filed on the {say.data.filed} board.</p>
+      )}
+    </div>
+  );
+}
+
 export default function WorkListPage() {
   const { data, isLoading, isError } = useWorkList();
   // Anything amebo changes shows up at once instead of on the next refresh.
@@ -221,7 +276,14 @@ export default function WorkListPage() {
   const past = data?.past ?? [];
 
   if (live.length === 0 && past.length === 0) {
-    return <p className="text-sm text-gray-500">Nothing waiting on you.</p>;
+    // Still offer the say-so: "nothing waiting on you" is itself sometimes the
+    // thing that is wrong, and there would be nowhere to say it.
+    return (
+      <div>
+        <p className="text-sm text-gray-500">Nothing waiting on you.</p>
+        <WhatsWrong about={null} />
+      </div>
+    );
   }
 
   return (
@@ -243,6 +305,8 @@ export default function WorkListPage() {
           ))}
         </>
       )}
+
+      <WhatsWrong about={open} />
 
       {open && <TaskSheet subject={open} onClose={() => setOpen(null)} />}
     </div>
