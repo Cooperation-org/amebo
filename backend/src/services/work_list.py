@@ -817,18 +817,18 @@ def parse_subject(key: str) -> Optional[tuple]:
 
 
 def _undated_belongs(owner: Optional[str], viewer: Optional[str]) -> bool:
-    """Whether an undated task earns a place on this person's list.
+    """Whether an undated task belongs to this person outright.
 
     Only their own. The rule for dated work is the opposite — an unowned
     deadline stays on every list, because a date is coming whether or not
     anybody has picked it up. Nothing is coming for an undated task, so an
-    unowned one is backlog, and there are 367 of those against 17 dated: put
-    them on everyone's list and the list stops being a list.
+    unowned one is backlog.
 
-    Same reason an unmapped viewer gets none of them. Elsewhere an unmapped
-    viewer sees too much rather than too little, but "too much" here is 839
-    rows, which is not a nuisance, it is an unusable page. Dated work still
-    shows unfiltered, so nobody's list goes blank.
+    Backlog is not thrown away, it is last: see ``assemble_stories``, which
+    admits it only while the page still has room. On a mature board (367 unowned
+    undated against 17 dated) there is never room and none of it shows. On a
+    board a team just started there is nothing but room, and they see the few
+    stories they have instead of a blank page that reads as broken.
     """
     return bool(viewer) and owner == viewer
 
@@ -865,6 +865,7 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
     # Their comments are then fetched together rather than one story at a time,
     # which was the slowest thing about opening the list.
     kept: List[tuple] = []
+    spare: List[tuple] = []
     for story in stories:
         if (story.get("status_extra_info") or {}).get("is_closed"):
             continue
@@ -875,9 +876,8 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
         if viewer_username and owner and owner != viewer_username:
             someone_elses += 1
             continue
-        if not story.get("due_date") and not _undated_belongs(owner, viewer_username):
-            backlog += 1
-            continue
+        is_backlog = (not story.get("due_date")
+                      and not _undated_belongs(owner, viewer_username))
         slug = store.project_slug_of(story)
         if not slug:
             continue
@@ -887,7 +887,15 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
         if getattr(store, "project_blocked", None) and store.project_blocked(slug):
             skipped_blocked.append(slug)
             continue
-        kept.append((story, slug))
+        (spare if is_backlog else kept).append((story, slug))
+
+    # Room, not ownership, is what decides whether unowned undated work shows.
+    # A full page never reaches it; a nearly empty one is filled with it rather
+    # than showing a new team nothing.
+    room = max(0, LIST_MAX - len(kept))
+    if room and spare:
+        kept.extend(spare[:room])
+    backlog = max(0, len(spare) - room)
 
     comments = _comments_for(store, [s.get("id") for s, _ in kept])
     for story, slug in kept:
@@ -896,8 +904,8 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
                           viewer=viewer_username)
         (past if item.past else live).append(item)
     if backlog:
-        logger.info("work_list: %d undated stories left in the backlog "
-                    "(unowned, or nobody mapped this viewer)", backlog)
+        logger.info("work_list: %d unowned undated stories left in the backlog, "
+                    "no room on the page", backlog)
     if skipped_blocked:
         # Never a silent drop: say what was left out and why.
         logger.info("work_list: %d stories skipped on blocked boards (%s)",

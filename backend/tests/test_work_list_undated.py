@@ -64,11 +64,33 @@ def test_someone_elses_undated_task_is_not():
     assert out.live == []
 
 
-def test_an_unowned_undated_task_is_backlog_not_everyones_problem():
-    """367 unowned undated stories against 17 dated ones. On every list, they
-    stop it being a list."""
+def test_an_unowned_undated_task_is_backlog_and_goes_last():
+    """367 unowned undated stories against 17 dated ones. On a full page they
+    stop it being a list, so they only get in while there is room — and on a
+    board holding one story there is nothing but room."""
     out = assemble([story(assigned_to=None, assigned_to_extra_info=None)])
-    assert out.live == []
+    assert [i.subject for i in out.live] == ["taiga:some-board#34"]
+
+
+def test_the_backlog_is_dropped_once_the_page_is_full():
+    """The mature board: owned work already fills the twenty, so none of the
+    unowned undated pile reaches anybody."""
+    from src.services.work_list import LIST_MAX
+    mine = [story(id=i, ref=i) for i in range(LIST_MAX)]
+    unowned = [story(id=100 + i, ref=100 + i, assigned_to=None,
+                     assigned_to_extra_info=None) for i in range(30)]
+    out = assemble(mine + unowned)
+    assert len(out.live) == LIST_MAX
+    assert all(int(i.subject.rsplit("#", 1)[1]) < LIST_MAX for i in out.live)
+
+
+def test_the_backlog_fills_only_the_room_that_is_left():
+    from src.services.work_list import LIST_MAX
+    mine = [story(id=i, ref=i) for i in range(LIST_MAX - 3)]
+    unowned = [story(id=100 + i, ref=100 + i, assigned_to=None,
+                     assigned_to_extra_info=None) for i in range(10)]
+    out = assemble(mine + unowned)
+    assert len(out.live) == LIST_MAX
 
 
 def test_an_unowned_dated_task_still_reaches_everyone():
@@ -79,13 +101,16 @@ def test_an_unowned_dated_task_still_reaches_everyone():
     assert [i.subject for i in out.live] == ["taiga:some-board#34"]
 
 
-def test_an_unmapped_viewer_gets_dated_work_but_not_the_backlog():
+def test_an_unmapped_viewer_gets_dated_work_and_only_what_fits_of_the_rest():
     """Everywhere else an unmapped viewer sees too much rather than too little.
-    Here 'too much' is 839 rows, which is an unusable page, not a nuisance."""
-    stories = [story(id=1, ref=34),
-               story(id=2, ref=35, due_date="2026-08-06")]
+    Here 'too much' is 839 rows, which is an unusable page, not a nuisance — so
+    the undated ones are still last and still cut off at the cap."""
+    from src.services.work_list import LIST_MAX
+    stories = ([story(id=i, ref=i, due_date="2026-08-06") for i in range(LIST_MAX)]
+               + [story(id=100 + i, ref=100 + i) for i in range(30)])
     out = assemble(stories, viewer=None)
-    assert [i.subject for i in out.live] == ["taiga:some-board#35"]
+    assert len(out.live) == LIST_MAX
+    assert all(i.due == "2026-08-06" for i in out.live)
 
 
 # ------------------------------------------------------------------ order
