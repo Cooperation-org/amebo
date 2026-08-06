@@ -125,11 +125,9 @@ export default function LoginPage() {
               {isLoading ? 'Signing in...' : 'Sign in'}
             </Button>
           </form>
-          <div className="mt-4 text-center text-sm">
-            Don't have an account?{' '}
-            <Link href="/signup" className="text-blue-600 hover:underline">
-              Sign up
-            </Link>
+          <div className="mt-4 text-center text-sm text-gray-500">
+            Amebo is invitation only. Sign in with LinkedTrust above, or ask
+            whoever runs your team for an invite.
           </div>
         </CardContent>
       </Card>

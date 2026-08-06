@@ -225,8 +225,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Determine endpoint type based on path
-        # Only rate-limit auth mutation endpoints (login/signup/reset), not /me or /refresh
-        if path in ('/api/auth/login', '/api/auth/signup', '/api/auth/forgot-password', '/api/auth/reset-password'):
+        # Only rate-limit auth mutation endpoints (login/reset), not /me or /refresh
+        if path in ('/api/auth/login', '/api/auth/forgot-password', '/api/auth/reset-password'):
             endpoint_type = 'auth'
         elif '/upload' in path:
             endpoint_type = 'upload'

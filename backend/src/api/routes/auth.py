@@ -1,5 +1,5 @@
 """
-Authentication routes - signup, login, token refresh, password management
+Authentication routes - login, token refresh, password management
 """
 
 from fastapi import APIRouter, HTTPException, Query, status, Depends, Request, Response
@@ -7,13 +7,11 @@ from fastapi.responses import RedirectResponse
 from psycopg2 import extras
 import logging
 import os
-import re
 import secrets
 import hashlib
 from datetime import timedelta
 
 from src.api.models import (
-    UserSignupRequest,
     UserLoginRequest,
     TokenResponse,
     RefreshTokenRequest,
@@ -51,116 +49,13 @@ class GoogleLoginRequest(BaseModel):
     redirect_uri: Optional[str] = None
 
 
-def create_org_slug(org_name: str) -> str:
-    """Generate URL-friendly slug from org name"""
-    slug = org_name.lower()
-    slug = re.sub(r'[^a-z0-9]+', '-', slug)
-    slug = slug.strip('-')
-    return slug[:100]
-
-
-@router.post("/signup", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def signup(request: UserSignupRequest):
-    """
-    Register a new user and organization
-    Creates both organization and first user (owner)
-    """
-    conn = DatabaseConnection.get_connection()
-    try:
-        with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
-            # Generate org slug
-            org_slug = request.org_slug or create_org_slug(request.org_name)
-
-            # Check if email already exists
-            cur.execute(
-                "SELECT user_id FROM platform_users WHERE email = %s",
-                (request.email,)
-            )
-            if cur.fetchone():
-                logger.warning("auth.signup.rejected email=%s reason=email_exists", request.email)
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Email already registered"
-                )
-
-            # Check if org slug is taken
-            cur.execute(
-                "SELECT org_id FROM organizations WHERE org_slug = %s",
-                (org_slug,)
-            )
-            if cur.fetchone():
-                logger.warning("auth.signup.rejected email=%s reason=org_taken slug=%s", request.email, org_slug)
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Organization name already taken. Please choose a different name."
-                )
-
-            # Create organization
-            cur.execute(
-                """
-                INSERT INTO organizations (org_name, org_slug, subscription_plan, subscription_status)
-                VALUES (%s, %s, 'free', 'active')
-                RETURNING org_id
-                """,
-                (request.org_name, org_slug)
-            )
-            org_id = cur.fetchone()['org_id']
-
-            # Hash password
-            password_hash = hash_password(request.password)
-
-            # Create user (owner role)
-            cur.execute(
-                """
-                INSERT INTO platform_users (org_id, email, password_hash, full_name, role, is_active, email_verified)
-                VALUES (%s, %s, %s, %s, 'owner', true, true)
-                RETURNING user_id, email, full_name, role
-                """,
-                (org_id, request.email, password_hash, request.full_name)
-            )
-            user = cur.fetchone()
-
-            # Log audit event
-            cur.execute(
-                """
-                INSERT INTO audit_logs (org_id, user_id, action, resource_type, resource_id, details)
-                VALUES (%s, %s, 'user_signup', 'user', %s, %s)
-                """,
-                (org_id, user['user_id'], str(user['user_id']),
-                 extras.Json({'org_created': True}))
-            )
-
-            conn.commit()
-
-            # Create tokens
-            token_data = {
-                "user_id": user['user_id'],
-                "org_id": org_id,
-                "email": user['email'],
-                "role": user['role']
-            }
-            access_token = create_access_token(token_data)
-            refresh_token = create_refresh_token({"user_id": user['user_id']})
-
-            logger.info(f"New user signed up: {request.email}, org: {request.org_name}")
-
-            return TokenResponse(
-                access_token=access_token,
-                refresh_token=refresh_token,
-                token_type="bearer",
-            )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        conn.rollback()
-        logger.error(f"Signup error: {e}", exc_info=True)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to create account"
-        )
-    finally:
-        DatabaseConnection.return_connection(conn)
+# There is no self-signup. It used to mint an org and an active owner for
+# whoever posted an email and a password, which put amebo's tools — and the
+# tokens they spend — behind nothing at all (golda 2026-08-06: "we don't want
+# just anyone using amebo, it has tokens"). The way in is LinkedTrust SSO, and
+# oidc_callback below admits only a person GovKit has already let in: a team
+# invite, or an accepted pool invite. Orgs are minted in exactly two places, a
+# founder bringing a venture and a deliberate operator run, never by logging in.
 
 
 @router.post("/login", response_model=TokenResponse)

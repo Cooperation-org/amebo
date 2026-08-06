@@ -82,7 +82,6 @@ class ApiClient {
     if (response.status === 401) {
       // Skip refresh for auth endpoints themselves
       const isAuthEndpoint = endpoint.includes('/auth/login') ||
-        endpoint.includes('/auth/signup') ||
         endpoint.includes('/auth/refresh');
 
       if (!isRetry && !isAuthEndpoint) {
@@ -116,18 +115,6 @@ class ApiClient {
     return this.request('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify({ email, password }),
-    });
-  }
-
-  async signup(email: string, password: string, orgName: string, fullName?: string) {
-    return this.request('/api/auth/signup', {
-      method: 'POST',
-      body: JSON.stringify({ 
-        email, 
-        password, 
-        org_name: orgName,
-        full_name: fullName || email.split('@')[0] // Use email prefix as default
-      }),
     });
   }
 

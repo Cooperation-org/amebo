@@ -26,7 +26,6 @@ interface AuthState {
   isAuthenticated: boolean;
   requiresPasswordChange: boolean;
   login: (email: string, password: string) => Promise<{ mustChangePassword: boolean }>;
-  signup: (email: string, password: string, orgName: string) => Promise<void>;
   logout: () => Promise<void>;
   checkAuth: () => Promise<void>;
   clearPasswordChangeRequirement: () => void;
@@ -70,33 +69,6 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     }
   },
 
-  signup: async (email: string, password: string, orgName: string) => {
-    set({ isLoading: true });
-    try {
-      const fullName = email.split('@')[0];
-      const response = await apiClient.signup(email, password, orgName, fullName) as LoginResponse;
-
-      // Store tokens
-      TokenManager.setTokens({
-        access_token: response.access_token,
-        token_type: response.token_type,
-        expires_in: response.expires_in,
-      });
-      TokenManager.setRefreshToken(response.refresh_token);
-
-      // Fetch actual user data
-      const user = await apiClient.getCurrentUser() as User;
-
-      set({
-        user,
-        isAuthenticated: true,
-        isLoading: false
-      });
-    } catch (error) {
-      set({ isLoading: false });
-      throw error;
-    }
-  },
 
   logout: async () => {
     try {
