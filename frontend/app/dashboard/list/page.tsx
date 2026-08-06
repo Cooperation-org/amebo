@@ -5,7 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   ChevronDown, ChevronRight, ChevronsDown, ChevronsUp, Clock, ExternalLink,
-  MessageCircleQuestion, Pin, PinOff, Plus, Send, User,
+  Frown, MessageCircleQuestion, Pin, PinOff, Plus, Send, Smile, User,
 } from 'lucide-react';
 import { useWorkList, type WorkItem } from '@/src/hooks/useWorkList';
 import { useWorkListLive } from '@/src/hooks/useWorkListLive';
@@ -321,54 +321,74 @@ function Buried({ items, onOpen }: { items: WorkItem[]; onOpen: (s: string) => v
 }
 
 /**
- * Say what is wrong with the list, from the list.
+ * Two small faces in the corner. Nothing else until one is clicked.
  *
- * One line at the foot of the page rather than a control on every row: what is
- * wrong is as often about the list as about any one thing on it, and a button
- * repeated twenty times is wallpaper. Whatever row is open goes along with the
- * words, so two words are enough — "wrong person", "opens blank".
- *
- * It stays quiet until used. The placeholder is the whole instruction; a line
- * of prose explaining a text box is the product explaining itself.
+ * The face IS the whole ask, so the page carries no box and no instruction to
+ * read. Clicking one opens a single line to say more; whichever row is open
+ * goes along with the words, so two words are enough.
  */
 function WhatsWrong({ about }: { about: string | null }) {
+  const [mood, setMood] = useState<'good' | 'bad' | null>(null);
   const [text, setText] = useState('');
   const say = useSayWhatsWrong();
 
+  const close = () => { setMood(null); setText(''); };
+
   const send = () => {
     const said = text.trim();
-    if (!said) return;
-    say.mutate({ text: said, subject: about ?? undefined }, { onSuccess: () => setText('') });
+    if (!said || !mood) return;
+    say.mutate({ text: said, mood, subject: about ?? undefined },
+               { onSuccess: close });
   };
 
+  const face = (which: 'good' | 'bad', Icon: typeof Smile, label: string) => (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={mood === which}
+      onClick={() => (mood === which ? close() : setMood(which))}
+      className={`rounded p-1 transition-colors ${
+        mood === which ? 'text-gray-700' : 'text-gray-300 hover:text-gray-500'
+      }`}
+    >
+      <Icon className="h-4 w-4" />
+    </button>
+  );
+
   return (
-    <div className="pt-8">
-      <div className="flex gap-2">
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && send()}
-          placeholder={about ? "what's wrong with this one?" : "what's wrong?"}
-          aria-label="Say what is wrong with the list"
-          className="flex-1 rounded-md border bg-transparent px-3 py-2 text-sm placeholder:text-gray-400 focus:border-emerald-600 focus:bg-white focus:outline-none"
-        />
-        <button
-          type="button"
-          disabled={!text.trim() || say.isPending}
-          onClick={send}
-          className="rounded-md border px-3 py-2 text-sm hover:bg-gray-50 disabled:opacity-40"
-        >
-          Say it
-        </button>
-      </div>
+    <div className="fixed bottom-3 right-3 z-40 flex items-center gap-1">
+      {mood && (
+        <div className="flex items-center gap-1 rounded-md border bg-white p-1 shadow-sm">
+          <input
+            autoFocus
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') send();
+              if (e.key === 'Escape') close();
+            }}
+            placeholder={mood === 'good' ? 'what works?' : 'what is wrong?'}
+            aria-label={mood === 'good' ? 'Say what works' : 'Say what is wrong'}
+            className="w-56 bg-transparent px-2 py-1 text-sm placeholder:text-gray-400 focus:outline-none"
+          />
+          <button
+            type="button"
+            disabled={!text.trim() || say.isPending}
+            onClick={send}
+            aria-label="Send"
+            className="rounded p-1 text-gray-500 hover:bg-gray-50 disabled:opacity-40"
+          >
+            <Send className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
       {say.isError && (
-        <p className="mt-1.5 text-xs text-red-800">
+        <span className="rounded bg-white px-2 py-1 text-xs text-red-800 shadow-sm">
           {String((say.error as Error)?.message ?? 'That did not get filed.')}
-        </p>
+        </span>
       )}
-      {say.isSuccess && !text && (
-        <p className="mt-1.5 text-xs text-gray-500">Filed on the {say.data.filed} board.</p>
-      )}
+      {face('good', Smile, 'This is working')}
+      {face('bad', Frown, 'Something is wrong')}
     </div>
   );
 }

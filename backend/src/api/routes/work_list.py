@@ -849,6 +849,10 @@ class FeedbackIn(BaseModel):
     # The row it is about, when one is open. Optional: plenty of what is wrong
     # with a list is about the list, not about any one row on it.
     subject: Optional[str] = None
+    # Which face was clicked, 'good' or 'bad'. The words are the point; this
+    # only says which way they were meant, so a board sweep can tell praise
+    # from a problem without reading tone into somebody's two words.
+    mood: Optional[str] = None
 
 
 class FeedbackOut(BaseModel):
@@ -902,6 +906,8 @@ async def feedback(body: FeedbackIn,
 
     who = str(client.get("email") or client.get("user") or "someone")
     context = [f"Said from the list by {who}."]
+    if body.mood in ("good", "bad"):
+        context.append("Working" if body.mood == "good" else "Wrong")
     if body.subject:
         context.append(f"About: {body.subject}")
         if body.subject.startswith("taiga:"):

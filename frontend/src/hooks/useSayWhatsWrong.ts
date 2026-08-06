@@ -11,6 +11,6 @@ import { apiClient } from '@/src/lib/api';
  */
 export function useSayWhatsWrong() {
   return useMutation({
-    mutationFn: (body: { text: string; subject?: string }) => apiClient.sayWhatsWrong(body),
+    mutationFn: (body: { text: string; mood?: 'good' | 'bad'; subject?: string }) => apiClient.sayWhatsWrong(body),
   });
 }
