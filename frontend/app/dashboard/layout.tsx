@@ -16,6 +16,7 @@ import {
 import { User, Settings, LogOut, MessageSquare, Building2, Users, Menu, X, Link2, Inbox, Target } from 'lucide-react';
 import { usePermissions } from '@/src/hooks/usePermissions';
 import { useWorkList } from '@/src/hooks/useWorkList';
+import { CohortNav } from '@/src/components/CohortNav';
 
 export default function DashboardLayout({
   children,
@@ -52,6 +53,7 @@ export default function DashboardLayout({
 
   return (
     <ProtectedRoute>
+      <CohortNav />
       <div className="min-h-screen bg-gray-50">
         <nav className="bg-white shadow-sm border-b">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
