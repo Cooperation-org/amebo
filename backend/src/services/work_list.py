@@ -244,7 +244,52 @@ def judged_reason(story: Dict[str, Any], *, today: Optional[date] = None,
 # Building an item from a story
 # ---------------------------------------------------------------------------
 
-_URL_RE = re.compile(r"https?://[^\s\)>\]]+")
+_URL_RE = re.compile(r"https?://[^\s\)>\]<\"']+")
+_EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+
+
+def links_in(text: str, *, skip: Sequence[str] = ()) -> List[Link]:
+    """Every URL and email address written in the text, as clickable links.
+
+    The enrichment on a CRM record is prose with the actionable parts — an
+    event page, a LinkedIn profile, an address to write to — buried in it. The
+    reader should be able to click those, not re-type them.
+    """
+    seen = set(skip)
+    links: List[Link] = []
+    for url in _URL_RE.findall(text or ""):
+        url = url.rstrip(".,;:")
+        if url and url not in seen:
+            seen.add(url)
+            links.append(Link(_short(url), url))
+    for addr in _EMAIL_RE.findall(text or ""):
+        url = f"mailto:{addr}"
+        if url not in seen:
+            seen.add(url)
+            links.append(Link(addr, url))
+    return links
+
+
+# A research note stuffed into a title field reads as a wall; the row shows
+# whole segments of it while they fit, and the rest stays on the record.
+HEADLINE_MAX = 120
+_SEG_RE = re.compile(r"\s*(?:\||;|\n| \* )\s*")
+
+
+def headline(text: str, limit: int = HEADLINE_MAX) -> str:
+    """The row's one line of a longer note: leading segments, cut only at the
+    note's own separators, never mid-word. The full text is not lost — it lives
+    on the record the row links to."""
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    out = ""
+    for seg in _SEG_RE.split(text):
+        joined = f"{out}; {seg}" if out else seg
+        if len(joined) > limit:
+            break
+        out = joined
+    return (out or text[:limit - 1].rstrip()) + " …"
 
 
 def story_url(ui_base: str, project_slug: str, ref: Any) -> str:
@@ -263,10 +308,12 @@ def links_from_story(story: Dict[str, Any], taiga_host: str,
     in the record are NOT flagged ``found`` — that flag is for links amebo went
     and looked up, which it records in the description with its own marker."""
     ref = story.get("ref")
-    links = [Link(f"#{ref} {story.get('subject', '')}".strip(),
+    # The board and number, not the title again: the row already says the
+    # title, and a link label that repeats it prints the same sentence twice.
+    links = [Link(f"#{ref} {project_slug}".strip(),
                   story_url(taiga_host, project_slug, ref))]
-    for url in _URL_RE.findall(story.get("description") or ""):
-        links.append(Link(_short(url), url))
+    links.extend(links_in(story.get("description") or "",
+                          skip=[l.url for l in links]))
     return links
 
 
@@ -348,7 +395,7 @@ def items_from_drafts(actions: Sequence[Dict[str, Any]],
         if key and f"taiga:{key}" in seen:
             continue
         text = payload.get("text") or action.get("preview") or ""
-        links = [Link(_short(u), u) for u in _URL_RE.findall(text)]
+        links = links_in(text)
         items.append(Item(
             subject=f"draft:{action.get('id')}",
             title=(text.strip().splitlines() or [""])[0][:120] or "(empty draft)",
@@ -407,7 +454,7 @@ def items_from_goals(goals: Sequence[Dict[str, Any]]) -> List[Item]:
     for goal in goals:
         title = (goal.get("title") or "").strip() or "(untitled)"
         text = goal.get("description") or ""
-        links = [Link(_short(u), u) for u in _URL_RE.findall(text)]
+        links = links_in(text)
         waiting = goal.get("status") == "waiting_user"
         # A question already asked of this person outranks a goal that is merely
         # queued, and a queued goal with no trigger can never fire on its own,
@@ -595,12 +642,21 @@ def build_crm_item(activity: Dict[str, Any], *, today: date,
                       url=message.get("url") or record_url)
 
     record = (activity.get("res_name") or "").strip()
+    # The record link first, then whatever the note itself points at — the
+    # event page, the profile, the address to write to. The enrichment is
+    # already on the record as prose; the row makes its actionable parts
+    # clickable instead of a wall of text.
+    links = [Link(record or "in the CRM", record_url)] if record_url else []
+    links.extend(links_in(
+        f"{activity.get('summary') or ''}\n{activity.get('note') or ''}",
+        skip=[l.url for l in links]))
     return Item(
         subject=f"crm:activity/{activity.get('id')}",
-        title=(activity.get("summary") or "").strip() or record or "(follow-up)",
+        title=headline((activity.get("summary") or "").strip())
+              or record or "(follow-up)",
         reason=reason,
         rank=rank,
-        links=[Link(record or "in the CRM", record_url)] if record_url else [],
+        links=links,
         quote=quote,
         due=due,
         assignee=name,
@@ -709,10 +765,16 @@ def build_open_context_item(lead: Dict[str, Any], *, today: date,
 
     links = [Link(label=partner_name or "the record",
                   url=_crm_form_url("crm.lead", lead.get("id")))]
+    # The contact's address is already on the record; a row asking for outreach
+    # should carry the way to do the outreach.
+    email = lead.get("email_from")
+    if isinstance(email, str) and email.strip():
+        links.append(Link(email.strip(), f"mailto:{email.strip()}"))
 
     return Item(
         subject=f"crm:lead/{lead.get('id')}",
-        title=(lead.get("name") or "").strip() or partner_name or "(opportunity)",
+        title=headline((lead.get("name") or "").strip())
+              or partner_name or "(opportunity)",
         reason=Reason(label.strip(", "), "judgement"),
         rank=rank,
         links=links,

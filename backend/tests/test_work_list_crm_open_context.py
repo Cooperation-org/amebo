@@ -69,6 +69,18 @@ def test_the_card_links_to_the_record_by_the_contacts_name():
     assert "model=crm.lead" in item.links[0].url
 
 
+def test_the_contacts_email_is_a_link_when_the_record_has_one():
+    """A row asking for outreach carries the way to do the outreach. Odoo
+    returns an unset email as False, which must not become a link."""
+    item = build_open_context_item(lead(email_from="ana@ftt.example"),
+                                   today=TODAY, stage_rank=STAGE_RANK)
+    assert (item.links[1].label, item.links[1].url) == (
+        "ana@ftt.example", "mailto:ana@ftt.example")
+    bare = build_open_context_item(lead(email_from=False),
+                                   today=TODAY, stage_rank=STAGE_RANK)
+    assert len(bare.links) == 1
+
+
 def test_an_undated_record_is_never_past():
     """Nothing here has a deadline, so nothing here can have missed one."""
     item = build_open_context_item(lead(), today=TODAY, stage_rank=STAGE_RANK)

@@ -136,6 +136,39 @@ def test_the_record_is_the_link():
     assert not item.links[0].found
 
 
+def test_urls_and_emails_in_the_note_become_links():
+    """The enrichment on a record is prose with the actionable parts buried in
+    it. The row makes those clickable instead of a wall of text."""
+    item = build_crm_item(
+        activity(summary="Jason Berlin, ED; info@ft6.example; trainings",
+                 note='<p>Src: <a href="https://mobilize.example/ft6/event/1">'
+                      'event</a></p>'),
+        today=TODAY, record_url="https://crm.example/rec")
+    assert [(l.label, l.url) for l in item.links] == [
+        ("You.com / AIX Ventures, Richard Socher", "https://crm.example/rec"),
+        ("mobilize.example/ft6", "https://mobilize.example/ft6/event/1"),
+        ("info@ft6.example", "mailto:info@ft6.example"),
+    ]
+
+
+def test_a_research_blob_title_is_cut_at_its_own_separators():
+    """A 400-character note stuffed into the summary field must not render as
+    the row. Whole segments while they fit; the record keeps the rest."""
+    blob = ("Person: Matt Lyons | Role: Senior Director, Policy & Practice, "
+            "APHSA | Email: mlyons@aphsa.example | Fact: APHSA runs SNAP E&T "
+            "technical assistance | Verify: current title before contact")
+    item = build_crm_item(activity(summary=blob), today=TODAY, record_url="u")
+    assert item.title == ("Person: Matt Lyons; Role: Senior Director, "
+                          "Policy & Practice, APHSA; "
+                          "Email: mlyons@aphsa.example …")
+    assert len(item.title) <= 123
+
+
+def test_a_short_summary_is_left_alone():
+    item = build_crm_item(activity(), today=TODAY, record_url="u")
+    assert item.title == "Share the paper with Richard Socher"
+
+
 def test_a_broken_message_lookup_still_yields_rows():
     """A quote is a nicety. Losing it must not lose the follow-up."""
     class Broken:
