@@ -13,7 +13,7 @@ Configuration is split on purpose:
 
   env    — the secret and which instance this process serves:
              DISCORD_BOT_TOKEN=…
-             DISCORD_INSTANCE_SLUG=workerswesee
+             DISCORD_INSTANCE_SLUG=workersvc
   DB     — everything about the particular server, on the instance row, read
            fresh on every message: guild id, GovKit org, which roles may act,
            which channels are in scope. See discord_policy.DiscordConfig.

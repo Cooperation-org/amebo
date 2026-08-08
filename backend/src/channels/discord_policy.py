@@ -15,7 +15,7 @@ on the amebo instance row, read fresh on every message:
     instances.config -> {
       "discord": {
         "guild_id": "123…",              # the one server this instance serves
-        "govkit_org": "workerswesee",    # whose Membership rows are the identity map
+        "govkit_org": "vc",    # whose Membership rows are the identity map
         "act_roles": ["Steward", "Admin"],   # Discord role NAMES that may ACT
         "act_govkit_roles": ["admin", "steward"],  # GovKit roles that may ACT
         "channels": {"allow": [], "deny": []}      # channel names; empty allow = all

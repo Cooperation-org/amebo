@@ -38,7 +38,7 @@ Public Threads, Read Message History, Add Reactions.
 
 ```
 DISCORD_BOT_TOKEN=…
-DISCORD_INSTANCE_SLUG=workerswesee
+DISCORD_INSTANCE_SLUG=workersvc
 ```
 
 Both unset means no Discord; the rest of amebo is unaffected.
@@ -50,12 +50,12 @@ every message, so changing it needs no restart:
 UPDATE instances
 SET config = config || '{"discord": {
       "guild_id": "1234567890",
-      "govkit_org": "workerswesee",
+      "govkit_org": "vc",
       "act_roles": ["Steward", "Admin"],
       "act_govkit_roles": ["admin", "steward"],
       "channels": {"allow": [], "deny": []}
     }}'::jsonb
-WHERE slug = 'workerswesee';
+WHERE slug = 'workersvc';
 ```
 
 - `guild_id` — the one server this instance serves. Unset serves whichever
