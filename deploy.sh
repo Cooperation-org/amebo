@@ -1,7 +1,9 @@
 #!/bin/bash
 
-# Amebo Deployment Script
-# This script helps deploy Amebo to a server
+# Amebo Deployment Script (Docker Compose)
+#
+# NOT the VM 200 deployment. Live amebo.linkedtrust.us runs from systemd against
+# an in-place build — deploy it with ./scripts/deploy-frontend.sh.
 
 set -e  # Exit on error
 

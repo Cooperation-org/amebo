@@ -122,6 +122,19 @@ sudo journalctl -u amebo-backend -f
 sudo systemctl status amebo-frontend
 ```
 
+**Deploying the frontend — always use the script:**
+
+```bash
+./scripts/deploy-frontend.sh            # pull, build, restart, verify
+./scripts/deploy-frontend.sh --check    # verify only, safe anytime
+```
+
+NEVER run `npm run build` on its own. `next start` serves the chunk filenames it
+read at startup; a build deletes those files, so the site returns 200 on every
+route while its CSS and JS 500 and the app spins forever. That broke
+amebo.linkedtrust.us from 2026-08-06 to 2026-08-08. Build and restart are one
+operation. The Docker-based `deploy.sh` at the repo root does not apply to VM 200.
+
 ### Key Environment Variables
 
 ```
