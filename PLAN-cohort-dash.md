@@ -203,10 +203,12 @@ server-side from identity, core stays use-case-ignorant.
    the top of the dash. Goals are the one thing on that page that says
    what to do next; amebo has held them all along (owner, completion
    state, pursuit loop, `ask_user`) and no surface showed them.
-   `GET /api/goals/` now returns `assigned_to_user_id`, which the row
-   has always carried, so a client can tell a person's own goals from
-   the ones their org has not handed to anybody; goals with somebody
-   else's name on them are that person's and are left out. Read-only,
+   Human goals only (golda 2026-08-10): the `goals` table holds both
+   the goals a person set and the claws amebo runs, and a claw is
+   configured to run — a cron, or a `notify_channel` it reports into.
+   Those fields are amebo's; a person's goal has neither. `GET
+   /api/goals/` now also returns `assigned_to_user_id`, so a goal with
+   somebody else's name on it stays on their surface. Read-only,
    every row opening `/dashboard/goals?task=goal:<id>`. Nothing copied,
    no new store, org still resolved from the session and never an
    attribute. Background: `projects/Internal/8-10-2026-what-do-i-do-next.md`.

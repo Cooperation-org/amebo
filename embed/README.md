@@ -29,11 +29,19 @@ The backend serves the bundle as a static file at `/embed/amebo.js`
 | `<amebo-create-claw>` | `POST /api/goals/`         | Yes (creates a claw in amebo's goals table; no abra write) |
 | `<amebo-goals>`      | `GET /api/auth/me` + `GET /api/goals/` | No                    |
 
-### `<amebo-goals>` — what this person does next
+### `<amebo-goals>` — the goals a person set
 
-The viewer's open goals (`waiting_user`, `active`, `pending`) plus the ones
-their org has not handed to anybody. Goals with someone else's name on them
-are left out — those are on that person's own surface.
+Open goals (`waiting_user`, `active`, `pending`) that a **person** set, for
+people to read. Golda 2026-08-10: "do not put goals that are for the BOT for
+HUMANS to see. humans see the dash. human goals only."
+
+The `goals` table holds both kinds. A goal amebo runs — a claw — is configured
+to run: it has a cron, or a `notify_channel` it reports into, or both. Those
+fields exist for nobody but amebo. A goal a person set has neither and moves
+only when a person moves it. That is the test.
+
+Goals with someone else's name on them are left out too — those are on that
+person's own surface.
 
 Read-only. Every row links to `/dashboard/goals?task=goal:<id>`, where the
 goal is answered, paused or finished. Signed out, or nothing open, the

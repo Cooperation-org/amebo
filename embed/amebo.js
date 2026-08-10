@@ -737,10 +737,19 @@
 
   // ---- <amebo-goals> ------------------------------------------------------
   //
-  // The viewer's open goals, and the ones their org has not handed to anybody.
-  // Read-only: every row opens the goal in amebo, which is where it is worked,
-  // paused, answered or finished. Nothing about a goal is stored or decided
-  // here (amebo docs/DASHBOARD.md: orientation surface, not workspace).
+  // The goals a PERSON set, for people to read. Golda 2026-08-10: "do not put
+  // goals that are for the BOT for HUMANS to see. humans see the dash. human
+  // goals only."
+  //
+  // amebo's `goals` table holds both kinds. A goal amebo runs — a claw — is
+  // configured to run: it has a cron, or a channel it reports into, or both.
+  // Those two fields exist for nobody but amebo. A goal a person set has
+  // neither: it moves when a person moves it. That is the whole test, and it
+  // separates every open row in the live table today.
+  //
+  // Read-only: a row opens the goal in amebo, which is where it is worked,
+  // answered or finished. Nothing about a goal is stored or decided here
+  // (amebo docs/DASHBOARD.md: orientation surface, not workspace).
   //
   // Org is resolved server-side from the session, per the embed contract — it
   // is never an attribute. So the rows are always the viewer's own org's.
@@ -748,12 +757,18 @@
   //   data-up     amebo origin or proxy mount (required)
   //   data-limit  rows to show (default 5)
   //
-  // Signed out, or no goals to show: renders nothing and hides itself, so a
+  // Signed out, or nothing to show: renders nothing and hides itself, so a
   // host card built on the dash autohide contract disappears with it.
 
   // What "open" means here is amebo's own definition minus paused: a paused
   // goal is one a person deliberately set down, so it is not what to do next.
   const GOALS_OPEN = ['waiting_user', 'active', 'pending'];
+
+  // A goal amebo runs on its own, or reports on into a channel, is amebo's.
+  function isBotGoal(g) {
+    const t = g.trigger_config || {};
+    return !!(g.notify_channel || t.cron || t.expression);
+  }
 
   class AmeboGoals extends HTMLElement {
     async connectedCallback() {
@@ -781,35 +796,32 @@
 
     _render(base, limit, me, goals) {
       const mine = me && me.user_id;
-      // A goal with somebody else's name on it is theirs, not the org's —
-      // it is on their dash, not this one.
+      // A goal with somebody else's name on it is theirs — it belongs on their
+      // dash, not this one. Nothing in amebo puts a name on a goal yet, so in
+      // practice this drops nothing and stops nothing from showing.
       const rows = goals
         .filter(g => GOALS_OPEN.indexOf(g.status) !== -1)
+        .filter(g => !isBotGoal(g))
         .filter(g => g.assigned_to_user_id == null || g.assigned_to_user_id === mine)
         .sort((a, b) => rank(a) - rank(b) || when(b) - when(a))
         .slice(0, limit);
       if (!rows.length) return this._nothing();
       this.hidden = false;
-      this.innerHTML = `<ul class="goals">${rows.map(g => row(g, base, mine)).join('')}</ul>`;
+      this.innerHTML = `<ul class="goals">${rows.map(g => row(g, base)).join('')}</ul>`;
 
-      // Yours before the team's, and whatever amebo is waiting on you for
-      // before either — that is the one row that cannot move without you.
-      function rank(g) {
-        return (g.status === 'waiting_user' ? 0 : 2)
-             + (g.assigned_to_user_id === mine ? 0 : 1);
-      }
+      // Whatever amebo is waiting on a person for comes first — that is the
+      // one row that cannot move until somebody answers it.
+      function rank(g) { return g.status === 'waiting_user' ? 0 : 1; }
       function when(g) { return Date.parse(g.updated_at || g.created_at) || 0; }
 
-      function row(g, base, mine) {
+      function row(g, base) {
         const href = `${base}/dashboard/goals?task=goal:${encodeURIComponent(g.id)}`;
-        const marks = [
-          g.status === 'waiting_user' ? '<span class="mark waiting">waiting on you</span>' : '',
-          g.assigned_to_user_id == null ? '<span class="mark team">team</span>' : '',
-        ].filter(Boolean).join('');
+        const mark = g.status === 'waiting_user'
+          ? '<span class="mark waiting">waiting on you</span>' : '';
         return `
           <li>
             <a href="${esc(href)}" target="_blank" rel="noopener">${esc(trunc(g.title, 120))}</a>
-            ${marks}
+            ${mark}
           </li>
         `;
       }
