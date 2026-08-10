@@ -8,6 +8,8 @@
 //   <amebo-claw>         (formerly <amebo-goal>) one claw's state, with dispatch/pause/resume + last 3 events
 //                        — rename pending; element still registered as <amebo-goal> for now
 //   <amebo-digest>       "what should I look at today?" rendered from /api/digest
+//   <amebo-goals>        the viewer's open goals + their org's unassigned ones,
+//                        read-only, each row opening the goal in amebo
 //   <amebo-create-claw>  pure claw-create form. Posts to POST /api/goals/, no abra write.
 //                        Dispatches an `amebo-claw-created` CustomEvent on success
 //                        so abra-side hosts can write the EXECUTES_VIA binding.
@@ -61,7 +63,7 @@
     const s = document.createElement('style');
     s.id = 'amebo-embed-styles';
     s.textContent = `
-      amebo-ask, amebo-goal, amebo-digest, amebo-claws, amebo-create-claw {
+      amebo-ask, amebo-goal, amebo-digest, amebo-claws, amebo-create-claw, amebo-goals {
         display: block;
         font-family: system-ui, -apple-system, sans-serif;
         font-size: 14px;
@@ -174,6 +176,20 @@
       }
       amebo-claws .claw-body .dispatch-result .head { font-weight: 500; font-size: 11.5px; margin-bottom: 0.2rem; opacity: 0.85; }
       amebo-claws .empty { font-size: 12px; opacity: 0.6; padding: 0.5rem 0; }
+      amebo-goals ul.goals { list-style: none; margin: 0; padding: 0; }
+      amebo-goals ul.goals li {
+        display: flex; gap: 0.5rem; align-items: baseline;
+        padding: 0.35rem 0; line-height: 1.35;
+      }
+      amebo-goals ul.goals li + li { border-top: 1px solid rgba(127,127,127,0.18); }
+      amebo-goals ul.goals a { flex: 1; color: inherit; text-decoration: none; }
+      amebo-goals ul.goals a:hover { text-decoration: underline; }
+      amebo-goals .mark {
+        flex: none; font-size: 10.5px; padding: 1px 7px; border-radius: 9px;
+        border: 1px solid rgba(127,127,127,0.35); white-space: nowrap;
+      }
+      amebo-goals .mark.waiting { background: rgba(244,228,181,0.55); border-color: rgba(180,150,80,0.5); }
+      amebo-goals .mark.team { opacity: 0.6; }
       amebo-digest ul { padding-left: 1.2em; margin: 4px 0; }
       .amebo-error { color: #b00; font-size: 12px; }
       .amebo-loading { opacity: 0.6; font-size: 12px; }
@@ -719,6 +735,87 @@
     }
   }
 
+  // ---- <amebo-goals> ------------------------------------------------------
+  //
+  // The viewer's open goals, and the ones their org has not handed to anybody.
+  // Read-only: every row opens the goal in amebo, which is where it is worked,
+  // paused, answered or finished. Nothing about a goal is stored or decided
+  // here (amebo docs/DASHBOARD.md: orientation surface, not workspace).
+  //
+  // Org is resolved server-side from the session, per the embed contract — it
+  // is never an attribute. So the rows are always the viewer's own org's.
+  //
+  //   data-up     amebo origin or proxy mount (required)
+  //   data-limit  rows to show (default 5)
+  //
+  // Signed out, or no goals to show: renders nothing and hides itself, so a
+  // host card built on the dash autohide contract disappears with it.
+
+  // What "open" means here is amebo's own definition minus paused: a paused
+  // goal is one a person deliberately set down, so it is not what to do next.
+  const GOALS_OPEN = ['waiting_user', 'active', 'pending'];
+
+  class AmeboGoals extends HTMLElement {
+    async connectedCallback() {
+      ensureStyles();
+      const base = upBase(this);
+      if (!base) return showError(this, 'missing data-up');
+      const limit = parseInt(this.dataset.limit || '5', 10);
+      try {
+        const [me, goals] = await Promise.all([
+          jget(`${base}/api/auth/me`),
+          jget(`${base}/api/goals/`),
+        ]);
+        this._render(base, limit, me, Array.isArray(goals) ? goals : []);
+      } catch (err) {
+        // The dash contract: an upstream that says no leaves no trace on the
+        // page. jfetch has already put the whole failure on the console.
+        this._nothing();
+      }
+    }
+
+    _nothing() {
+      this.innerHTML = '';
+      this.hidden = true;
+    }
+
+    _render(base, limit, me, goals) {
+      const mine = me && me.user_id;
+      // A goal with somebody else's name on it is theirs, not the org's —
+      // it is on their dash, not this one.
+      const rows = goals
+        .filter(g => GOALS_OPEN.indexOf(g.status) !== -1)
+        .filter(g => g.assigned_to_user_id == null || g.assigned_to_user_id === mine)
+        .sort((a, b) => rank(a) - rank(b) || when(b) - when(a))
+        .slice(0, limit);
+      if (!rows.length) return this._nothing();
+      this.hidden = false;
+      this.innerHTML = `<ul class="goals">${rows.map(g => row(g, base, mine)).join('')}</ul>`;
+
+      // Yours before the team's, and whatever amebo is waiting on you for
+      // before either — that is the one row that cannot move without you.
+      function rank(g) {
+        return (g.status === 'waiting_user' ? 0 : 2)
+             + (g.assigned_to_user_id === mine ? 0 : 1);
+      }
+      function when(g) { return Date.parse(g.updated_at || g.created_at) || 0; }
+
+      function row(g, base, mine) {
+        const href = `${base}/dashboard/goals?task=goal:${encodeURIComponent(g.id)}`;
+        const marks = [
+          g.status === 'waiting_user' ? '<span class="mark waiting">waiting on you</span>' : '',
+          g.assigned_to_user_id == null ? '<span class="mark team">team</span>' : '',
+        ].filter(Boolean).join('');
+        return `
+          <li>
+            <a href="${esc(href)}" target="_blank" rel="noopener">${esc(trunc(g.title, 120))}</a>
+            ${marks}
+          </li>
+        `;
+      }
+    }
+  }
+
   // ---- <amebo-create-claw> ------------------------------------------------
   //
   // Pure claw-create form. Posts to POST /api/goals/ to create a new claw row
@@ -866,4 +963,5 @@
   if (!customElements.get('amebo-claws')) customElements.define('amebo-claws', AmeboClaws);
   if (!customElements.get('amebo-digest')) customElements.define('amebo-digest', AmeboDigest);
   if (!customElements.get('amebo-create-claw')) customElements.define('amebo-create-claw', AmeboCreateClaw);
+  if (!customElements.get('amebo-goals')) customElements.define('amebo-goals', AmeboGoals);
 })();

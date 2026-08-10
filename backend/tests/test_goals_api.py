@@ -123,6 +123,25 @@ class TestCreateAndList:
         assert list_resp.status_code == 200
         assert any(g["id"] == body["id"] for g in list_resp.json())
 
+    def test_list_says_who_a_goal_is_assigned_to(self, client, auth_as):
+        """
+        A client showing a person their own goals has to tell theirs from the
+        org's, and the column has always been on the row. Created goals carry
+        no assignee, so null is the answer until somebody is put on it.
+        """
+        from src.api.routes.goals import _to_goal_response
+
+        created = client.post(
+            "/api/goals/", json={"title": "Nobody's yet"}).json()
+        assert created["assigned_to_user_id"] is None
+
+        listed = [g for g in client.get("/api/goals/").json()
+                  if g["id"] == created["id"]]
+        assert listed and "assigned_to_user_id" in listed[0]
+
+        row = dict(GoalRepo().get(created["id"]), assigned_to_user_id=41)
+        assert _to_goal_response(row).assigned_to_user_id == 41
+
     def test_create_with_full_payload(self, client, auth_as):
         resp = client.post("/api/goals/", json={
             "title": "Cron goal",

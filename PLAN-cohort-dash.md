@@ -199,7 +199,18 @@ server-side from identity, core stays use-case-ignorant.
    links out to MAIN.md / CRM / Taiga per DASHBOARD.md v1 scope). Same
    contract as the other components: `data-up`, cookie auth, empty on
    401/no-config.
-5. **Digest on the dash** (optional, phase 2): `<amebo-digest>` already
+5. **DONE (2026-08-10). `<amebo-goals>` component** — the goals card at
+   the top of the dash. Goals are the one thing on that page that says
+   what to do next; amebo has held them all along (owner, completion
+   state, pursuit loop, `ask_user`) and no surface showed them.
+   `GET /api/goals/` now returns `assigned_to_user_id`, which the row
+   has always carried, so a client can tell a person's own goals from
+   the ones their org has not handed to anybody; goals with somebody
+   else's name on them are that person's and are left out. Read-only,
+   every row opening `/dashboard/goals?task=goal:<id>`. Nothing copied,
+   no new store, org still resolved from the session and never an
+   attribute. Background: `projects/Internal/8-10-2026-what-do-i-do-next.md`.
+6. **Digest on the dash** (optional, phase 2): `<amebo-digest>` already
    exists and becomes usable on the dash as soon as items 1-2 land —
    no code, just note it for the workers.vc side.
 

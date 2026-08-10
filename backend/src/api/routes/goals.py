@@ -66,6 +66,10 @@ class GoalResponse(BaseModel):
     trigger_config: Optional[Dict[str, Any]] = None
     notify_channel: Optional[str] = None
     config: Optional[Dict[str, Any]] = None
+    # Who carries this goal. Nullable: a goal is always an org's and only
+    # optionally a person's. Exposed so a client can tell mine from ours
+    # without a second call — the column has always been on the row.
+    assigned_to_user_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
@@ -127,6 +131,7 @@ def _to_goal_response(goal: Dict[str, Any]) -> GoalResponse:
         trigger_config=goal.get("trigger_config"),
         notify_channel=goal.get("notify_channel"),
         config=goal.get("config"),
+        assigned_to_user_id=goal.get("assigned_to_user_id"),
         created_at=goal["created_at"],
         updated_at=goal["updated_at"],
         completed_at=goal.get("completed_at"),

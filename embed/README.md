@@ -11,7 +11,7 @@ build step.
 
 | File          | What                                                          |
 |---------------|---------------------------------------------------------------|
-| `amebo.js`    | The bundle. Registers `<amebo-ask>`, `<amebo-goal>`, `<amebo-claws>`, `<amebo-digest>`. |
+| `amebo.js`    | The bundle. Registers `<amebo-ask>`, `<amebo-goal>`, `<amebo-claws>`, `<amebo-digest>`, `<amebo-goals>`. |
 | `demo.html`   | Standalone sanity page that mounts all four components against a URL-param-configurable `data-up`. |
 | `README.md`   | This file.                                                    |
 
@@ -27,6 +27,23 @@ The backend serves the bundle as a static file at `/embed/amebo.js`
 | `<amebo-claws>`      | `GET /api/goals/?status=&limit=` | No                                  |
 | `<amebo-digest>`     | `GET /api/digest`          | No                                        |
 | `<amebo-create-claw>` | `POST /api/goals/`         | Yes (creates a claw in amebo's goals table; no abra write) |
+| `<amebo-goals>`      | `GET /api/auth/me` + `GET /api/goals/` | No                    |
+
+### `<amebo-goals>` — what this person does next
+
+The viewer's open goals (`waiting_user`, `active`, `pending`) plus the ones
+their org has not handed to anybody. Goals with someone else's name on them
+are left out — those are on that person's own surface.
+
+Read-only. Every row links to `/dashboard/goals?task=goal:<id>`, where the
+goal is answered, paused or finished. Signed out, or nothing open, the
+component empties itself and sets `hidden`, so a host card that autohides on
+an empty component disappears with it.
+
+Attributes: `data-up` (required), `data-limit` (default 5).
+
+Org is not an attribute — amebo resolves it from the session, so these are
+always the viewer's own org's goals, whatever page the component sits on.
 
 ### `<amebo-create-claw>` — pure claw-create form
 
