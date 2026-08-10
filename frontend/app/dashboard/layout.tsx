@@ -13,8 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { User, Settings, LogOut, MessageSquare, Building2, Users, Menu, X, Link2, Inbox, Target } from 'lucide-react';
-import { usePermissions } from '@/src/hooks/usePermissions';
+import { User, Settings, LogOut, MessageSquare, Menu, X, Inbox, Target } from 'lucide-react';
 import { useWorkList } from '@/src/hooks/useWorkList';
 import { CohortNav } from '@/src/components/CohortNav';
 
@@ -25,26 +24,24 @@ export default function DashboardLayout({
 }) {
   const pathname = usePathname();
   const { user, logout } = useAuthStore();
-  const { canInviteUsers } = usePermissions();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   // One list, one count. Approvals and needs-input forward into it.
   const { data: workList } = useWorkList();
   const listCount = workList?.live.length ?? 0;
 
-  // Thin fixed chrome (docs/DASHBOARD.md): wordmark = home; only the few
-  // top-level places live here. Connections/Team are secondary — they sit in
-  // the account dropdown until their pages merge under Workspaces/Settings.
-  // Three things: the inbox (beside the profile, below), chat, goals. Anything
-  // else belongs in the account menu, not the bar.
+  // Three places, and that is the whole bar. Golda 2026-08-10: "should be just
+  // inbox, go right to inbox, and have goals and chat. that's all."
+  //
+  // Everything the bar used to carry is either somewhere better or gone.
+  // Tasks, CRM and governance belong to the top navbar above this one, so
+  // Amebo does not repeat them. Workspaces and Team are settings, not places
+  // ("amebo doesn't need team management separate"), and they live on the
+  // settings page. Connections is removed — it points at localhost and is
+  // broken.
   const navigation = [
-    { name: 'Team chat', href: '/chat', icon: MessageSquare },
+    { name: 'Inbox', href: '/dashboard/list', icon: Inbox },
     { name: 'Goals', href: '/dashboard/goals', icon: Target },
-  ];
-  const secondary = [
-    { name: 'Workspaces', href: '/dashboard/workspaces', icon: Building2 },
-    { name: 'Settings', href: '/dashboard/settings', icon: Settings },
-    { name: 'Connections', href: '/dashboard/connections', icon: Link2 },
-    ...(canInviteUsers ? [{ name: 'Team', href: '/dashboard/team', icon: Users }] : []),
+    { name: 'Team chat', href: '/chat', icon: MessageSquare },
   ];
 
   const handleLogout = async () => {
@@ -64,7 +61,7 @@ export default function DashboardLayout({
                 </Link>
                 <span className="text-sm text-gray-500 -ml-4">{user?.org_name}</span>
                 <div className="hidden md:flex space-x-4">
-                  {[...navigation, ...secondary].map((item) => {
+                  {navigation.map((item) => {
                     const Icon = item.icon;
                     const isActive = pathname === item.href;
                     return (
@@ -79,21 +76,18 @@ export default function DashboardLayout({
                       >
                         <Icon className="h-4 w-4 mr-2" />
                         {item.name}
+                        {/* How much is waiting, on the place it is waiting. */}
+                        {item.href === '/dashboard/list' && listCount > 0 && (
+                          <span className="ml-1.5 rounded-full bg-emerald-100 px-1.5 text-xs font-medium text-emerald-900">
+                            {listCount}
+                          </span>
+                        )}
                       </Link>
                     );
                   })}
                 </div>
               </div>
               <div className="flex items-center space-x-4">
-                {/* The list lives next to the profile, where an inbox is looked for. */}
-                <Link
-                  href="/dashboard/list"
-                  title="Your list"
-                  className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-900 hover:bg-emerald-100"
-                >
-                  <Inbox className="h-4 w-4" />
-                  {listCount > 0 && listCount}
-                </Link>
                 {/* Mobile hamburger button */}
                 <Button
                   variant="ghost"
@@ -111,18 +105,6 @@ export default function DashboardLayout({
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    {secondary.map((item) => {
-                      const Icon = item.icon;
-                      return (
-                        <DropdownMenuItem asChild key={item.name}>
-                          <Link href={item.href} className="flex items-center">
-                            <Icon className="h-4 w-4 mr-2" />
-                            {item.name}
-                          </Link>
-                        </DropdownMenuItem>
-                      );
-                    })}
-                    <DropdownMenuSeparator />
                     <DropdownMenuItem asChild>
                       <Link href="/dashboard/settings" className="flex items-center">
                         <Settings className="h-4 w-4 mr-2" />

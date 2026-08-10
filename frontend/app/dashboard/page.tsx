@@ -1,25 +1,19 @@
 'use client';
 
-import { KeyLinksBar } from '@/src/components/dashboard/KeyLinksBar';
-import { CampaignsBoard } from '@/src/components/dashboard/CampaignsBoard';
+import { redirect } from 'next/navigation';
 
 /**
- * Dashboard v1 — an ORIENTATION surface, not a workspace. Read-only: pills
- * (the org's tools) and campaign cards, every element linking out to the tool
- * that owns the thing. No edit-in-place, no assembled mutable views.
+ * Amebo opens on the inbox. Golda 2026-08-10: "should be just inbox, go right
+ * to inbox, and have goals and chat. that's all."
  *
- * Standing principle (docs/DASHBOARD.md): everything visible is relevant to
- * the team — no headings over self-explanatory elements, no cruft words.
- * The conversations list lives in the chat view only.
+ * Every way in — login, the OIDC callback, onboarding, the wordmark, the
+ * cohort bar — points at /dashboard, so the landing is decided here once.
  *
- * Sections render ONLY when they have real content — never a blank placeholder.
+ * The links row that used to sit here is gone: tasks, CRM and governance
+ * belong to the top navbar, and repeating them inside Amebo made two menus of
+ * one. The campaigns board it sat above kept its own address,
+ * /dashboard/campaigns.
  */
 export default function DashboardPage() {
-  return (
-    <div className="min-w-0">
-      <h1 className="sr-only">Dashboard</h1>
-      <KeyLinksBar />
-      <CampaignsBoard />
-    </div>
-  );
+  redirect('/dashboard/list');
 }

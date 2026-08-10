@@ -11,7 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { Settings, Save, RotateCcw, Lock } from 'lucide-react';
+import Link from 'next/link';
+import { Settings, Save, RotateCcw, Lock, Building2, Users } from 'lucide-react';
 import { toast } from 'sonner';
 import { apiClient } from '@/src/lib/api';
 import { changePasswordSchema, type ChangePasswordFormData } from '@/src/lib/validations';
@@ -34,7 +35,7 @@ export default function SettingsPage() {
     weekly_digest_enabled: false,
   });
 
-  const { canChangeAISettings, canChangeOrgSettings } = usePermissions();
+  const { canChangeAISettings, canChangeOrgSettings, canInviteUsers } = usePermissions();
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSave = async () => {
@@ -82,6 +83,29 @@ export default function SettingsPage() {
             {isLoading ? 'Saving...' : 'Save Changes'}
           </Button>
         </div>
+        )}
+      </div>
+
+      {/* Workspaces and the member list are settings, not places of their own
+          (golda 2026-08-10: "amebo doesn't need team management separate").
+          They came off the bar and live here. Team shows only to someone who
+          can actually change it. */}
+      <div className="flex flex-wrap gap-2 text-sm">
+        <Link
+          href="/dashboard/workspaces"
+          className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-gray-700 hover:bg-gray-50"
+        >
+          <Building2 className="h-4 w-4" />
+          Workspaces
+        </Link>
+        {canInviteUsers && (
+          <Link
+            href="/dashboard/team"
+            className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-gray-700 hover:bg-gray-50"
+          >
+            <Users className="h-4 w-4" />
+            Team
+          </Link>
         )}
       </div>
 
