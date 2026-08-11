@@ -1,6 +1,10 @@
 ---
 name: founder-channel
 description: Work out where the next users arrive from, repeatably, and pick the one channel to test next with a date on it. Use for "how do we reach them", "what is our channel", "should we do ads or content or cold email", "how do people find us", "nobody knows we exist".
+audience: founder
+order: 70
+button: Find the channel
+ask: Where do the next users come from, repeatably? Help me pick one channel to test.
 ---
 A channel is a way people arrive that can be run again next week. A founder
 telling ten friends is not a channel. One path, run repeatedly, is worth more

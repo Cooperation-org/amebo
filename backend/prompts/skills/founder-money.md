@@ -1,6 +1,10 @@
 ---
 name: founder-money
 description: Lay out the distinct ways money could come in, who signs for each and what has to be true, then pick the one to test first. Use for "how do we make money", "what should we charge", "business model", "pricing", and the dashboard item money.one-page.
+audience: founder
+order: 80
+button: How money comes in
+ask: What are the different ways money could come in here, and which one do we test first?
 ---
 The question is not what companies like this normally charge. It is who hands
 over money, for what, and when. Several answers can be true at once, and they

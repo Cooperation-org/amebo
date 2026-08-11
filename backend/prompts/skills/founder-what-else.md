@@ -1,6 +1,10 @@
 ---
 name: founder-what-else
 description: Brainstorm what the thing they have now could become (adjacent uses, different users, the byproduct nobody has named) as options with their reasoning attached, for the founder to choose from. Use for "what else could this be", "where does this go", "we are stuck", "give me options".
+audience: founder
+order: 100
+button: What else could this be
+ask: What else could this become? Give me options, not a recommendation.
 ---
 This is a brainstorm and it belongs to the founder. The output is options with
 the reasoning attached, so most of them can be thrown out. A brainstorm that

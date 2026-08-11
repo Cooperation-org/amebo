@@ -505,20 +505,9 @@ def _packaged_skills_dir() -> _Path:
 
 
 def _org_skills_dir(context: Any) -> Optional[_Path]:
-    """The acting org's skills overlay dir (arch §7): `<context repo>/skills`.
-    Org-specific skills live in the org's context repo (decided 2026-07-04:
-    durable text in repos, not abra). None if there's no org / no context repo."""
-    org_id = _org_id_from_context(context)
-    if org_id is None:
-        return None
-    try:
-        from src.credentials.connections import _org_context_repo
-        repo = _org_context_repo(org_id)
-        if repo:
-            return _Path(repo) / "skills"
-    except Exception:
-        logger.exception("org skills dir resolve failed")
-    return None
+    """The acting org's skills overlay dir. See services.skill_files."""
+    from src.services.skill_files import org_skills_dir
+    return org_skills_dir(_org_id_from_context(context))
 
 
 def _skill_slug(name: str) -> str:
@@ -527,12 +516,8 @@ def _skill_slug(name: str) -> str:
 
 
 def _read_skill_body(path: _Path) -> str:
-    content = path.read_text()
-    if content.startswith("---"):
-        parts = content.split("---", 2)
-        if len(parts) >= 3:
-            return parts[2].strip()
-    return content.strip()
+    from src.services.skill_files import split_frontmatter
+    return split_frontmatter(path.read_text())[1]
 
 
 def load_skill_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
@@ -564,28 +549,12 @@ def _list_skill_names(context: Any) -> str:
 def list_skills_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
     """List available skills (name — description — status) for the acting org:
     the packaged core catalog plus the org's own overlay. Read only."""
-    import yaml as _yaml
+    from src.services.skill_files import read_skills
     rows = []
-    seen = set()
     # org overlay first so an org skill shadows a core one of the same name
-    for src_label, d in (("org", _org_skills_dir(context)), ("core", _packaged_skills_dir())):
-        if not d or not d.exists():
-            continue
-        for p in sorted(d.glob("*.md")):
-            if p.stem.startswith("_") or p.stem in seen:
-                continue
-            seen.add(p.stem)
-            desc, status = "", ""
-            try:
-                content = p.read_text()
-                if content.startswith("---"):
-                    fm = _yaml.safe_load(content.split("---", 2)[1]) or {}
-                    desc = fm.get("description", "")
-                    status = fm.get("status", "")
-            except Exception:
-                pass
-            tag = f" [{status}]" if status else ""
-            rows.append(f"  - {p.stem} ({src_label}){tag}: {desc}")
+    for s in read_skills([_org_skills_dir(context), _packaged_skills_dir()]):
+        tag = f" [{s['status']}]" if s.get("status") else ""
+        rows.append(f"  - {s['slug']} ({s['source']}){tag}: {s['description']}")
     return "Available skills:\n" + "\n".join(rows) if rows else "No skills available."
 
 

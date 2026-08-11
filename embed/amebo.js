@@ -10,6 +10,9 @@
 //   <amebo-digest>       "what should I look at today?" rendered from /api/digest
 //   <amebo-goals>        the viewer's open goals + their org's unassigned ones,
 //                        read-only, each row opening the goal in amebo
+//   <amebo-skills>       the things this org can ask amebo to help with, as buttons
+//                        (data-audience, default "founder"), each opening chat with
+//                        the skill's own question already in the box
 //   <amebo-create-claw>  pure claw-create form. Posts to POST /api/goals/, no abra write.
 //                        Dispatches an `amebo-claw-created` CustomEvent on success
 //                        so abra-side hosts can write the EXECUTES_VIA binding.
@@ -190,6 +193,13 @@
       }
       amebo-goals .mark.waiting { background: rgba(244,228,181,0.55); border-color: rgba(180,150,80,0.5); }
       amebo-goals .mark.team { opacity: 0.6; }
+      amebo-skills .skills { display: flex; flex-wrap: wrap; gap: 6px; }
+      amebo-skills a.skill {
+        font: inherit; font-size: 12.5px; line-height: 1.2; text-decoration: none;
+        color: inherit; padding: 5px 10px; border-radius: 999px;
+        border: 1px solid rgba(127,127,127,0.35); background: rgba(127,127,127,0.06);
+      }
+      amebo-skills a.skill:hover { background: rgba(127,127,127,0.18); }
       amebo-digest ul { padding-left: 1.2em; margin: 4px 0; }
       .amebo-error { color: #b00; font-size: 12px; }
       .amebo-loading { opacity: 0.6; font-size: 12px; }
@@ -828,6 +838,48 @@
     }
   }
 
+  // ---- <amebo-skills> -----------------------------------------------------
+  //
+  // The things a person on this dash can hand to amebo, read from
+  // /api/skills/ so nothing here is a hardcoded list: adding a skill file with
+  // a `button` and an `ask` puts it on every dash that asks for its audience.
+  //
+  // A button opens amebo's chat with the skill's own question already typed.
+  // It does not send it. The person reads what is about to be asked and adds
+  // what they know first, which is also how they find out what the button
+  // does before it does it.
+
+  class AmeboSkills extends HTMLElement {
+    async connectedCallback() {
+      ensureStyles();
+      const base = upBase(this);
+      if (!base) return showError(this, 'missing data-up');
+      const audience = this.dataset.audience || 'founder';
+      try {
+        const rows = await jget(`${base}/api/skills/?audience=${encodeURIComponent(audience)}`);
+        this._render(base, Array.isArray(rows) ? rows : []);
+      } catch (err) {
+        // Dash contract: an upstream that says no leaves no trace on the page.
+        this._nothing();
+      }
+    }
+
+    _nothing() {
+      this.innerHTML = '';
+      this.hidden = true;
+    }
+
+    _render(base, rows) {
+      if (!rows.length) return this._nothing();
+      this.hidden = false;
+      this.innerHTML = `<div class="skills">${rows.map(function (s) {
+        const href = `${base}/chat?ask=${encodeURIComponent(s.ask || '')}`;
+        return `<a class="skill" href="${esc(href)}" target="_blank" rel="noopener"
+                   title="${esc(s.description || '')}">${esc(s.button)}</a>`;
+      }).join('')}</div>`;
+    }
+  }
+
   // ---- <amebo-create-claw> ------------------------------------------------
   //
   // Pure claw-create form. Posts to POST /api/goals/ to create a new claw row
@@ -976,4 +1028,5 @@
   if (!customElements.get('amebo-digest')) customElements.define('amebo-digest', AmeboDigest);
   if (!customElements.get('amebo-create-claw')) customElements.define('amebo-create-claw', AmeboCreateClaw);
   if (!customElements.get('amebo-goals')) customElements.define('amebo-goals', AmeboGoals);
+  if (!customElements.get('amebo-skills')) customElements.define('amebo-skills', AmeboSkills);
 })();

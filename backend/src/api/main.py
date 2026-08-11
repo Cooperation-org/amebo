@@ -13,7 +13,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 import logging
 import time
 
-from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces, dev_auth, team, bindings, chat, embeddings, goals, connections, digest, intentions, pending_actions, org_provision, statements, whiteboard, work_list
+from src.api.routes import auth, documents, qa, slack_oauth, organizations, workspaces, dev_auth, team, bindings, chat, embeddings, goals, connections, digest, intentions, pending_actions, org_provision, statements, whiteboard, work_list, skills
 from src.api.middleware.rate_limit import RateLimitMiddleware
 from src.api.middleware.auth_gate import AuthGateMiddleware
 from src.db.connection import DatabaseConnection
@@ -253,6 +253,7 @@ app.include_router(pending_actions.router, prefix="/api/pending-actions", tags=[
 app.include_router(statements.router, prefix="/api/statements", tags=["Statements"])
 app.include_router(whiteboard.router, prefix="/api/whiteboard", tags=["Whiteboard"])
 app.include_router(work_list.router, prefix="/api/work-list", tags=["Work List"])
+app.include_router(skills.router, prefix="/api/skills", tags=["Skills"])
 # /connect/{short_code} is the user-facing OAuth entry; mounted at root so
 # the link looks like a normal short URL when sent through chat/email.
 app.include_router(connections.public_router, tags=["Connections (Public)"])

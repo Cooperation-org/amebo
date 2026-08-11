@@ -11,7 +11,7 @@ build step.
 
 | File          | What                                                          |
 |---------------|---------------------------------------------------------------|
-| `amebo.js`    | The bundle. Registers `<amebo-ask>`, `<amebo-goal>`, `<amebo-claws>`, `<amebo-digest>`, `<amebo-goals>`. |
+| `amebo.js`    | The bundle. Registers `<amebo-ask>`, `<amebo-goal>`, `<amebo-claws>`, `<amebo-digest>`, `<amebo-goals>`, `<amebo-skills>`. |
 | `demo.html`   | Standalone sanity page that mounts all four components against a URL-param-configurable `data-up`. |
 | `README.md`   | This file.                                                    |
 
@@ -28,6 +28,18 @@ The backend serves the bundle as a static file at `/embed/amebo.js`
 | `<amebo-digest>`     | `GET /api/digest`          | No                                        |
 | `<amebo-create-claw>` | `POST /api/goals/`         | Yes (creates a claw in amebo's goals table; no abra write) |
 | `<amebo-goals>`      | `GET /api/auth/me` + `GET /api/goals/` | No                    |
+| `<amebo-skills>`     | `GET /api/skills/?audience=` | No (links into chat)            |
+
+### `<amebo-skills>` — what this dash can hand to amebo
+
+The skills whose file carries a `button` and an `ask`, for the audience the
+host asks for (`data-audience`, default `founder`), in the order the files
+declare. Each one opens amebo's chat with that question already in the box,
+unsent: the person edits it and presses send.
+
+Nothing here is a list in code. A new skill file with `audience`, `order`,
+`button` and `ask` in its frontmatter appears on every dash that asks for that
+audience, and a skill without a `button` never appears at all.
 
 ### `<amebo-goals>` — the goals a person set
 

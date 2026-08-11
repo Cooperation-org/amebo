@@ -1,6 +1,10 @@
 ---
 name: founder-recruit-team
 description: Help a cohort founder name the one job nobody is doing, find real candidates for it, and get an invite minted. Use for "who should we recruit", "we need a designer", "how do I find a cofounder", "nobody is doing X", and the dashboard item exist.invite.
+audience: founder
+order: 30
+button: Who to recruit
+ask: What job is nobody doing on this team, and who could we invite to do it?
 ---
 In this model a founder can recruit anyone in the world, because people are paid
 in ownership earned from reviewed work rather than in salary. That widens the

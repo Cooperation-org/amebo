@@ -44,35 +44,10 @@ def _load_skills() -> List[Dict]:
     if _SKILLS is not None:
         return _SKILLS
 
-    _SKILLS = []
+    from src.services.skill_files import read_skills
+
     skills_dir = _PROMPTS_DIR / "skills"
-    if not skills_dir.exists():
-        return _SKILLS
-
-    import yaml
-
-    for skill_path in sorted(skills_dir.glob("*.md")):
-        if skill_path.stem.startswith("_"):
-            continue  # _template.md and other _-prefixed files are not skills
-        try:
-            content = skill_path.read_text()
-            # Parse YAML frontmatter between --- markers
-            if content.startswith("---"):
-                parts = content.split("---", 2)
-                if len(parts) >= 3:
-                    frontmatter = yaml.safe_load(parts[1])
-                    body = parts[2].strip()
-                    _SKILLS.append({
-                        'name': frontmatter.get('name', skill_path.stem),
-                        'description': frontmatter.get('description', ''),
-                        'triggers': frontmatter.get('triggers', []),
-                        'body': body,
-                        'path': str(skill_path)
-                    })
-                    logger.debug(f"Loaded skill: {frontmatter.get('name')}")
-        except Exception as e:
-            logger.warning(f"Failed to load skill {skill_path}: {e}")
-
+    _SKILLS = read_skills([skills_dir])
     logger.info(f"Loaded {len(_SKILLS)} skills from {skills_dir}")
     return _SKILLS
 

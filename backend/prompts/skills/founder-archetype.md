@@ -1,6 +1,10 @@
 ---
 name: founder-archetype
 description: Turn "everyone" into one sharp archetype and a short list of named people to put the demo in front of this week. Use for "who should I demo to", "who is this for", "who do I show it to", "we need feedback", and the dashboard items who.three-people and build.in-front-of-user.
+audience: founder
+order: 40
+button: Who to demo to
+ask: Who exactly should I put this in front of this week, by name?
 ---
 The point is a person watching the thing run and telling the founder where it
 stopped making sense. Everything here serves that.

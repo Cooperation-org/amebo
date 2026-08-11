@@ -1,6 +1,10 @@
 ---
 name: founder-prior-art
 description: Help a cohort founder find who is already working on their problem, then decide for each one whether to partner, join, or invite them in as co-owners. Use for "who else is doing this", "is this taken", "am I too late", "help me find allies", and the dashboard items exist.prior-art and exist.who-else.
+audience: founder
+order: 10
+button: Who else does this
+ask: Who else is already working on this, and should we partner, join them, or invite them in?
 ---
 Golda, on why this is step zero: "When you have an idea, probably somebody else is
 doing it. And in our model, you could invite them to join you. Find the other

@@ -1,6 +1,10 @@
 ---
 name: founder-value-prop
 description: Get a cohort founder to one sentence saying what they make and who it is for, and turn that sentence into a guess that can be tested. Use for "what is my value proposition", "how do I explain what we do", "is this pitch clear", "help me describe my startup", and the dashboard item exist.one-sentence.
+audience: founder
+order: 20
+button: Say what this is
+ask: Help me get to one sentence saying what we make and who it is for.
 ---
 The test of the sentence is not whether it sounds good. It is whether it could
 turn out to be false. A sentence that cannot be wrong cannot be tested, and the

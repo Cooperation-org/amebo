@@ -1,6 +1,10 @@
 ---
 name: founder-early-adopters
 description: Help a cohort founder find the first handful of people who will actually try the thing now, and get it in front of them. Use for "who are my early adopters", "how do I find first users", "where do I launch", "nobody is using it", and the dashboard item build.in-front-of-user.
+audience: founder
+order: 60
+button: Find first users
+ask: Where are the people already working around this problem, and how do I reach them?
 ---
 Early adopters are defined by pain, not by demographics. The person worth finding
 is the one already running a bad workaround: a spreadsheet, a manual process, a

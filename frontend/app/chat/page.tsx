@@ -56,6 +56,11 @@ export default function ChatPage() {
     // ?session=<id> resumes a conversation picked from the dashboard chat list.
     const s = params.get('session');
     if (s) setResumeSession(s);
+    // ?ask=<text> arrives from a button somewhere else (the cohort dash skill
+    // buttons). It fills the box and waits: the person sends it, so they can
+    // add what they know before amebo starts.
+    const a = params.get('ask');
+    if (a) setInput(a);
     // Voice replies are OFF by default every load — amebo listens and outputs
     // text; it does not speak unless the user explicitly toggles it on.
   }, []);
