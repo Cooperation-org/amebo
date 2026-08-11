@@ -1,3 +1,8 @@
+---
+name: cohort-intake
+description: Record someone joining the accelerator (founder, mentor, advisor, funder, supporter) as a public attestation on the cohort page, in their own verbatim words. Use when a team member says someone is in.
+---
+
 # Skill: Cohort Intake
 
 When a team member says someone is joining the accelerator effort ("Mike's in

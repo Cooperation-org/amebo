@@ -1,3 +1,8 @@
+---
+name: launch-brief
+description: Produce a key-points brief the team uses to write their own announcement when someone new joins the accelerator. Facts, quotes and links only, never a written post.
+---
+
 # Skill: Launch Brief
 
 When someone new joins the accelerator effort (a founder sharing a launch, a

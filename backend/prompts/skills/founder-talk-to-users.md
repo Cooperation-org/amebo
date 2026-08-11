@@ -1,6 +1,6 @@
 ---
 name: founder-talk-to-users
-description: Coach a cohort founder through real customer conversations: who to talk to, what to ask, and how to hear an answer they did not want. Use for "how do I talk to users", "what should I ask them", "nobody will talk to me", "talking to humans", customer discovery and interviews, and the dashboard items who.three-people and who.talk-to-one.
+description: 'Coach a cohort founder through real customer conversations: who to talk to, what to ask, and how to hear an answer they did not want. Use for "how do I talk to users", "what should I ask them", "nobody will talk to me", "talking to humans", customer discovery and interviews, and the dashboard items who.three-people and who.talk-to-one.'
 ---
 This is the module founders most often perform rather than do. They book the
 calls, describe the product, hear encouragement, and learn nothing. The job is to
