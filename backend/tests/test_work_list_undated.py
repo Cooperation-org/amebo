@@ -131,20 +131,37 @@ def test_a_new_task_ranks_above_a_stale_one():
     assert fresh > stale
 
 
-def test_longer_untouched_ranks_above_recently_touched():
+def test_recently_touched_ranks_above_longer_untouched():
+    """Golda 2026-08-11: fresh on top, and "I don't know why that old stuff is
+    showing up". Time since anything happened counts against a task, not for
+    it — the list is a worker's, not a nag's."""
     cold = judged_rank(story(modified_date="2026-01-20T09:00:00.000Z"),
                        today=TODAY)
     warm = judged_rank(story(modified_date="2026-08-01T09:00:00.000Z"),
                        today=TODAY)
-    assert cold > warm
+    assert warm > cold
 
 
-def test_untouched_stops_counting_after_six_months():
-    six = judged_rank(story(modified_date="2026-02-06T09:00:00.000Z"),
+def test_the_fade_stops_so_old_work_sinks_rather_than_disappears():
+    old = judged_rank(story(modified_date="2026-02-06T09:00:00.000Z"),
                       today=TODAY)
     ancient = judged_rank(story(modified_date="2019-02-06T09:00:00.000Z"),
                           today=TODAY)
-    assert ancient == six
+    assert ancient == old > 0
+
+
+def test_moved_off_the_first_column_ranks_up():
+    """Somebody dragged it into to-do or in progress: that is a person saying
+    they mean to do it (golda 2026-08-11)."""
+    parked = judged_rank(story(), today=TODAY, column=0)
+    started = judged_rank(story(), today=TODAY, column=3)
+    assert started > parked
+
+
+def test_an_unreadable_board_costs_a_story_nothing():
+    """No board, no column, and position simply does not count."""
+    assert judged_rank(story(), today=TODAY, column=None) == judged_rank(
+        story(), today=TODAY, column=0)
 
 
 def test_somebody_asking_you_something_ranks_it_up():
@@ -213,7 +230,7 @@ def test_the_cap_keeps_the_top_of_the_order_not_an_arbitrary_slice():
         story(id=1, ref=1, modified_date="2026-08-04T09:00:00.000Z"),
         story(id=2, ref=2, modified_date="2026-01-20T09:00:00.000Z"),
     ]).live
-    assert [i.subject for i in top(items, 1)] == ["taiga:some-board#2"]
+    assert [i.subject for i in top(items, 1)] == ["taiga:some-board#1"]
 
 
 def test_a_short_list_is_left_alone():

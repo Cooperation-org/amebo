@@ -152,16 +152,28 @@ def clock_rank(due: str, today: date) -> float:
     return CLOCK_FLOOR + max(0.0, 365.0 - days)
 
 
-# An undated task's standing. Golda: it goes in the list even when nobody set a
-# date on it. What earns its place, in her words, is being new or having been
-# open a while — plus somebody having asked something on it.
+# An undated task's standing. Golda 2026-08-11: "it should rebuild it from a
+# criteria that values new tasks, not just old tasks... Fresh stuff should
+# probably be on top if it was just made and if it's in, like, a to do column or
+# in progress column. I don't know why that old stuff is showing up."
+#
+# So the order runs the way a person expects: what was just made, or is being
+# worked, comes first, and what nobody has touched in months sinks off the page.
+# It used to run the other way — the longer a task went untouched the HIGHER it
+# climbed, on the reasoning that it was being ignored. That is a nag's ordering,
+# not a worker's, and it is what put months-old rows at the top.
 UNDATED_FLOOR = 300.0
 UNDATED_OWNED = 60.0            # someone owns it -> it can actually move
 UNDATED_NO_DETAIL = 10.0        # nothing written down to act on
 UNDATED_NEW_DAYS = 5            # under this, it has not been looked at yet
 UNDATED_NEW = 250.0
 UNDATED_ASKED = 120.0           # somebody's comment is waiting on an answer
-UNDATED_STALE_CAP = 180.0       # past six months untouched, older means no more
+# Off the board's first column: somebody moved it, so it is live work rather
+# than something parked. Which column that is comes from the board's own order,
+# never from a column name — every team names its columns differently.
+UNDATED_PICKED_UP = 90.0
+UNDATED_QUIET_FADE = 2.0        # points lost per day since anything happened
+UNDATED_QUIET_MAX = 200.0       # ... down to a floor; forgotten work sinks, quietly
 
 
 def _days_since(stamp: Optional[str], today: Optional[date]) -> Optional[int]:
@@ -178,31 +190,42 @@ def _days_since(stamp: Optional[str], today: Optional[date]) -> Optional[int]:
 
 def judged_rank(story: Dict[str, Any], *, today: Optional[date] = None,
                 comment: Optional[Dict[str, str]] = None,
-                viewer: Optional[str] = None) -> float:
+                viewer: Optional[str] = None,
+                column: Optional[int] = None) -> float:
     """The judged half, kept deliberately small and explainable. Nothing here
     may exceed JUDGED_CEILING, so judgement can never bury a dated item.
 
-    A task with no deadline still needs a place in the order, and the only
-    honest signals are how long it has sat there and whether anyone is waiting
-    on it. Missing signals simply score nothing, so a story read through a path
-    that carries no timestamps still ranks rather than falling off.
+    A task with no deadline still needs a place in the order, and the honest
+    signals are: was it just made, has anybody moved it off the parking column,
+    and is somebody waiting on an answer. Time since anything happened counts
+    against it, not for it.
+
+    ``column`` is the story's place in its board's own status order, 0 being the
+    first column. Missing signals simply score nothing, so a story read through
+    a path that carries no timestamps or no board still ranks rather than
+    falling off.
     """
     score = UNDATED_FLOOR
     if story.get("assigned_to"):
         score += UNDATED_OWNED
     if not story.get("description"):
         score -= UNDATED_NO_DETAIL
+    if column is not None and column > 0:
+        # Somebody dragged it out of the parking column. That is a person
+        # saying they mean to do it, which is the strongest signal on a board.
+        score += UNDATED_PICKED_UP
 
     age = _days_since(story.get("created_date"), today)
     if age is not None and age <= UNDATED_NEW_DAYS:
         # Brand new: nobody has triaged it yet, which is its own kind of waiting.
         score += UNDATED_NEW
-    else:
-        # Otherwise the longer it has gone untouched, the more it is being
-        # ignored — capped, so the oldest dead story cannot own the top forever.
-        quiet = _days_since(story.get("modified_date"), today)
-        if quiet is not None:
-            score += min(float(quiet), UNDATED_STALE_CAP)
+
+    quiet = _days_since(story.get("modified_date"), today)
+    if quiet is not None:
+        # The longer nothing has happened, the further down it goes — to a
+        # floor, so an old task fades off the page instead of vanishing from
+        # the ordering altogether.
+        score -= min(float(quiet) * UNDATED_QUIET_FADE, UNDATED_QUIET_MAX)
 
     if _asked_of_viewer(comment, viewer):
         score += UNDATED_ASKED
@@ -222,14 +245,19 @@ def _asked_of_viewer(comment: Optional[Dict[str, str]],
 
 def judged_reason(story: Dict[str, Any], *, today: Optional[date] = None,
                   comment: Optional[Dict[str, str]] = None,
-                  viewer: Optional[str] = None) -> Reason:
+                  viewer: Optional[str] = None,
+                  column: Optional[int] = None) -> Reason:
     """Why an undated task sits where it does, in plain words. A judged rank has
-    to justify itself; a dated one does not."""
+    to justify itself; a dated one does not. The order here follows the order of
+    the scoring, so the words name whatever actually lifted the row."""
     if _asked_of_viewer(comment, viewer):
         return Reason(f"{comment['who'].strip()} asked, no deadline", "judgement")
     age = _days_since(story.get("created_date"), today)
     if age is not None and age <= UNDATED_NEW_DAYS:
         return Reason("new, no deadline", "judgement")
+    status = (story.get("status_extra_info") or {}).get("name")
+    if column is not None and column > 0 and status:
+        return Reason(status.strip().lower(), "judgement")
     if not story.get("assigned_to"):
         return Reason("no owner", "judgement")
     quiet = _days_since(story.get("modified_date"), today)
@@ -329,18 +357,50 @@ def _display_name(story: Dict[str, Any], key: str) -> Optional[str]:
     return info.get("username") or info.get("full_name")
 
 
+def column_of(story: Dict[str, Any], store: Any, project_slug: str) -> Optional[int]:
+    """Where this story sits in its board's own column order, 0 being the first.
+
+    Read from the board rather than from a list of names we made up: every team
+    renames its columns, and a board with no "In progress" is not a broken
+    board. None when the board cannot be read, and then position simply does not
+    count towards the ranking.
+
+    Costs one project fetch per board, cached for the rest of the request, so
+    callers ask only for stories where the answer changes the order — a dated
+    story is ranked by the clock and never looks at its column.
+    """
+    statuses = getattr(store, "statuses", None)
+    if not statuses:
+        return None
+    name = ((story.get("status_extra_info") or {}).get("name") or "").strip()
+    if not name:
+        return None
+    try:
+        board = statuses(project_slug) or []
+    except Exception as exc:                          # noqa: BLE001 - one board
+        logger.debug("work_list: no statuses for %s: %s", project_slug, exc)
+        return None
+    ordered = sorted(board, key=lambda s: s.get("order") or 0)
+    for i, st in enumerate(ordered):
+        if (st.get("name") or "").strip() == name:
+            return i
+    return None
+
+
 def build_item(story: Dict[str, Any], *, project_slug: str, taiga_host: str,
                today: date, comment: Optional[Dict[str, str]] = None,
-               viewer: Optional[str] = None) -> Item:
+               viewer: Optional[str] = None,
+               column: Optional[int] = None) -> Item:
     """One story becomes one item. The most recent human comment, if there is
     one, becomes the headline; otherwise the item leads with the thing itself.
 
     ``viewer`` is the person reading, needed only to tell their own last comment
-    from somebody else's question to them."""
+    from somebody else's question to them. ``column`` is its place in the
+    board's column order, from ``column_of``."""
     ref = story.get("ref")
     due = story.get("due_date")
     clock = clock_reason(due, today)
-    judged = dict(today=today, comment=comment, viewer=viewer)
+    judged = dict(today=today, comment=comment, viewer=viewer, column=column)
     reason = clock or judged_reason(story, **judged)
     rank = clock_rank(due, today) if clock else judged_rank(story, **judged)
     past = bool(due and _is_past(due, today))
@@ -963,7 +1023,9 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
     for story, slug in kept:
         item = build_item(story, project_slug=slug, taiga_host=taiga_host,
                           today=today, comment=comments.get(story.get("id")),
-                          viewer=viewer_username)
+                          viewer=viewer_username,
+                          column=None if story.get("due_date")
+                          else column_of(story, store, slug))
         (past if item.past else live).append(item)
     if backlog:
         logger.info("work_list: %d unowned undated stories left in the backlog, "
@@ -1015,7 +1077,9 @@ def assemble(keys: Sequence[str], store: StoryStore, *, taiga_host: str,
         except Exception as exc:                      # noqa: BLE001
             logger.debug("work_list: no comments for %s#%s: %s", slug, ref, exc)
         item = build_item(story, project_slug=slug, taiga_host=taiga_host,
-                          today=today, comment=comment)
+                          today=today, comment=comment,
+                          column=None if story.get("due_date")
+                          else column_of(story, store, slug))
         (past if item.past else live).append(item)
 
     live.sort(key=lambda i: (-i.rank, i.title))
