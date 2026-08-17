@@ -10,19 +10,9 @@ import {
   speechSynthesisSupported,
 } from '@/src/hooks/useVoice';
 import { apiClient } from '@/src/lib/api';
-import { useRouter } from 'next/navigation';
-import { useAuthStore } from '@/src/store/useAuthStore';
 import { useChatThreads } from '@/src/hooks/useChatThreads';
 import { Menu, Plus } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { User, LogOut, LayoutDashboard } from 'lucide-react';
+import { AmeboNav } from '@/src/components/AmeboNav';
 
 // Default instance comes from env; a ?instance=<slug> query param overrides it.
 // Empty string means "no instance" -> backend uses its web-default.
@@ -39,13 +29,6 @@ export default function ChatPage() {
 
   const { turns, send, sending, error, reset } = useChat(instance, resumeSession);
   const bottomRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
-  const { user, logout } = useAuthStore();
-
-  const handleLogout = async () => {
-    await logout();
-    router.push('/login');
-  };
 
   // Read ?instance= once on mount (avoids useSearchParams' Suspense requirement).
   useEffect(() => {
@@ -132,93 +115,58 @@ export default function ChatPage() {
   }, []);
 
   return (
-    <div className="flex h-[100dvh] flex-col bg-background text-foreground">
-      {/* Header */}
-      <header className="flex items-center justify-between gap-2 border-b border-border px-4 py-1.5">
-        <div className="flex min-w-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setListOpen((v) => !v)}
-            aria-label="Conversations"
-            className="shrink-0 rounded-md p-1.5 text-muted-foreground hover:bg-muted"
-          >
-            <Menu className="h-4 w-4" />
-          </button>
-          <a href="/dashboard" className="shrink-0 text-sm font-semibold text-foreground hover:opacity-70">
-            Amebo
-          </a>
-          {instanceName && instanceName.toLowerCase() !== 'amebo' && (
-            <h1 className="truncate text-sm text-muted-foreground">{instanceName}</h1>
-          )}
-          <nav className="ml-4 hidden items-center gap-1 sm:flex">
-            <a href="/dashboard/workspaces" className="rounded-md px-2.5 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
-              Workspaces
-            </a>
-            <a href="/dashboard/settings" className="rounded-md px-2.5 py-1 text-sm text-muted-foreground hover:bg-muted hover:text-foreground">
-              Settings
-            </a>
-          </nav>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          {speechSynthesisSupported() && (
+    <div className="flex min-h-0 flex-1 flex-col bg-background text-foreground">
+      {/* The one Amebo bar, same as every other Amebo page. Chat's own
+          controls ride in its right slot instead of a second row. */}
+      <AmeboNav
+        right={
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={toggleSpeak}
-              aria-pressed={speakReplies}
-              className={`rounded-md px-2 py-1 text-xs font-medium transition ${
-                speakReplies
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
-              }`}
-              title={speakReplies ? 'Voice replies on' : 'Voice replies off'}
+              onClick={() => setListOpen((v) => !v)}
+              aria-label="Conversations"
+              className="shrink-0 rounded-md p-1.5 text-gray-600 hover:bg-gray-100"
             >
-              {speakReplies ? '🔊 Voice on' : '🔈 Voice off'}
+              <Menu className="h-4 w-4" />
             </button>
-          )}
-          <button
-            type="button"
-            onClick={reset}
-            className="rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80"
-            title="Start a new conversation"
-          >
-            New
-          </button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="sm" className="rounded-full" title={user?.email || 'Account'}>
-                <User className="h-4 w-4" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              {user?.email && (
-                <div className="max-w-[220px] truncate px-2 py-1.5 text-xs text-muted-foreground">
-                  {user.email}
-                </div>
-              )}
-              <DropdownMenuItem asChild>
-                <a href="/dashboard" className="flex items-center">
-                  <LayoutDashboard className="mr-2 h-4 w-4" />
-                  Dashboard
-                </a>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleLogout} className="flex items-center">
-                <LogOut className="mr-2 h-4 w-4" />
-                Logout
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-      </header>
+            {speechSynthesisSupported() && (
+              <button
+                type="button"
+                onClick={toggleSpeak}
+                aria-pressed={speakReplies}
+                className={`rounded-md px-2 py-1 text-xs font-medium transition ${
+                  speakReplies
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                }`}
+                title={speakReplies ? 'Voice replies on' : 'Voice replies off'}
+              >
+                {speakReplies ? '\u{1F50A} Voice on' : '\u{1F508} Voice off'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={reset}
+              className="rounded-md bg-muted px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-muted/80"
+              title="Start a new conversation"
+            >
+              New
+            </button>
+          </div>
+        }
+      />
 
+      {/* Everything below the bar. Position the conversations pop-out against
+          this box, so it never has to guess how tall the bars above are. */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
       {/* Conversations pop-out: overlays from the left, never occupies layout */}
       {listOpen && (
-        <div className="relative z-30">
+        <div className="absolute inset-0 z-30">
           <div
-            className="fixed inset-0 top-[41px] bg-black/20"
+            className="absolute inset-0 bg-black/20"
             onClick={() => setListOpen(false)}
           />
-          <div className="fixed left-0 top-[41px] bottom-0 w-72 overflow-y-auto border-r border-border bg-background p-2 shadow-lg">
+          <div className="absolute bottom-0 left-0 top-0 w-72 overflow-y-auto border-r border-border bg-background p-2 shadow-lg">
             <button
               type="button"
               onClick={() => { setListOpen(false); window.location.href = '/chat'; }}
@@ -335,6 +283,7 @@ export default function ChatPage() {
           </button>
         </div>
       </form>
+      </div>
     </div>
   );
 }
