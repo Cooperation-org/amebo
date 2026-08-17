@@ -182,16 +182,38 @@
       amebo-goals ul.goals { list-style: none; margin: 0; padding: 0; }
       amebo-goals ul.goals li {
         display: flex; gap: 0.5rem; align-items: baseline;
-        padding: 0.35rem 0; line-height: 1.35;
+        padding: 0.45rem 0; line-height: 1.35; flex-wrap: wrap;
       }
       amebo-goals ul.goals li + li { border-top: 1px solid rgba(127,127,127,0.18); }
-      amebo-goals ul.goals a { flex: 1; color: inherit; text-decoration: none; }
-      amebo-goals ul.goals a:hover { text-decoration: underline; }
+      amebo-goals .words { flex: 1 1 16rem; min-width: 0; }
+      /* The value is the control: no box, no button, until you are in it. */
+      amebo-goals .f {
+        border: 1px solid transparent; border-radius: 5px;
+        padding: 2px 5px; margin: 0 -5px; white-space: pre-wrap; word-break: break-word;
+      }
+      amebo-goals .f:hover { border-color: rgba(127,127,127,0.28); }
+      amebo-goals .f:focus { outline: none; border-color: rgba(127,127,127,0.6); background: rgba(127,127,127,0.06); }
+      amebo-goals .f[contenteditable="false"]:hover { border-color: transparent; }
+      amebo-goals .f:empty::before {
+        content: attr(data-placeholder); opacity: 0.5;
+      }
+      amebo-goals .f-name { font-weight: 500; }
+      amebo-goals .f-body, amebo-goals .pointer { font-size: 12.5px; opacity: 0.75; }
+      amebo-goals .pointer { padding: 2px 0; word-break: break-all; }
+      amebo-goals .addgoal { padding-top: 0.45rem; border-top: 1px solid rgba(127,127,127,0.18); }
+      amebo-goals .f-add { font-size: 12.5px; }
+      amebo-goals .rowsay { flex: 1 1 100%; font-size: 11.5px; opacity: 0.7; padding-top: 2px; }
       amebo-goals .mark {
         flex: none; font-size: 10.5px; padding: 1px 7px; border-radius: 9px;
         border: 1px solid rgba(127,127,127,0.35); white-space: nowrap;
+        background: rgba(244,228,181,0.55); border-color: rgba(180,150,80,0.5);
       }
-      amebo-goals .mark.waiting { background: rgba(244,228,181,0.55); border-color: rgba(180,150,80,0.5); }
+      amebo-goals button.accept {
+        flex: none; font: inherit; font-size: 12px; cursor: pointer;
+        padding: 2px 10px; border-radius: 6px; color: inherit;
+        border: 1px solid rgba(127,127,127,0.45); background: none;
+      }
+      amebo-goals button.accept:hover { background: rgba(127,127,127,0.12); }
       amebo-goals .mark.team { opacity: 0.6; }
       amebo-skills .skills { display: flex; flex-wrap: wrap; gap: 6px; }
       amebo-skills a.skill {
@@ -330,6 +352,15 @@
   async function jpost(url, payload) {
     return jfetch('POST', url, {
       method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload || {}),
+    }, payload);
+  }
+
+  async function jpatch(url, payload) {
+    return jfetch('PATCH', url, {
+      method: 'PATCH',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload || {}),
@@ -747,51 +778,46 @@
 
   // ---- <amebo-goals> ------------------------------------------------------
   //
-  // The goals a PERSON set, for people to read. Golda 2026-08-10: "do not put
-  // goals that are for the BOT for HUMANS to see. humans see the dash. human
-  // goals only."
+  // The goals a PERSON set. Golda 2026-08-10: "do not put goals that are for
+  // the BOT for HUMANS to see. humans see the dash. human goals only."
   //
-  // amebo's `goals` table holds both kinds. A goal amebo runs — a claw — is
-  // configured to run: it has a cron, or a channel it reports into, or both.
-  // Those two fields exist for nobody but amebo. A goal a person set has
-  // neither: it moves when a person moves it. That is the whole test, and it
-  // separates every open row in the live table today.
+  // Those live in `org_statements` (the Statements API), not in `goals`.
+  // `goals` is the claw table — what amebo runs — and reading it here was the
+  // bug: every open row in it is a claw, so this card rendered nothing while
+  // the org's real goals sat one table over (golda 2026-08-17: "the
+  // org_statements are the HUMAN goals, and the correct thing for the dash").
   //
-  // Read-only: a row opens the goal in amebo, which is where it is worked,
-  // answered or finished. Nothing about a goal is stored or decided here
-  // (amebo docs/DASHBOARD.md: orientation surface, not workspace).
+  // Editable in place, because that is the rule: "if you see it, and you have
+  // perms, you should be able to edit right there" (golda 2026-08-17). The
+  // value IS the control, it commits on blur, and there is no edit mode — the
+  // same inline-edit pattern amebo's own statements page uses. Perms are the
+  // API's to decide: a PATCH that comes back 403 turns that row read-only
+  // rather than the client guessing who may write.
+  //
+  // A statement amebo PROPOSED (accepted_at null) does nothing until a person
+  // accepts it, so it is shown as a proposal with the button that accepts it,
+  // never mixed in silently with what the team actually said.
   //
   // Org is resolved server-side from the session, per the embed contract — it
   // is never an attribute. So the rows are always the viewer's own org's.
   //
   //   data-up     amebo origin or proxy mount (required)
-  //   data-limit  rows to show (default 5)
+  //   data-limit  accepted goals to show (default 5; proposals are never cut)
   //
-  // Signed out, or nothing to show: renders nothing and hides itself, so a
-  // host card built on the dash autohide contract disappears with it.
-
-  // What "open" means here is amebo's own definition minus paused: a paused
-  // goal is one a person deliberately set down, so it is not what to do next.
-  const GOALS_OPEN = ['waiting_user', 'active', 'pending'];
-
-  // A goal amebo runs on its own, or reports on into a channel, is amebo's.
-  function isBotGoal(g) {
-    const t = g.trigger_config || {};
-    return !!(g.notify_channel || t.cron || t.expression);
-  }
+  // Signed out, or nothing to show and nothing to add: renders nothing and
+  // hides itself, so a host card built on the dash autohide contract
+  // disappears with it.
 
   class AmeboGoals extends HTMLElement {
     async connectedCallback() {
       ensureStyles();
       const base = upBase(this);
       if (!base) return showError(this, 'missing data-up');
-      const limit = parseInt(this.dataset.limit || '5', 10);
+      this._base = base;
+      this._limit = parseInt(this.dataset.limit || '5', 10);
       try {
-        const [me, goals] = await Promise.all([
-          jget(`${base}/api/auth/me`),
-          jget(`${base}/api/goals/`),
-        ]);
-        this._render(base, limit, me, Array.isArray(goals) ? goals : []);
+        const rows = await jget(`${base}/api/statements/`);
+        this._render(Array.isArray(rows) ? rows : []);
       } catch (err) {
         // The dash contract: an upstream that says no leaves no trace on the
         // page. jfetch has already put the whole failure on the console.
@@ -804,37 +830,155 @@
       this.hidden = true;
     }
 
-    _render(base, limit, me, goals) {
-      const mine = me && me.user_id;
-      // A goal with somebody else's name on it is theirs — it belongs on their
-      // dash, not this one. Nothing in amebo puts a name on a goal yet, so in
-      // practice this drops nothing and stops nothing from showing.
-      const rows = goals
-        .filter(g => GOALS_OPEN.indexOf(g.status) !== -1)
-        .filter(g => !isBotGoal(g))
-        .filter(g => g.assigned_to_user_id == null || g.assigned_to_user_id === mine)
-        .sort((a, b) => rank(a) - rank(b) || when(b) - when(a))
-        .slice(0, limit);
-      if (!rows.length) return this._nothing();
+    _render(rows) {
+      const accepted = rows
+        .filter(s => s.accepted_at)
+        .sort((a, b) => (b.informs_priority ? 1 : 0) - (a.informs_priority ? 1 : 0)
+                     || when(b) - when(a))
+        .slice(0, this._limit);
+      const proposed = rows.filter(s => !s.accepted_at).sort((a, b) => when(b) - when(a));
+
+      this.innerHTML = '';
       this.hidden = false;
-      this.innerHTML = `<ul class="goals">${rows.map(g => row(g, base)).join('')}</ul>`;
+      const list = document.createElement('ul');
+      list.className = 'goals';
+      accepted.concat(proposed).forEach(s => list.appendChild(this._row(s)));
+      this.appendChild(list);
+      this.appendChild(this._adder(list));
 
-      // Whatever amebo is waiting on a person for comes first — that is the
-      // one row that cannot move until somebody answers it.
-      function rank(g) { return g.status === 'waiting_user' ? 0 : 1; }
-      function when(g) { return Date.parse(g.updated_at || g.created_at) || 0; }
+      function when(s) { return Date.parse(s.updated_at || s.created_at) || 0; }
+    }
 
-      function row(g, base) {
-        const href = `${base}/dashboard/goals?task=goal:${encodeURIComponent(g.id)}`;
-        const mark = g.status === 'waiting_user'
-          ? '<span class="mark waiting">waiting on you</span>' : '';
-        return `
-          <li>
-            <a href="${esc(href)}" target="_blank" rel="noopener">${esc(trunc(g.title, 120))}</a>
-            ${mark}
-          </li>
-        `;
+    // One goal: its words, editable where they are.
+    _row(s) {
+      const li = document.createElement('li');
+      li.className = s.accepted_at ? 'goal' : 'goal proposed';
+
+      const words = document.createElement('div');
+      words.className = 'words';
+      words.appendChild(this._field(s, 'name', s.name, 'What are you aiming at?'));
+      // A statement can carry its words or point at where they live. Only the
+      // words are editable here; a pointer is shown as what it is and followed
+      // in amebo, so nobody overwrites a document by typing in a card.
+      if (s.pointer) {
+        const p = document.createElement('div');
+        p.className = 'pointer';
+        p.textContent = s.pointer;
+        words.appendChild(p);
+      } else {
+        words.appendChild(this._field(s, 'body', s.body || '', 'Add what it means, in your words'));
       }
+      li.appendChild(words);
+
+      if (!s.accepted_at) {
+        const mark = document.createElement('span');
+        mark.className = 'mark';
+        mark.textContent = 'amebo proposed this';
+        li.appendChild(mark);
+        const yes = document.createElement('button');
+        yes.className = 'accept';
+        yes.type = 'button';
+        yes.textContent = 'Make it ours';
+        yes.addEventListener('click', async () => {
+          yes.disabled = true;
+          try {
+            await jpatch(`${this._base}/api/statements/${encodeURIComponent(s.id)}`, { accept: true });
+            li.className = 'goal';
+            mark.remove();
+            yes.remove();
+          } catch (err) {
+            yes.disabled = false;
+            this._say(li, 'not accepted — try again');
+          }
+        });
+        li.appendChild(yes);
+      }
+      return li;
+    }
+
+    // The value is the control. Commits on blur, only when the words changed;
+    // a failure keeps what the person typed rather than snapping back to the
+    // server's version, because their words are the ones nobody else has.
+    _field(s, key, value, placeholder) {
+      const el = document.createElement('div');
+      el.className = 'f f-' + key;
+      el.textContent = value;
+      el.setAttribute('contenteditable', 'plaintext-only');
+      el.setAttribute('role', 'textbox');
+      el.setAttribute('aria-label', key === 'name' ? 'Goal' : 'What it means');
+      el.dataset.placeholder = placeholder;
+      let saved = value;
+      el.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && key === 'name') { e.preventDefault(); el.blur(); }
+        if (e.key === 'Escape') { el.textContent = saved; el.blur(); }
+      });
+      el.addEventListener('blur', async () => {
+        const next = el.textContent.trim();
+        if (next === saved) return;
+        if (key === 'name' && !next) { el.textContent = saved; return; }
+        const li = el.closest('li');
+        try {
+          const body = {};
+          body[key] = next;
+          await jpatch(`${this._base}/api/statements/${encodeURIComponent(s.id)}`, body);
+          saved = next;
+          this._say(li, '');
+        } catch (err) {
+          if (err && err.status === 403) {
+            el.setAttribute('contenteditable', 'false');
+            el.textContent = saved;
+            this._say(li, 'not yours to edit');
+          } else {
+            this._say(li, 'not saved — your words are still here');
+          }
+        }
+      });
+      return el;
+    }
+
+    // Adding one is the same act as editing one, so it lives in the same place
+    // rather than behind a button that opens somewhere else.
+    _adder(list) {
+      const box = document.createElement('div');
+      box.className = 'addgoal';
+      const el = document.createElement('div');
+      el.className = 'f f-add';
+      el.setAttribute('contenteditable', 'plaintext-only');
+      el.setAttribute('role', 'textbox');
+      el.setAttribute('aria-label', 'Add a goal');
+      el.dataset.placeholder = 'Add a goal';
+      const commit = async () => {
+        const name = el.textContent.trim();
+        if (!name) return;
+        try {
+          const made = await jpost(
+            `${this._base}/api/statements/`, { name: name, informs_priority: true });
+          el.textContent = '';
+          list.appendChild(this._row(made));
+        } catch (err) {
+          this._say(box, err && err.status === 403
+            ? 'not yours to add' : 'not saved — your words are still here');
+        }
+      };
+      el.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        if (e.key === 'Escape') { el.textContent = ''; el.blur(); }
+      });
+      el.addEventListener('blur', commit);
+      box.appendChild(el);
+      return box;
+    }
+
+    _say(where, words) {
+      if (!where) return;
+      let note = where.querySelector(':scope > .rowsay');
+      if (!words) { if (note) note.remove(); return; }
+      if (!note) {
+        note = document.createElement('div');
+        note.className = 'rowsay';
+        where.appendChild(note);
+      }
+      note.textContent = words;
     }
   }
 

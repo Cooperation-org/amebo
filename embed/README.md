@@ -27,7 +27,7 @@ The backend serves the bundle as a static file at `/embed/amebo.js`
 | `<amebo-claws>`      | `GET /api/goals/?status=&limit=` | No                                  |
 | `<amebo-digest>`     | `GET /api/digest`          | No                                        |
 | `<amebo-create-claw>` | `POST /api/goals/`         | Yes (creates a claw in amebo's goals table; no abra write) |
-| `<amebo-goals>`      | `GET /api/auth/me` + `GET /api/goals/` | No                    |
+| `<amebo-goals>`      | `GET /api/statements/` + `POST`/`PATCH` on edit | Yes (the org's goals, edited in place) |
 | `<amebo-skills>`     | `GET /api/skills/?audience=` | No (links into chat)            |
 
 ### `<amebo-skills>` — what this dash can hand to amebo
@@ -43,24 +43,37 @@ audience, and a skill without a `button` never appears at all.
 
 ### `<amebo-goals>` — the goals a person set
 
-Open goals (`waiting_user`, `active`, `pending`) that a **person** set, for
-people to read. Golda 2026-08-10: "do not put goals that are for the BOT for
-HUMANS to see. humans see the dash. human goals only."
+The org's own goals, from `org_statements` (`GET /api/statements/`) — mission,
+vision, values, OKRs: what the team is aiming at. Golda 2026-08-17: "the
+org_statements are the HUMAN goals, and the correct thing for the dash."
 
-The `goals` table holds both kinds. A goal amebo runs — a claw — is configured
-to run: it has a cron, or a `notify_channel` it reports into, or both. Those
-fields exist for nobody but amebo. A goal a person set has neither and moves
-only when a person moves it. That is the test.
+It used to read `/api/goals/` and filter out anything with a cron or a
+`notify_channel`. That was the wrong table: `goals` is the claw table, every
+open row in it is something amebo runs, and the card rendered nothing while the
+team's real goals sat one table over.
 
-Goals with someone else's name on them are left out too — those are on that
-person's own surface.
+**Editable in place.** "If you see it, and you have perms, you should be able to
+edit right there" (golda 2026-08-17). The value is the control, it commits on
+blur, there is no edit mode — the same inline-edit pattern amebo's own
+statements page uses. Escape restores, Enter commits a title. A save that fails
+keeps the person's words on screen rather than snapping back to the server's
+version; a 403 turns that field read-only, so perms are the API's answer and
+never a guess in the client. The last line adds a goal, in the same place and
+the same way.
 
-Read-only. Every row links to `/dashboard/goals?task=goal:<id>`, where the
-goal is answered, paused or finished. Signed out, or nothing open, the
-component empties itself and sets `hidden`, so a host card that autohides on
-an empty component disappears with it.
+A statement amebo PROPOSED (`accepted_at` null) does nothing until a person
+takes it. Those show marked as proposals, with the button that accepts them —
+never mixed in silently with what the team actually said.
 
-Attributes: `data-up` (required), `data-limit` (default 5).
+A statement that carries a `pointer` instead of `body` shows the pointer and
+does not make it editable: the words live in that document, and nobody should
+overwrite a document by typing in a card.
+
+Signed out, or the API says no, the component empties itself and sets `hidden`,
+so a host card that autohides on an empty component disappears with it.
+
+Attributes: `data-up` (required), `data-limit` (default 5 accepted goals;
+proposals are never cut).
 
 Org is not an attribute — amebo resolves it from the session, so these are
 always the viewer's own org's goals, whatever page the component sits on.
