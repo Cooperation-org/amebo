@@ -386,6 +386,14 @@ class ApiClient {
   }
 
   // Org dashboard key links (per-org config; never hardcoded)
+  // Skills amebo can be asked to run, as a surface can put them on screen.
+  // Rows with no button are left out by the API: a skill amebo picks for
+  // itself is not automatically something to show somebody.
+  async getSkills(audience?: string): Promise<SkillRow[]> {
+    const q = audience ? `?audience=${encodeURIComponent(audience)}` : '';
+    return this.request(`/api/skills/${q}`);
+  }
+
   async getOrgLinks(): Promise<{ links: OrgLink[] }> {
     return this.request('/api/organizations/links');
   }
@@ -710,6 +718,15 @@ export interface Goal {
   trigger_config?: { type?: string; expression?: string } | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface SkillRow {
+  name: string;
+  description: string;
+  button: string;
+  ask: string;
+  order: number;
+  source: 'core' | 'org';
 }
 
 export interface OrgLink {

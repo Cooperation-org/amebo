@@ -11,6 +11,7 @@ import {
 } from '@/src/hooks/useVoice';
 import { apiClient } from '@/src/lib/api';
 import { useChatThreads } from '@/src/hooks/useChatThreads';
+import { useQuery } from '@tanstack/react-query';
 import { Menu, Plus } from 'lucide-react';
 import { AmeboNav } from '@/src/components/AmeboNav';
 
@@ -26,6 +27,14 @@ export default function ChatPage() {
   const [resumeSession, setResumeSession] = useState<string | undefined>(undefined);
   const [listOpen, setListOpen] = useState(false);
   const { data: threads } = useChatThreads();
+  // What amebo can be asked to do, in the skill's own words. The API leaves out
+  // any skill with no button, and an org's own skills shadow the core ones, so
+  // this list is per-org without this page knowing anything about skills.
+  const { data: skills } = useQuery({
+    queryKey: ['skills', 'founder'],
+    queryFn: () => apiClient.getSkills('founder'),
+    staleTime: 5 * 60 * 1000,
+  });
 
   const { turns, send, sending, error, reset } = useChat(instance, resumeSession);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -191,7 +200,8 @@ export default function ChatPage() {
         </div>
       )}
 
-      {/* Messages */}
+      {/* Messages, with the skills rail beside them on a wide screen */}
+      <div className="flex min-h-0 flex-1">
       <main className="flex-1 overflow-y-auto px-4 py-4">
         <div className="mx-auto flex max-w-2xl flex-col gap-4">
           {turns.length === 0 && (
@@ -240,6 +250,29 @@ export default function ChatPage() {
           <div ref={bottomRef} />
         </div>
       </main>
+
+      {(skills ?? []).length > 0 && (
+        <aside className="hidden w-64 shrink-0 overflow-y-auto border-l border-border p-3 lg:block">
+          <p className="px-1 pb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Ask amebo
+          </p>
+          {(skills ?? []).map((s) => (
+            <button
+              key={s.name}
+              type="button"
+              title={s.description}
+              onClick={() => setInput(s.ask)}
+              className="mb-1 block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
+            >
+              {s.button}
+            </button>
+          ))}
+          <p className="px-1 pt-2 text-xs text-muted-foreground">
+            Puts the question in the box. Change it before you send it.
+          </p>
+        </aside>
+      )}
+      </div>
 
       {/* Input */}
       <form
