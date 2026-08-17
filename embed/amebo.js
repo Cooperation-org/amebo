@@ -182,7 +182,7 @@
       amebo-goals ul.goals { list-style: none; margin: 0; padding: 0; }
       amebo-goals ul.goals li {
         display: flex; gap: 0.5rem; align-items: baseline;
-        padding: 0.45rem 0; line-height: 1.35; flex-wrap: wrap;
+        padding: 0.3rem 0; line-height: 1.3; flex-wrap: wrap;
       }
       amebo-goals ul.goals li + li { border-top: 1px solid rgba(127,127,127,0.18); }
       amebo-goals .words { flex: 1 1 16rem; min-width: 0; }
@@ -194,13 +194,16 @@
       amebo-goals .f:hover { border-color: rgba(127,127,127,0.28); }
       amebo-goals .f:focus { outline: none; border-color: rgba(127,127,127,0.6); background: rgba(127,127,127,0.06); }
       amebo-goals .f[contenteditable="false"]:hover { border-color: transparent; }
-      amebo-goals .f:empty::before {
+      amebo-goals .f:empty::before { content: ''; }
+      amebo-goals li:hover .f:empty::before,
+      amebo-goals .f:focus:empty::before,
+      amebo-goals .f-add:empty::before {
         content: attr(data-placeholder); opacity: 0.5;
       }
       amebo-goals .f-name { font-weight: 500; }
       amebo-goals .f-body, amebo-goals .pointer { font-size: 12.5px; opacity: 0.75; }
       amebo-goals .pointer { padding: 2px 0; word-break: break-all; }
-      amebo-goals .addgoal { padding-top: 0.45rem; border-top: 1px solid rgba(127,127,127,0.18); }
+      amebo-goals .addgoal { padding-top: 0.35rem; border-top: 1px solid rgba(127,127,127,0.18); }
       amebo-goals .f-add { font-size: 12.5px; }
       amebo-goals .rowsay { flex: 1 1 100%; font-size: 11.5px; opacity: 0.7; padding-top: 2px; }
       amebo-goals .mark {
@@ -856,7 +859,7 @@
 
       const words = document.createElement('div');
       words.className = 'words';
-      words.appendChild(this._field(s, 'name', s.name, 'What are you aiming at?'));
+      words.appendChild(this._field(s, 'name', s.name, ''));
       // A statement can carry its words or point at where they live. Only the
       // words are editable here; a pointer is shown as what it is and followed
       // in amebo, so nobody overwrites a document by typing in a card.
@@ -866,19 +869,19 @@
         p.textContent = s.pointer;
         words.appendChild(p);
       } else {
-        words.appendChild(this._field(s, 'body', s.body || '', 'Add what it means, in your words'));
+        words.appendChild(this._field(s, 'body', s.body || '', 'add detail'));
       }
       li.appendChild(words);
 
       if (!s.accepted_at) {
         const mark = document.createElement('span');
         mark.className = 'mark';
-        mark.textContent = 'amebo proposed this';
+        mark.textContent = 'proposed';
         li.appendChild(mark);
         const yes = document.createElement('button');
         yes.className = 'accept';
         yes.type = 'button';
-        yes.textContent = 'Make it ours';
+        yes.textContent = 'Accept';
         yes.addEventListener('click', async () => {
           yes.disabled = true;
           try {
@@ -888,7 +891,7 @@
             yes.remove();
           } catch (err) {
             yes.disabled = false;
-            this._say(li, 'not accepted — try again');
+            this._say(li, 'not accepted');
           }
         });
         li.appendChild(yes);
@@ -929,7 +932,7 @@
             el.textContent = saved;
             this._say(li, 'not yours to edit');
           } else {
-            this._say(li, 'not saved — your words are still here');
+            this._say(li, 'not saved');
           }
         }
       });
@@ -956,8 +959,7 @@
           el.textContent = '';
           list.appendChild(this._row(made));
         } catch (err) {
-          this._say(box, err && err.status === 403
-            ? 'not yours to add' : 'not saved — your words are still here');
+          this._say(box, err && err.status === 403 ? 'not yours to add' : 'not saved');
         }
       };
       el.addEventListener('keydown', e => {
