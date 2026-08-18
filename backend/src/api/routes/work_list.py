@@ -47,6 +47,7 @@ from src.services.work_list import (
     assemble_crm_open_context, assemble_stories, goal_task_refs, top,
     items_from_drafts, items_from_goals, parse_subject, story_url,
 )
+from src.services.goal_engine import GoalEngine
 from src.services.live import publish, subscribe, unsubscribe
 from src.services.viewer_identity import crm_logins, taiga_username, viewer_person
 from src.services.work_list_taiga import TaigaStoryStore
@@ -617,6 +618,57 @@ class EditOut(BaseModel):
     applied: List[str]
 
 
+def _claw_on_comment(org_id: int, slug: str, ref: Any, text: str,
+                     said_by: str) -> bool:
+    """A comment on a task amebo owns means: go and work on it.
+
+    Golda, 2026-08-18: "commenting on a task means: claw, go work on it — only
+    if it's assigned to amebo". Talking about someone else's task is talking;
+    talking about amebo's own task is an instruction, and amebo should not need
+    to be told twice in a second place.
+
+    The goal carries the task itself, so the claw works on the record rather
+    than on a retelling of it. One-shot: no trigger_config, so it runs once and
+    retires. Returns False, quietly, whenever the story is not amebo's — this
+    is a side path off an edit that has already succeeded, and it must never
+    turn a posted comment into an error.
+    """
+    agent = os.getenv("TAIGA_USERNAME")
+    if not agent:
+        return False
+    try:
+        store = TaigaStoryStore()
+        story = store.story(slug, ref)
+        if not story:
+            return False
+        owner = (story.get("assigned_to_extra_info") or {})
+        if (owner.get("username") or owner.get("full_name")) != agent:
+            return False
+
+        title = story.get("subject") or f"#{ref} {slug}"
+        GoalEngine().create_goal(
+            org_id=org_id,
+            title=title,
+            description=text,
+            config={
+                "task": {
+                    "source": "taiga",
+                    "project": slug,
+                    "ref": ref,
+                    "url": story_url(store.host, slug, ref),
+                },
+                # Who to answer. The claw reports back where the instruction
+                # was given, which is the task, not a channel.
+                "said_by": said_by,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("work-list: no claw for %s#%s: %s", slug, ref, exc)
+        return False
+    logger.info("work-list: claw armed on %s#%s by %s", slug, ref, said_by)
+    return True
+
+
 def _changed(org_id: int, result: EditOut) -> EditOut:
     """Hand back what was applied, and wake anyone watching this org's list."""
     publish(org_id, "work-list")
@@ -664,6 +716,9 @@ async def edit(body: EditIn,
             execute_taiga_comment({"org_id": org_id,
                                    "payload": {**base, "text": body.comment}})
             applied.append("comment")
+            if _claw_on_comment(org_id, slug, ref, body.comment,
+                                str(client.get("user") or "")):
+                applied.append("claw")
         if body.close:
             execute_taiga_close({"org_id": org_id, "payload": base})
             applied.append("close")

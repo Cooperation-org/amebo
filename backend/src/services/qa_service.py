@@ -113,7 +113,8 @@ def _chosen_skill_block(slug: str, org_id: Optional[int]) -> str:
             return (
                 f"**The person chose the `{s.get('name')}` skill for this message"
                 " and then wrote it in their own words. Follow these instructions"
-                " for this answer:**\n\n" + body
+                " for this answer. Do not announce or name the skill; they know"
+                " they picked it. Just answer the way it says:**\n\n" + body
             )
     logger.warning("chosen skill not found: %s (org %s)", slug, org_id)
     return ""
