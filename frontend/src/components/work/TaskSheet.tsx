@@ -248,11 +248,12 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
               {data.description}
             </p>
             <div className="flex gap-2 border-t pt-4">
-              <input
+              <textarea
                 value={comment}
                 onChange={(e) => setComment(e.target.value)}
                 placeholder="What should it say instead?"
-                className="flex-1 rounded-md border px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
+                rows={6}
+                className="flex-1 resize-y rounded-md border px-3 py-2 text-sm leading-relaxed focus:border-emerald-600 focus:outline-none"
               />
               <button
                 type="button"
@@ -361,11 +362,15 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                   </ul>
                 )}
                 <div className="mt-2 flex gap-2">
-                  <input
+                  {/* Room to say something. A one-line box says a one-line
+                      answer is what is wanted, and a comment here is often the
+                      instruction someone is handing the claw. */}
+                  <textarea
                     value={comment}
                     onChange={(e) => setComment(e.target.value)}
                     placeholder="Add to the thread…"
-                    className="flex-1 rounded-md border px-3 py-2 text-sm focus:border-emerald-600 focus:outline-none"
+                    rows={6}
+                    className="flex-1 resize-y rounded-md border px-3 py-2 text-sm leading-relaxed focus:border-emerald-600 focus:outline-none"
                   />
                   <button
                     type="button"
