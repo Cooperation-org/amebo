@@ -56,7 +56,7 @@ export function useChat(instanceSlug: string, resumeSessionId?: string) {
   }, [instanceSlug, resumeSessionId]);
 
   const send = useCallback(
-    async (message: string): Promise<string | null> => {
+    async (message: string, skill?: string): Promise<string | null> => {
       const text = message.trim();
       if (!text || sending) return null;
       setError(null);
@@ -71,6 +71,7 @@ export function useChat(instanceSlug: string, resumeSessionId?: string) {
           message: text,
           session_id: sessionId.current,
           instance_slug: instanceSlug,
+          skill,
         });
         sessionId.current = res.session_id;
         if (typeof window !== 'undefined') {

@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { ExternalLink } from 'lucide-react';
 import { useOrgBoard } from '@/src/hooks/useOrgBoard';
 import type { BoardItem } from '@/src/lib/api';
+import { boardLink } from '@/src/lib/boardLink';
 
 const STATUS_STYLES: Record<string, string> = {
   active: 'bg-green-100 text-green-800',
@@ -42,9 +43,10 @@ function isUrl(v: string) {
 function CampaignCard({ item }: { item: BoardItem }) {
   // crm_url (when present) is the campaign's own record in the CRM, resolved by
   // the backend; we only link when we have that specific record (never the
-  // generic CRM). taiga only when it's a real URL.
+  // generic CRM). The board link goes to Marten, never Taiga's own interface,
+  // whatever was written into the MAIN.md.
   const crmUrl = item.crm_url || undefined;
-  const taigaUrl = isUrl(item.taiga) ? item.taiga : undefined;
+  const boardUrl = isUrl(item.taiga) ? boardLink(item.taiga) : undefined;
 
   return (
     <Card className="flex flex-col">
@@ -64,7 +66,7 @@ function CampaignCard({ item }: { item: BoardItem }) {
         <div className="mt-auto flex flex-wrap gap-x-4 gap-y-1.5 pt-1">
           {item.main_md_url && <LinkChip href={item.main_md_url}>MAIN.md</LinkChip>}
           {crmUrl && <LinkChip href={crmUrl}>CRM</LinkChip>}
-          {taigaUrl && <LinkChip href={taigaUrl}>Taiga</LinkChip>}
+          {boardUrl && <LinkChip href={boardUrl}>Board</LinkChip>}
         </div>
       </CardContent>
     </Card>
@@ -74,7 +76,8 @@ function CampaignCard({ item }: { item: BoardItem }) {
 /**
  * The campaigns board — one card per live campaign, read from the org's context
  * repo via GET /api/organizations/board. Read-only: every card links out to the
- * tool that owns the thing (the MAIN.md on the git host, the CRM, Taiga). Hidden
+ * tool that owns the thing (the MAIN.md on the git host, the CRM, the board in
+ * Marten). Hidden
  * entirely when there is no board or no items (never a blank placeholder).
  */
 export function CampaignsBoard() {

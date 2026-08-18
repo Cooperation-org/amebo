@@ -5,9 +5,10 @@ org's overlay in its context repo). This route only reads them: it exists so a
 surface like the cohort dash can show what amebo can be asked to do, in the
 words of the skill itself, without any surface hardcoding a list.
 
-The `ask` in each row is the sentence that goes in the person's chat box. They
-send it, so they can change it first. Amebo picks the skill up from the request
-the same way it does when someone types the question themselves.
+The `ask` in each row is a sample message for the person's chat box: pressing
+the button writes it there for them to edit before sending. The `slug` is what
+the send carries, so the skill's own instructions are loaded for that message
+without ever being written into the box.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 class SkillRow(BaseModel):
+    slug: str           # the filename, which is what a chat message names to load it
     name: str
     description: str
     button: str

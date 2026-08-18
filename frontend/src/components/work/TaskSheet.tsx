@@ -205,7 +205,9 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
               rel="noreferrer"
               className="inline-flex items-center gap-1 text-xs text-emerald-800 hover:underline"
             >
-              {data?.kind === 'contact' ? 'open in the CRM' : 'open in Taiga'}{' '}
+              {/* Never "open in Taiga": the URL is Marten's and always was, and
+                  the label was pointing people at an interface we do not use. */}
+              {data?.kind === 'contact' ? 'open in the CRM' : 'open on the board'}{' '}
               <ExternalLink className="h-3 w-3" />
             </a>
           )}

@@ -185,6 +185,9 @@ class ApiClient {
     message: string;
     session_id?: string;
     instance_slug?: string;
+    // Slug of a skill the person picked with a button. Its instructions are
+    // loaded server-side for this message; they are never put in the box.
+    skill?: string;
   }): Promise<ChatMessageResponse> {
     return this.request('/api/chat/message', {
       method: 'POST',
@@ -721,6 +724,7 @@ export interface Goal {
 }
 
 export interface SkillRow {
+  slug: string;   // what a chat message names to load this skill
   name: string;
   description: string;
   button: string;

@@ -52,6 +52,11 @@ class ChatRequest(BaseModel):
     message: str
     session_id: Optional[str] = None
     instance_slug: Optional[str] = None
+    # Slug of a skill the person picked with a button before typing. Its
+    # instructions are loaded for this message; the message itself stays their
+    # own words. Nothing is required — a typed message carries no skill and the
+    # model picks its own from the catalog as before.
+    skill: Optional[str] = None
 
 
 class ChatResponse(BaseModel):
@@ -134,7 +139,8 @@ async def chat_message(req: ChatRequest, current_user: dict = Depends(get_curren
             "user_id": current_user.get("user_id"),
             "email": current_user.get("email"),
         },
-        instance_slug=instance['slug']
+        instance_slug=instance['slug'],
+        skill=req.skill,
     )
 
     # Record the owner on the web thread (once) so the dashboard can list this

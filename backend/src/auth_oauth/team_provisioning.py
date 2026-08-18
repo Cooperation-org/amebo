@@ -11,8 +11,10 @@ amebo:
   * **Marten (Taiga)** — a ``Back`` membership in every *active* project, keyed
     to their email so the Taiga LinkedTrust plugin attaches them on login.
 
-Afterwards they sign in directly at crm.linkedtrust.us / taiga.linkedtrust.us;
-amebo is only the trigger, never in the path.
+Afterwards they sign in directly at crm.linkedtrust.us / marten.linkedtrust.us;
+amebo is only the trigger, never in the path. The membership is created through
+Taiga's API because Taiga holds the data, but nobody is ever sent to Taiga's own
+interface — Marten is the board.
 
 SECURITY BOUNDARY (deliberate): the admin credentials used here come ONLY from
 the process environment (``PROVISION_*`` in the gitignored ``.env``) and are read

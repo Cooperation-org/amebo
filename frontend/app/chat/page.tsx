@@ -9,7 +9,7 @@ import {
   stopSpeaking,
   speechSynthesisSupported,
 } from '@/src/hooks/useVoice';
-import { apiClient } from '@/src/lib/api';
+import { apiClient, type SkillRow } from '@/src/lib/api';
 import { useChatThreads } from '@/src/hooks/useChatThreads';
 import { useQuery } from '@tanstack/react-query';
 import { Menu, Plus } from 'lucide-react';
@@ -26,6 +26,13 @@ export default function ChatPage() {
   const [speakReplies, setSpeakReplies] = useState(false);
   const [resumeSession, setResumeSession] = useState<string | undefined>(undefined);
   const [listOpen, setListOpen] = useState(false);
+  // The skill the person picked with a button, if any. The button writes a
+  // sample message they then edit; this is what carries the skill's own
+  // instructions to the server, so the box stays their sentence and the
+  // instructions are never on screen. Cleared when the message is sent.
+  const [armedSkill, setArmedSkill] = useState<SkillRow | null>(null);
+  const [pendingSkillSlug, setPendingSkillSlug] = useState<string | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const { data: threads } = useChatThreads();
   // What amebo can be asked to do, in the skill's own words. The API leaves out
   // any skill with no button, and an org's own skills shadow the core ones, so
@@ -53,6 +60,10 @@ export default function ChatPage() {
     // add what they know before amebo starts.
     const a = params.get('ask');
     if (a) setInput(a);
+    // ?skill=<slug> arms a skill the same way its button does. Matched against
+    // the loaded list so the chip can name it; an unknown slug just does nothing.
+    const sk = params.get('skill');
+    if (sk) setPendingSkillSlug(sk);
     // Voice replies are OFF by default every load — amebo listens and outputs
     // text; it does not speak unless the user explicitly toggles it on.
   }, []);
@@ -77,6 +88,17 @@ export default function ChatPage() {
     };
   }, [instance]);
 
+  // A slug from ?skill= arms once the list has loaded, so the chip can show the
+  // skill's own button words. With no ?ask=, its sample message fills the box.
+  useEffect(() => {
+    if (!pendingSkillSlug || !skills) return;
+    const match = skills.find((s) => s.slug === pendingSkillSlug);
+    setPendingSkillSlug(null);
+    if (!match) return;
+    setArmedSkill(match);
+    setInput((cur) => cur || match.ask);
+  }, [pendingSkillSlug, skills]);
+
   // Auto-scroll to the latest turn.
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -84,11 +106,26 @@ export default function ChatPage() {
 
   const doSend = useCallback(
     async (text: string) => {
-      const reply = await send(text);
+      const skill = armedSkill?.slug;
+      setArmedSkill(null);
+      const reply = await send(text, skill);
       if (reply && speakReplies) speak(reply);
     },
-    [send, speakReplies]
+    [send, speakReplies, armedSkill]
   );
+
+  // Pressing a skill button: put its sample message in the box for the person
+  // to edit, put the cursor at the end, and remember the skill for the send.
+  const pickSkill = useCallback((s: SkillRow) => {
+    setArmedSkill(s);
+    setInput(s.ask);
+    requestAnimationFrame(() => {
+      const el = inputRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(el.value.length, el.value.length);
+    });
+  }, []);
 
   const onSpeech = useCallback(
     (transcript: string) => {
@@ -261,14 +298,16 @@ export default function ChatPage() {
               key={s.name}
               type="button"
               title={s.description}
-              onClick={() => setInput(s.ask)}
-              className="mb-1 block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
+              onClick={() => pickSkill(s)}
+              className={`mb-1 block w-full rounded-md px-3 py-2 text-left text-sm hover:bg-muted ${
+                armedSkill?.slug === s.slug ? 'bg-muted font-medium' : ''
+              }`}
             >
               {s.button}
             </button>
           ))}
           <p className="px-1 pt-2 text-xs text-muted-foreground">
-            Puts the question in the box. Change it before you send it.
+            Writes a sample message in the box. Edit it, then send.
           </p>
         </aside>
       )}
@@ -279,7 +318,27 @@ export default function ChatPage() {
         onSubmit={handleSubmit}
         className="border-t border-border px-4 py-3"
       >
-        <div className="mx-auto flex max-w-2xl items-end gap-2">
+        <div className="mx-auto max-w-2xl">
+          {/* Which skill this message will use. The skill's instructions stay
+              off screen; this says it is on and lets them take it back off. */}
+          {armedSkill && (
+            <div className="mb-2 flex items-center gap-2 text-xs">
+              <span className="rounded-full bg-primary/10 px-2.5 py-1 font-medium text-primary">
+                {armedSkill.button}
+              </span>
+              <span className="text-muted-foreground">
+                Edit the message, then send.
+              </span>
+              <button
+                type="button"
+                onClick={() => setArmedSkill(null)}
+                className="text-muted-foreground underline hover:text-foreground"
+              >
+                Send without it
+              </button>
+            </div>
+          )}
+        <div className="flex items-end gap-2">
           {micSupported && (
             <button
               type="button"
@@ -296,6 +355,7 @@ export default function ChatPage() {
             </button>
           )}
           <textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -314,6 +374,7 @@ export default function ChatPage() {
           >
             {sending ? '…' : 'Send'}
           </button>
+        </div>
         </div>
       </form>
       </div>

@@ -91,6 +91,34 @@ def _skill_catalog() -> str:
     return "\n".join(lines)
 
 
+def _chosen_skill_block(slug: str, org_id: Optional[int]) -> str:
+    """The full instructions of a skill the PERSON picked, for this one message.
+
+    A skill button on a surface writes a sample message into the box and sends
+    the skill's slug alongside it. The person edits the words; the instructions
+    ride with the message instead of being pasted into it, so the box stays the
+    person's own sentence and the skill still applies. Org overlay shadows core,
+    same as everywhere else. Unknown slug -> empty string, and the model falls
+    back to the catalog like any typed question."""
+    from src.services.skill_files import core_skills_dir, org_skills_dir, read_skills
+
+    slug = (slug or "").strip()
+    if not slug:
+        return ""
+    for s in read_skills([org_skills_dir(org_id), core_skills_dir()]):
+        if slug in (s.get("slug"), s.get("name")):
+            body = (s.get("body") or "").strip()
+            if not body:
+                return ""
+            return (
+                f"**The person chose the `{s.get('name')}` skill for this message"
+                " and then wrote it in their own words. Follow these instructions"
+                " for this answer:**\n\n" + body
+            )
+    logger.warning("chosen skill not found: %s (org %s)", slug, org_id)
+    return ""
+
+
 def _serialize_blocks(content) -> List[Dict]:
     """SDK content blocks -> plain dicts for the next API call. Text and tool_use
     only: those are the block kinds an assistant turn may carry back into a
@@ -176,9 +204,15 @@ class QAService:
         instance_slug: Optional[str] = None,
         allow_tools: bool = True,
         conversation: Optional[Dict] = None,
+        skill: Optional[str] = None,
     ) -> Dict:
         """
         Answer a question based on Slack history.
+
+        skill: slug of a skill the PERSON picked (a skill button on a surface).
+            Its instructions are loaded for this message only. The model can
+            still load others itself; this just means the person already said
+            which one they want.
 
         conversation: optional descriptor of WHERE this conversation is
             happening — e.g. {"channel_type": "slack", "channel_id": "C123",
@@ -205,7 +239,7 @@ class QAService:
             return self._generate_with_thread_context(
                 question, thread_ref, source_type, author_info,
                 instance_slug=instance_slug, allow_tools=allow_tools,
-                conversation=conversation,
+                conversation=conversation, skill=skill,
             )
 
         # --- Legacy RAG path: slash commands (/ask, /askall) without thread context ---
@@ -734,6 +768,7 @@ Answer the question based on this context. Be comprehensive and include all rele
         instance_slug: Optional[str] = None,
         allow_tools: bool = True,
         conversation: Optional[Dict] = None,
+        skill: Optional[str] = None,
     ) -> Dict:
         """
         Agentic answer generation — mirrors the Claude Code pattern.
@@ -772,6 +807,13 @@ Answer the question based on this context. Be comprehensive and include all rele
                 catalog = _skill_catalog()
                 if catalog:
                     system_prompt += f"\n\n{catalog}"
+
+                # A skill the person picked themselves is loaded outright, so
+                # they never see its instructions and never have to type them.
+                if skill:
+                    chosen = _chosen_skill_block(skill, self.org_id)
+                    if chosen:
+                        system_prompt += f"\n\n{chosen}"
 
             # Get tools for this instance. allow_tools=False (public/unknown-user
             # path) offers ZERO tools, so the model structurally cannot execute
