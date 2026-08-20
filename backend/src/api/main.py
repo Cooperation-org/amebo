@@ -107,7 +107,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Startup/Shutdown events
 _goal_scheduler = None
-
+import concurrent.futures
 
 @app.on_event("startup")
 async def startup_event():
@@ -115,6 +115,9 @@ async def startup_event():
     logger.info("Starting Slack Helper Bot API...")
     DatabaseConnection.initialize_pool()
     logger.info("Database connection pool initialized")
+    # Thread pool for synchronous work dispatched from async webhook handlers
+    app.state._thread_pool = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+    logger.info("Webhook thread pool started")
     # Goal scheduler (autonomous claws). OFF unless AMEBO_GOAL_SCHEDULER=on, so
     # deploying this changes nothing until the flag is set. When on, each tick
     # sweeps every instance whose config.goal_mode == "enabled".
@@ -135,6 +138,8 @@ async def shutdown_event():
     if _goal_scheduler is not None:
         await _goal_scheduler.stop()
         _goal_scheduler = None
+    app.state._thread_pool.shutdown(wait=True)
+    logger.info("Webhook thread pool shut down")
     DatabaseConnection.close_all_connections()
     logger.info("Database connections closed")
 
@@ -166,6 +171,10 @@ async def root():
 from src.api.routes.slack_oauth import slack_events, slack_commands
 app.add_api_route("/slack/events", slack_events, methods=["POST"], tags=["Slack Events"])
 app.add_api_route("/slack/commands", slack_commands, methods=["POST"], tags=["Slack Commands"])
+
+# Taiga webhook endpoint
+from src.api.routes.taiga_webhook import router as taiga_webhook_router
+app.include_router(taiga_webhook_router)
 
 
 # Routable per-claw view (per view session 2026-06-04: every viewable thing

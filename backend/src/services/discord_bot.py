@@ -370,6 +370,31 @@ class DiscordBot(discord.Client):
         async def task(interaction: discord.Interaction, details: str):
             await self._slash_task(interaction, details)
 
+        @self.tree.command(
+            name="drop-task",
+            description="Create an equity task in Taiga (In Progress), equity paid on Done"
+        )
+        @app_commands.describe(
+            project="Taiga project slug",
+            title="Task title",
+            equity="Equity points (cook tokens)",
+            cash="Cash amount (optional)",
+            assignee="Taiga username (optional)",
+            description="Task description (optional)",
+        )
+        async def drop_task(
+            interaction: discord.Interaction,
+            project: str,
+            title: str,
+            equity: int,
+            cash: int = 0,
+            assignee: str = "",
+            description: str = "",
+        ):
+            await self._slash_drop_task(
+                interaction, project, title, equity, cash, assignee, description
+            )
+
     async def _slash_ask(self, interaction: discord.Interaction, question: str, private: bool):
         instance, org_id, policy = self.load_policy()
         if instance is None:
@@ -460,6 +485,126 @@ class DiscordBot(discord.Client):
             await interaction.followup.send(
                 f"❌ Could not create the task: {exc}", ephemeral=True
             )
+
+    async def _slash_drop_task(
+        self,
+        interaction: discord.Interaction,
+        project: str,
+        title: str,
+        equity: int,
+        cash: int,
+        assignee: str,
+        description: str,
+    ):
+        """
+        Create a Taiga task in 'In Progress' and store equity in pending_equity_tasks.
+        When Taiga fires a Done webhook, equity is distributed to the Pie via GovKit.
+        """
+        instance, org_id, policy = self.load_policy()
+        if instance is None:
+            await interaction.response.send_message(
+                "I'm not configured for this server yet.", ephemeral=True
+            )
+            return
+        if not self.in_scope(interaction.guild_id, policy.config):
+            await interaction.response.send_message(
+                "I don't serve this server.", ephemeral=True
+            )
+            return
+        if equity < 0 or cash < 0:
+            await interaction.response.send_message(
+                "Equity and cash must be zero or positive.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True, thinking=True)
+
+        govkit_org_slug = policy.config.govkit_org or ""
+
+        try:
+            result = await asyncio.to_thread(
+                _create_drop_task,
+                project=project,
+                subject=title,
+                equity=equity,
+                cash=cash,
+                assignee=assignee or None,
+                description=description or None,
+                discord_user_id=str(interaction.user.id),
+                discord_username=interaction.user.display_name,
+                org_id=org_id,
+                govkit_org_slug=govkit_org_slug,
+            )
+            await interaction.followup.send(result, ephemeral=True)
+        except Exception as exc:
+            logger.error("Discord /drop-task failed: %s", exc, exc_info=True)
+            await interaction.followup.send(
+                f"❌ Could not create the task: {exc}", ephemeral=True
+            )
+
+
+def _create_drop_task(
+    project: str,
+    subject: str,
+    equity: int,
+    cash: int,
+    assignee: Optional[str],
+    description: Optional[str],
+    discord_user_id: str,
+    discord_username: str,
+    org_id: Optional[int],
+    govkit_org_slug: str = "",
+) -> str:
+    """
+    Create a Taiga story in 'In Progress' with equity/cash tags, store in
+    pending_equity_tasks, return a confirmation string.
+    Runs in a thread pool (async-to-thread) so it does not block the gateway.
+    """
+    from src.tools.cli_read_tools import run_cli
+    from src.db.repositories.pending_equity_task_repo import PendingEquityTaskRepo
+
+    argv = ["mcp-taiga", "create", project, subject, "--status", "In Progress"]
+    if description:
+        argv += ["--description", description]
+    if assignee:
+        argv += ["--assign", assignee]
+    if equity > 0:
+        argv += ["--team", str(equity)]
+    if cash > 0:
+        argv += ["--cash", str(cash)]
+
+    out = run_cli(argv)
+    # mcp-taiga prints "Created #<ref>: ..." on success
+    if "Created #" not in out:
+        raise RuntimeError(f"Taiga task creation failed: {out.strip()}")
+
+    # Extract ref from "Created #42: ..."
+    ref_part = out.strip().split("Created #")[1].split(":")[0]
+    taiga_ref = int(ref_part)
+
+    # Store in pending equity table
+    repo = PendingEquityTaskRepo()
+    row_id = repo.create(
+        taiga_ref=taiga_ref,
+        taiga_project=project,
+        org_id=org_id or 0,
+        govkit_org_slug=govkit_org_slug,
+        discord_user_id=discord_user_id,
+        discord_username=discord_username,
+        assignee=assignee,
+        subject=subject,
+        equity=equity,
+        cash=cash,
+    )
+
+    equity_str = f"{equity} equity" if equity else ""
+    cash_str = f"${cash}" if cash else ""
+    parts = [p for p in [equity_str, cash_str] if p]
+    reward = f" + {', '.join(parts)}" if parts else ""
+    return (
+        f"✅ Task Created: [{project} #{taiga_ref}] {subject}"
+        f"{reward} — equity will be added to Pie when marked Done in Taiga."
+    )
 
 
 def build_bot() -> Optional[DiscordBot]:

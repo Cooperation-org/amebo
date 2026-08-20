@@ -752,5 +752,41 @@ COMMENT ON COLUMN message_metadata.mention_count IS 'Number of @mentions in mess
 COMMENT ON COLUMN message_metadata.link_count IS 'Number of URLs in message';
 
 -- ============================================================================
+-- PENDING EQUITY TASKS — Discord /drop-task workflow
+-- Discord creates a Taiga task in "In Progress"; when Taiga fires a Done webhook,
+-- equity is distributed to the Pie via GovKit DropLine, then this row is updated.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS pending_equity_tasks (
+    id SERIAL PRIMARY KEY,
+    taiga_ref INTEGER NOT NULL,
+    taiga_project VARCHAR(100) NOT NULL,
+    org_id INTEGER NOT NULL,
+    govkit_org_slug VARCHAR(64) NOT NULL DEFAULT '',  -- resolved at create time
+    discord_user_id VARCHAR(50) NOT NULL,
+    discord_username VARCHAR(100),
+    assignee VARCHAR(100),                          -- Taiga username who does the work
+    subject VARCHAR(500) NOT NULL,
+    equity INTEGER NOT NULL DEFAULT 0,             -- cook/team tokens (Pie points)
+    cash INTEGER NOT NULL DEFAULT 0,               -- cash amount (paid out separately)
+    status VARCHAR(20) NOT NULL DEFAULT 'in_progress',
+    -- status: in_progress | done | failed | cancelled
+    govkit_membership_id INTEGER,                  -- set after distribution
+    drop_run_id INTEGER,                            -- set after distribution
+    drop_line_id INTEGER,                           -- set after distribution
+    error TEXT,
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX idx_pet_taiga ON pending_equity_tasks(taiga_project, taiga_ref);
+CREATE INDEX idx_pet_org ON pending_equity_tasks(org_id);
+CREATE INDEX idx_pet_status ON pending_equity_tasks(status);
+
+COMMENT ON TABLE pending_equity_tasks IS 'Tracks Discord /drop-task equity pending Taiga Done webhook';
+COMMENT ON COLUMN pending_equity_tasks.equity IS 'Cook/team tokens — added to Pie on task Done';
+COMMENT ON COLUMN pending_equity_tasks.cash IS 'Cash amount — logged but not added to Pie';
+
+-- ============================================================================
 -- END OF SCHEMA
 -- ============================================================================
