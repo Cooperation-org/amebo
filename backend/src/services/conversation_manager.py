@@ -87,9 +87,10 @@ class ConversationManager:
             instance_id=self._instance['id'] if self._instance else None
         )
 
-        # Opportunistic GC: clean up stale threads (cheap single-query DELETE)
+        # Opportunistic GC: clean up stale threads (cheap single-query DELETE).
+        # How long they live is thread_repo.THREAD_RETENTION_DAYS, not a number here.
         try:
-            self._thread_repo.garbage_collect(stale_hours=24)
+            self._thread_repo.garbage_collect()
         except Exception:
             pass  # GC failure is non-critical
 

@@ -35,14 +35,16 @@ from psycopg2 import extras
 
 from src.db.connection import DatabaseConnection
 from src.db.abra_connection import AbraConnection
+from src.db.repositories.thread_repo import THREAD_RETENTION_DAYS
 from src.services.state_decay.policy import GcPolicy, GcReport, default_registry
 
 logger = logging.getLogger(__name__)
 
 
-# Default TTLs. Threads decay fast (mirrors the existing 24h opportunistic GC
-# in conversation_manager); audit is kept long; abra working memory is medium.
-THREAD_TTL = timedelta(hours=24)
+# Default TTLs. Threads use the same retention the opportunistic GC in
+# thread_repo uses — one number, so the two paths can never disagree about
+# when a conversation dies. Audit is kept long; abra working memory is medium.
+THREAD_TTL = timedelta(days=THREAD_RETENTION_DAYS)
 GOAL_EVENTS_TTL = timedelta(days=365)
 ABRA_WORKING_MEMORY_TTL = timedelta(days=30)
 

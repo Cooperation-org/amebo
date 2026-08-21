@@ -10,6 +10,13 @@ from src.db.connection import DatabaseConnection
 
 logger = logging.getLogger(__name__)
 
+# How long a conversation stays before GC deletes it. Both paths that delete
+# threads use this: the opportunistic DELETE below, and ThreadStorePolicy in
+# state_decay (which converts it to a timedelta). Golda 2026-08-21: 30 days,
+# not 24 hours — a person comes back to a conversation days later and it has
+# to still be there.
+THREAD_RETENTION_DAYS = 30
+
 
 class ThreadRepo:
 
@@ -129,23 +136,23 @@ class ThreadRepo:
         finally:
             DatabaseConnection.return_connection(conn)
 
-    def garbage_collect(self, stale_hours: int = 24) -> int:
+    def garbage_collect(self, stale_days: int = THREAD_RETENTION_DAYS) -> int:
         """
         Delete threads (and their turns) that haven't been active
-        within stale_hours. Returns count of deleted threads.
+        within stale_days. Returns count of deleted threads.
         """
         conn = DatabaseConnection.get_connection()
         try:
             with conn.cursor() as cur:
                 cur.execute("""
                     DELETE FROM threads
-                    WHERE last_active_at < NOW() - INTERVAL '%s hours'
+                    WHERE last_active_at < NOW() - (%s * INTERVAL '1 day')
                     RETURNING id
-                """, (stale_hours,))
+                """, (stale_days,))
                 deleted = cur.rowcount
                 conn.commit()
                 if deleted:
-                    logger.info(f"GC: deleted {deleted} stale threads (>{stale_hours}h)")
+                    logger.info(f"GC: deleted {deleted} stale threads (>{stale_days}d)")
                 return deleted
         finally:
             DatabaseConnection.return_connection(conn)
