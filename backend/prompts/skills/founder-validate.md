@@ -1,8 +1,8 @@
 ---
 name: founder-validate
-description: Help a cohort founder tell real demand from politeness and decide keep, change, or drop. Use for "is this validated", "do we have product market fit", "how do I know if this is working", "should we pivot", and the dashboard items build.smallest and money.first-yes.
+description: 'Help a cohort founder tell real demand from politeness and decide keep, change, or drop. Use for "is this validated", "do we have product market fit", "how do I know if this is working", "should we pivot", and the dashboard items iterate.meeting, build.update-goals-tasks and iterate.update-goals-tasks.'
 audience: founder
-order: 90
+order: 70
 button: Is this working
 ask: Look at what we have heard so far and tell me straight. Keep, change, or drop?
 ---

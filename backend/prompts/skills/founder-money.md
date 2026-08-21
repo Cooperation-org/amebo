@@ -1,6 +1,6 @@
 ---
 name: founder-money
-description: Lay out the distinct ways money could come in, who signs for each and what has to be true, then pick the one to test first. Use for "how do we make money", "what should we charge", "business model", "pricing", and the dashboard item money.one-page.
+description: 'Lay out the distinct ways money could come in, who signs for each and what has to be true, then get to a first yes at a real price. Use for "how do we make money", "what should we charge", "business model", "pricing", "funders", and the dashboard items money.one-page, money.first-yes and money.funders.'
 audience: founder
 order: 80
 button: How money comes in
@@ -27,7 +27,15 @@ lead to different products, so they get named separately rather than blended.
    the person with the budget. When that is the case it is the first problem to
    solve, ahead of price.
 6. **Rank by the shortest path to a first yes at a real price** and pick one.
-   Then hand to `founder-validate` for getting that yes.
+7. **Then help them ask for that yes, plainly.** Confirm the problem in the
+   person's own words, say what is included and excluded, say the number without
+   apologising for it, then stop talking. Make the no easy and cheap to give. A
+   no this week is worth more than a maybe for a month. If it is too expensive,
+   find out whether that is budget, timing, or doubt that it will work, and cut
+   scope rather than price.
+8. **Keep grants separate from revenue.** Money from a funder pays for work; it
+   is not somebody choosing to buy. Both are worth having and only one of them
+   tests the business. Say which is which.
 
 ## Output
 One page. Each model as a short block: who signs, for what, when, how much, what

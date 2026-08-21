@@ -2,8 +2,6 @@
 name: founder-partner-map
 description: Map the organisations that could carry this venture to people, and the places those people already are, as a durable file in the org's own repo. Use for "who could partner with us", "who are our channels", "who else should we be talking to", "who could take this to market", "map our ecosystem".
 audience: founder
-order: 75
-button: Who could carry this
 ask: Map the partners and channels for us — who could carry this to people, and where those people already are. Write it into our repo.
 ---
 A partner is an organisation that already has the people you want and a reason

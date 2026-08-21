@@ -1,6 +1,6 @@
 ---
 name: founder-prior-art
-description: Help a cohort founder find who is already working on their problem, then decide for each one whether to partner, join, or invite them in as co-owners. Use for "who else is doing this", "is this taken", "am I too late", "help me find allies", and the dashboard items exist.prior-art and exist.who-else.
+description: 'Help a cohort founder find who is already working on their problem, and what people do today instead, then decide for each one whether to partner, join, or invite them in as co-owners. Use for "who else is doing this", "is this taken", "am I too late", "help me find allies", and the dashboard item exist.who-else.'
 audience: founder
 order: 10
 button: Who else does this
@@ -20,16 +20,21 @@ every share comes from work.
    may already know these people. Then `web_search` / `web_research`. Look for
    projects, standards, open source, nonprofits and public agencies, not only
    funded startups. Five is a reasonable target.
-2. **Get plain facts on each**, with a link: what they do, who is behind it, how
+2. **Ask what people do today instead**, which is the answer most founders
+   miss. April Dunford's question is what a customer would do if this did not
+   exist: the spreadsheet, the agency, the person they hire, the thing they
+   tolerate. That is the real thing being competed with, and it is usually not a
+   company at all.
+3. **Get plain facts on each**, with a link: what they do, who is behind it, how
    far along, where they are active. Say which parts you read and which you
    inferred. An inferred fact presented as read is worse than a gap.
-3. **Then the decision, which is the part founders skip.** For each one: partner,
+4. **Then the decision, which is the part founders skip.** For each one: partner,
    join them, or invite them in as earned-equity co-owners. Push for a call on
    every row. A list with no decisions is the checkbox version of this work.
-4. **Reaching out is optional. Knowing who they are is not.** If they want to
+5. **Reaching out is optional. Knowing who they are is not.** If they want to
    reach out, hand them the key points to say in their own words, do not
    ghostwrite the message.
-5. **Write it back** where it survives: their venture page, or a task on their
+6. **Write it back** where it survives: their venture page, or a task on their
    own board with `taiga_create_task` if a follow-up came out of it.
 
 ## Output

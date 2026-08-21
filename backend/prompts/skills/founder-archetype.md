@@ -1,23 +1,25 @@
 ---
 name: founder-archetype
-description: Turn "everyone" into one sharp archetype and a short list of named people to put the demo in front of this week. Use for "who should I demo to", "who is this for", "who do I show it to", "we need feedback", and the dashboard items who.three-people and build.in-front-of-user.
+description: 'Turn "everyone" into one sharp archetype in a situation, and a short list of named, reachable people. Use for "who is this for", "who should I demo to", "who do I show it to", "we need feedback", and the dashboard items who.what-problem, who.three-people and who.expand-crm.'
 audience: founder
-order: 40
-button: Who to demo to
-ask: Who exactly should I put this in front of this week, by name?
+order: 30
+button: Who has this problem
+ask: 'Who exactly has this problem, and which three real people do I go to first?'
 ---
 The point is a person watching the thing run and telling the founder where it
 stopped making sense. Everything here serves that.
 
 ## What to do
-1. **Ask what runs today, who has seen it, and what happened.** If there is
-   nothing to show yet, say so and go to `founder-value-prop` instead. Demos of a
-   roadmap teach nobody anything.
+1. **Ask who they have already talked to and what happened.** This runs whether
+   or not anything is built. If something does run, find out who has seen it; if
+   nothing does, the archetype is still the next thing to get right, and the
+   sharper it is the smaller the first build gets.
 2. **Write the archetype as a person in a situation.** Their role, what they are
    trying to get done, what they do instead today, and the moment they would go
    looking for something else. "Small clinics" is a segment. "The office manager
    at a two-doctor clinic who rebuilds the schedule by hand every Monday" is an
-   archetype.
+   archetype. Christensen's version of the same test: name the circumstance that
+   makes somebody go looking, not the demographic they belong to.
 3. **Name five real people who fit.** `abra_search` and the CRM first, since the
    team may already know some. Then `web_search` for where that work is discussed
    in public. Link each one. Say which facts you read and which you inferred.

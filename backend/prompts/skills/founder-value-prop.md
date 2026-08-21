@@ -1,6 +1,6 @@
 ---
 name: founder-value-prop
-description: Get a cohort founder to one sentence saying what they make and who it is for, and turn that sentence into a guess that can be tested. Use for "what is my value proposition", "how do I explain what we do", "is this pitch clear", "help me describe my startup", and the dashboard item exist.one-sentence.
+description: 'Get a cohort founder to one sentence saying what they make and who it is for, and turn that sentence into a guess that can be tested. Use for "what is my value proposition", "how do I explain what we do", "is this pitch clear", "help me describe my startup", and the dashboard items exist.profile and who.what-problem.'
 audience: founder
 order: 20
 button: Say what this is

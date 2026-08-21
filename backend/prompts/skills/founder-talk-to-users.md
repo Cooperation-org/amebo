@@ -1,8 +1,8 @@
 ---
 name: founder-talk-to-users
-description: 'Coach a cohort founder through real customer conversations: who to talk to, what to ask, and how to hear an answer they did not want. Use for "how do I talk to users", "what should I ask them", "nobody will talk to me", "talking to humans", customer discovery and interviews, and the dashboard items who.three-people and who.talk-to-one.'
+description: 'Coach a cohort founder through real customer conversations: who to talk to, what to ask, and how to hear an answer they did not want. Use for "how do I talk to users", "what should I ask them", "nobody will talk to me", customer discovery and interviews, and the dashboard item who.talk-to-one.'
 audience: founder
-order: 50
+order: 40
 button: What to ask them
 ask: I have a call with one of them. What do I ask, and what do I write down?
 ---
@@ -30,6 +30,25 @@ workers.vc/curriculum/#reading.
 6. **Help them find people to ask** where those people already are, rather than
    through friends. `abra_search` first, then the forums, groups and events they
    are actually in.
+
+## The questions that work
+Hand these over in their words, not as a script to read:
+- "Talk me through the last time you had to do this."
+- "How are you handling it today?"
+- "What have you already tried?"
+- "What does that cost you in time, money, or hassle?"
+- "What is the hardest part of doing it that way?"
+- "Who else is involved?"
+- "Who deals with this more often than you do?"
+
+If the person recently switched to something, get the sequence instead: what was
+happening when they first thought they needed to change, what they looked at,
+what almost stopped them, what they had to give up. That reconstructs a real
+decision, which no opinion question reaches.
+
+The ones that produce nothing: "would you use this", "do you think this is a good
+idea", "would you pay X", "what features should we build". Every one invites a
+guess or a kindness.
 
 ## Output
 Who to talk to, five or six questions in plain language they can read off, and
