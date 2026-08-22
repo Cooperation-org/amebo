@@ -706,3 +706,4 @@ TAIGA_LIST_SCHEMA = {
     },
     "required": ["project"],
 }
+

@@ -7,11 +7,15 @@
 # tool for this verified-personal session.
 #
 # Model/provider are decoupled from the mode — override any of these:
-#   AMEBO_CLI_PROVIDER   llm provider for THIS process (default: anthropic)
-#   AMEBO_CLI_MODEL      model id            (default: claude-opus-4-8)
+#   AMEBO_CLI_PROVIDER   llm provider for THIS process (default: minimax)
+#   AMEBO_CLI_MODEL      model id; under provider=minimax the served model is
+#                        MINIMAX_MODEL from .env (currently MiniMax-M3) and this
+#                        is ignored — it takes effect under provider=anthropic.
 #   AMEBO_CLI_SESSION    thread name; reuse to resume a conversation
 #   AMEBO_CLI_INSTANCE   amebo instance slug (default: whatscookin)
 # The running Slack service is untouched — these apply only to this shell.
+# Opus needs Anthropic API credits (a Max subscription cannot fund the API):
+#   AMEBO_CLI_PROVIDER=anthropic AMEBO_CLI_MODEL=claude-opus-4-8 amebo
 #
 # Usage:  amebo
 set -euo pipefail
@@ -19,12 +23,11 @@ set -euo pipefail
 BACKEND="/opt/shared/repos/amebo/backend"
 cd "$BACKEND"
 
-# Load service env (DB creds, API keys) without clobbering caller overrides.
-if [ -f .env ]; then set -a; . ./.env; set +a; fi
-
+# .env (DB creds, API keys) is loaded by the app via python-dotenv from this
+# cwd — not sourced in bash, which chokes on values with spaces (e.g. Gmail app
+# passwords). Caller env still wins: python-dotenv does not override existing vars.
 export AMEBO_PERSONAL_MODE=1
 export AMEBO_PERSONAL_UID="$(id -u)"
-export AMEBO_CLI_PROVIDER="${AMEBO_CLI_PROVIDER:-anthropic}"
-export AMEBO_CLI_MODEL="${AMEBO_CLI_MODEL:-claude-opus-4-8}"
+export AMEBO_CLI_PROVIDER="${AMEBO_CLI_PROVIDER:-minimax}"
 
 exec ./venv/bin/python -m src.personal.repl

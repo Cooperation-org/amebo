@@ -46,7 +46,7 @@ _SHELL_NOTE = (
 # The personal session's tool set: shell + amebo's safe read tools.
 _PERSONAL_TOOLS = [
     "shell", "list_projects", "read_main_md", "search_knowledge_base",
-    "abra_search", "lookup_contact",
+    "abra_search", "lookup_contact", "web_search", "web_research",
 ]
 
 # Tool rounds allowed within a single turn before we force an answer.
