@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# amebo — talk to amebo in your terminal, like claude on the command line.
+#
+# Same conversation core as the Slack path (ConversationManager): stable cached
+# system prefix, rolling cache breakpoints, turns persisted verbatim so the
+# prompt-cache prefix hits, compaction past the token threshold. Plus a `shell`
+# tool for this verified-personal session.
+#
+# Model/provider are decoupled from the mode — override any of these:
+#   AMEBO_CLI_PROVIDER   llm provider for THIS process (default: anthropic)
+#   AMEBO_CLI_MODEL      model id            (default: claude-opus-4-8)
+#   AMEBO_CLI_SESSION    thread name; reuse to resume a conversation
+#   AMEBO_CLI_INSTANCE   amebo instance slug (default: whatscookin)
+# The running Slack service is untouched — these apply only to this shell.
+#
+# Usage:  amebo
+set -euo pipefail
+
+BACKEND="/opt/shared/repos/amebo/backend"
+cd "$BACKEND"
+
+# Load service env (DB creds, API keys) without clobbering caller overrides.
+if [ -f .env ]; then set -a; . ./.env; set +a; fi
+
+export AMEBO_PERSONAL_MODE=1
+export AMEBO_PERSONAL_UID="$(id -u)"
+export AMEBO_CLI_PROVIDER="${AMEBO_CLI_PROVIDER:-anthropic}"
+export AMEBO_CLI_MODEL="${AMEBO_CLI_MODEL:-claude-opus-4-8}"
+
+exec ./venv/bin/python -m src.personal.repl
