@@ -519,6 +519,28 @@ class DiscordBot(discord.Client):
 
         await interaction.response.defer(ephemeral=True, thinking=True)
 
+        # Guard: the runner must be enrolled in GovKit. amebo owns no identity
+        # — GovKit's Membership row is the one home of the discord_user_id →
+        # taiga_username map, and the Taiga Done webhook resolves equity by
+        # taiga_username. A speaker GovKit does not know would create a Taiga
+        # story with no Membership to credit on Done, and the webhook would
+        # fail there. Refuse here so the user gets the instruction, not a
+        # late error.
+        speaker = policy.identify(
+            discord_user_id=str(interaction.user.id),
+            display_name=interaction.user.display_name,
+            role_names=[r.name for r in getattr(interaction.user, "roles", [])],
+        )
+        ok, assignee = _drop_task_guard(speaker, assignee)
+        if not ok:
+            await interaction.followup.send(
+                "I don't have you in the cohort's member list yet. "
+                "Ask a steward to add your Discord id to your GovKit "
+                "membership (Settings → Profile → Discord), then run this again.",
+                ephemeral=True,
+            )
+            return
+
         govkit_org_slug = policy.config.govkit_org or ""
 
         try:
@@ -541,6 +563,28 @@ class DiscordBot(discord.Client):
             await interaction.followup.send(
                 f"❌ Could not create the task: {exc}", ephemeral=True
             )
+
+
+def _drop_task_guard(speaker: Speaker, requested_assignee: str) -> Tuple[bool, str]:
+    """
+    Apply the /drop-task speaker guard.
+
+    Returns (ok, effective_assignee):
+      ok=False — refuse the command; caller sends an ephemeral explainer.
+      ok=True  — proceed; effective_assignee is what to pass to Taiga
+                 (the speaker's mapped taiga_username if the caller did not
+                 name one, else the caller's value verbatim).
+
+    The map lives in GovKit; amebo only reads it. A speaker GovKit does not
+    know — whether because they have not been enrolled or because GovKit is
+    unreachable — is refused here so the failure surfaces as a clear
+    instruction rather than as a Done-webhook error hours later.
+    """
+    if not speaker.known:
+        return False, ""
+    if not requested_assignee and speaker.member and speaker.member.taiga_username:
+        return True, speaker.member.taiga_username
+    return True, requested_assignee
 
 
 def _create_drop_task(
