@@ -531,14 +531,9 @@ class DiscordBot(discord.Client):
             display_name=interaction.user.display_name,
             role_names=[r.name for r in getattr(interaction.user, "roles", [])],
         )
-        ok, assignee = _drop_task_guard(speaker, assignee)
-        if not ok:
-            await interaction.followup.send(
-                "I don't have you in the cohort's member list yet. "
-                "Ask a steward to add your Discord id to your GovKit "
-                "membership (Settings → Profile → Discord), then run this again.",
-                ephemeral=True,
-            )
+        refusal, assignee = _drop_task_guard(speaker, assignee)
+        if refusal:
+            await interaction.followup.send(refusal, ephemeral=True)
             return
 
         govkit_org_slug = policy.config.govkit_org or ""
@@ -565,26 +560,42 @@ class DiscordBot(discord.Client):
             )
 
 
-def _drop_task_guard(speaker: Speaker, requested_assignee: str) -> Tuple[bool, str]:
+def _drop_task_guard(speaker: Speaker, requested_assignee: str) -> Tuple[str, str]:
     """
     Apply the /drop-task speaker guard.
 
-    Returns (ok, effective_assignee):
-      ok=False — refuse the command; caller sends an ephemeral explainer.
-      ok=True  — proceed; effective_assignee is what to pass to Taiga
-                 (the speaker's mapped taiga_username if the caller did not
-                 name one, else the caller's value verbatim).
+    Returns (refusal_message, effective_assignee):
+      refusal_message non-empty — refuse the command; caller sends it as an
+        ephemeral explainer. The bot does NOT proceed to Taiga.
+      refusal_message "" — proceed; effective_assignee is what to pass to
+        Taiga (the speaker's mapped taiga_username if the caller did not
+        name one, else the caller's value verbatim).
 
-    The map lives in GovKit; amebo only reads it. A speaker GovKit does not
-    know — whether because they have not been enrolled or because GovKit is
-    unreachable — is refused here so the failure surfaces as a clear
-    instruction rather than as a Done-webhook error hours later.
+    The map lives in GovKit; amebo only reads it. Two reasons to refuse:
+      (a) the speaker is not enrolled in GovKit at all (no Membership row
+          keyed on this discord_user_id);
+      (b) the speaker IS enrolled but Membership.taiga_username is empty —
+          the Done webhook would fail at the membership lookup.
+    Both surface as a clear instruction at slash time instead of an opaque
+    error hours later on the webhook.
     """
     if not speaker.known:
-        return False, ""
-    if not requested_assignee and speaker.member and speaker.member.taiga_username:
-        return True, speaker.member.taiga_username
-    return True, requested_assignee
+        return (
+            "I don't have you in the cohort's member list yet. "
+            "Ask a steward to add your Discord id to your GovKit "
+            "membership (Settings → Profile → Discord), then run this again.",
+            "",
+        )
+    if not speaker.member.taiga_username:
+        return (
+            "You're in the cohort but your GovKit profile doesn't have a "
+            "Taiga username linked yet. Ask an admin (Golda) to set your "
+            "Taiga username in your GovKit profile, then run this again.",
+            "",
+        )
+    if not requested_assignee:
+        return "", speaker.member.taiga_username
+    return "", requested_assignee
 
 
 def _create_drop_task(
