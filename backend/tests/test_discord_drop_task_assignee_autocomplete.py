@@ -42,15 +42,42 @@ async def test_assignee_autocomplete_returns_project_usernames():
 
 
 @pytest.mark.asyncio
-async def test_assignee_autocomplete_empty_project_returns_empty_list():
-    """No project → no sensible global assignee list; nudge the user to pick one."""
+async def test_assignee_autocomplete_empty_project_defaults_to_vc():
+    """Discord does not send the slash command's default for an optional
+    `project` in autocomplete interactions. Mirror the slash default ('vc')
+    so the dropdown keeps working when the user skips project."""
     bot = DiscordBot(instance_slug="test")
-    choices = await _run(bot, project="")
-    assert choices == []
-    # CLI should not have been invoked at all.
-    with patch("src.tools.cli_read_tools.run_cli") as fake_cli:
-        await _run(bot, project="")
-        fake_cli.assert_not_called()
+    members_json = json.dumps([{"id": 1, "username": "alice"}])
+    with patch("src.tools.cli_read_tools.run_cli", return_value=members_json) as fake_cli:
+        choices = await _run(bot, project="")
+    assert [c.name for c in choices] == ["alice"]
+    # Verify the CLI was called with the default project, not an empty arg.
+    fake_cli.assert_called_once()
+    argv = fake_cli.call_args[0][0]
+    assert argv == ["mcp-taiga", "members", "vc", "--json"]
+
+
+@pytest.mark.asyncio
+async def test_status_autocomplete_empty_project_defaults_to_vc():
+    """Same fix for status autocomplete — Discord omits the default value, so
+    the handler must default it itself or it falls back to the hardcoded
+    Taiga defaults even when the user really meant `vc`."""
+    bot = DiscordBot(instance_slug="test")
+    statuses = json.dumps([
+        {"id": 1, "name": "New"},
+        {"id": 2, "name": "In Progress"},
+        {"id": 3, "name": "Ready for Test"},
+        {"id": 4, "name": "Done"},
+    ])
+    with patch("src.tools.cli_read_tools.run_cli", return_value=statuses) as fake_cli:
+        choices = await bot._status_autocomplete(_interaction(project=""), current="")
+    # Real vc project statuses (whatever mcp-taiga returns), not the hardcoded
+    # fallback list. Assert the CLI was called with the default project.
+    fake_cli.assert_called_once()
+    argv = fake_cli.call_args[0][0]
+    assert argv == ["mcp-taiga", "statuses", "vc", "--json"]
+    # The result is the four statuses we stubbed (whatever a real vc project has).
+    assert {c.name for c in choices} == {"New", "In Progress", "Ready for Test", "Done"}
 
 
 @pytest.mark.asyncio

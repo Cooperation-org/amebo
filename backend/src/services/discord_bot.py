@@ -376,7 +376,7 @@ class DiscordBot(discord.Client):
             description="Create an equity task in Taiga (In Progress), equity paid on Done"
         )
         @app_commands.describe(
-            project="Taiga project slug (defaults to vc)",
+            project=f"Taiga project slug (defaults to {_DEFAULT_PROJECT})",
             title="Task title",
             equity="Equity points (cook tokens)",
             cash="Cash amount (optional)",
@@ -393,7 +393,7 @@ class DiscordBot(discord.Client):
             interaction: discord.Interaction,
             title: str,
             equity: int,
-            project: str = "vc",
+            project: str = _DEFAULT_PROJECT,
             cash: int = 0,
             assignee: str = "",
             description: str = "",
@@ -595,10 +595,16 @@ class DiscordBot(discord.Client):
         """
         from src.tools.cli_read_tools import run_cli
 
-        project = ""
+        # Discord does not send the slash command's default value for an
+        # optional `project` in autocomplete interactions — the field is just
+        # absent until the user touches it. Mirror the slash command's default
+        # ("vc") so the dropdown is never empty when the user skips project.
+        project = _DEFAULT_PROJECT
         for opt in (interaction.data.options or []):
             if opt.name == "project":
-                project = str(opt.value or "").strip()
+                typed = str(opt.value or "").strip()
+                if typed:
+                    project = typed
 
         fallback = [
             app_commands.Choice(name=n, value=n) for n in _DEFAULT_STATUSES
@@ -651,15 +657,18 @@ class DiscordBot(discord.Client):
         """
         from src.tools.cli_read_tools import run_cli
 
-        project = ""
+        # Mirror the slash command's default ("vc") so the autocomplete fires
+        # even when the user hasn't filled in project yet.
+        project = _DEFAULT_PROJECT
         for opt in (interaction.data.options or []):
             if opt.name == "project":
-                project = str(opt.value or "").strip()
+                typed = str(opt.value or "").strip()
+                if typed:
+                    project = typed
 
         if not project:
-            # No project to filter by; an empty dropdown nudges the user to
-            # pick a project first. There is no sensible global "default
-            # assignee" set the way there is for status names.
+            # Defensive: _DEFAULT_PROJECT is always non-empty, but keep the
+            # guard so the call site stays obviously safe.
             return []
 
         try:
@@ -694,6 +703,12 @@ class DiscordBot(discord.Client):
 # project, so the dropdown is never empty. mcp-taiga resolves these to IDs at
 # create time via get_status_id — we never hardcode the numeric IDs here.
 _DEFAULT_STATUSES = ("New", "In Progress", "Ready for Test", "Done")
+
+# Default Taiga project. Used by the slash command (project defaults to this)
+# AND by the autocomplete handlers — Discord does NOT send the slash
+# command's default value for optional parameters in autocomplete interactions,
+# so the handlers must default it themselves or the dropdown breaks.
+_DEFAULT_PROJECT = "vc"
 
 
 def _drop_task_guard(speaker: Speaker, requested_assignee: str) -> Tuple[str, str]:
