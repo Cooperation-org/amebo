@@ -138,3 +138,80 @@ async def test_status_autocomplete_still_works():
     with patch("src.tools.cli_read_tools.run_cli", return_value=statuses):
         choices = await bot._status_autocomplete(_interaction(project="vc"), current="")
     assert [c.name for c in choices] == ["New", "Done"]
+
+# ---------------------------------------------------------------------------
+# project autocomplete
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_project_autocomplete_lists_slugs():
+    """`mcp-taiga projects --json` rows become Choices whose value is the slug
+    and whose label carries the human name."""
+    bot = DiscordBot(instance_slug="test")
+    projects = json.dumps([
+        {"id": 1, "slug": "vc", "name": "vc"},
+        {"id": 2, "slug": "amebo", "name": "Amebo"},
+    ])
+    with patch("src.tools.cli_read_tools.run_cli", return_value=projects) as fake_cli:
+        choices = await bot._project_autocomplete(_interaction(), current="")
+    assert [c.value for c in choices] == ["vc", "amebo"]
+    assert [c.name for c in choices] == ["vc (vc)", "Amebo (amebo)"]
+    assert fake_cli.call_args[0][0] == ["mcp-taiga", "projects", "--json"]
+
+
+@pytest.mark.asyncio
+async def test_project_autocomplete_narrows_on_typed_text():
+    """Discord does not filter the Choices we return, so the handler must."""
+    bot = DiscordBot(instance_slug="test")
+    projects = json.dumps([
+        {"id": 1, "slug": "vc", "name": "vc"},
+        {"id": 2, "slug": "amebo", "name": "Amebo"},
+        {"id": 3, "slug": "govkit", "name": "GovKit"},
+    ])
+    with patch("src.tools.cli_read_tools.run_cli", return_value=projects):
+        choices = await bot._project_autocomplete(_interaction(), current="kit")
+    assert [c.value for c in choices] == ["govkit"]
+
+
+@pytest.mark.asyncio
+async def test_project_autocomplete_caps_at_25():
+    bot = DiscordBot(instance_slug="test")
+    projects = [{"id": i, "slug": f"p{i}", "name": f"P{i}"} for i in range(40)]
+    with patch("src.tools.cli_read_tools.run_cli", return_value=json.dumps(projects)):
+        choices = await bot._project_autocomplete(_interaction(), current="")
+    assert len(choices) == 25
+
+
+@pytest.mark.asyncio
+async def test_project_autocomplete_failure_returns_default_sentinel():
+    """Never an empty list — Discord shows that as "Loading options failed"."""
+    bot = DiscordBot(instance_slug="test")
+    for out in ("Error: no such command", "not json at all", "[]"):
+        with patch("src.tools.cli_read_tools.run_cli", return_value=out):
+            choices = await bot._project_autocomplete(_interaction(), current="")
+        assert len(choices) == 1, out
+        assert choices[0].value == "vc"
+
+
+@pytest.mark.asyncio
+async def test_project_autocomplete_no_match_returns_sentinel():
+    bot = DiscordBot(instance_slug="test")
+    projects = json.dumps([{"id": 1, "slug": "vc", "name": "vc"}])
+    with patch("src.tools.cli_read_tools.run_cli", return_value=projects):
+        choices = await bot._project_autocomplete(_interaction(), current="zzz")
+    assert len(choices) == 1
+    assert choices[0].value == "vc"
+
+
+@pytest.mark.asyncio
+async def test_assignee_autocomplete_narrows_on_typed_text():
+    """A project with more than 25 members needs the typed text applied
+    BEFORE the cap, or the tail of the member list is unreachable."""
+    bot = DiscordBot(instance_slug="test")
+    members = [{"id": i, "username": f"user{i}"} for i in range(40)]
+    with patch("src.tools.cli_read_tools.run_cli", return_value=json.dumps(members)):
+        choices = await bot._assignee_autocomplete(
+            _interaction(project="vc"), current="user39"
+        )
+    assert [c.value for c in choices] == ["user39"]

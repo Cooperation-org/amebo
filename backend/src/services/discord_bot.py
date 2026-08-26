@@ -376,7 +376,7 @@ class DiscordBot(discord.Client):
             description="Create an equity task in Taiga (In Progress), equity paid on Done"
         )
         @app_commands.describe(
-            project=f"Taiga project slug (defaults to {_DEFAULT_PROJECT})",
+            project=f"Taiga project slug (autocompletes; defaults to {_DEFAULT_PROJECT})",
             title="Task title",
             equity="Equity points (cook tokens)",
             cash="Cash amount (optional)",
@@ -386,6 +386,7 @@ class DiscordBot(discord.Client):
             status="Task status (autocompletes from project)",
         )
         @app_commands.autocomplete(
+            project=self._project_autocomplete,
             status=self._status_autocomplete,
             assignee=self._assignee_autocomplete,
         )
@@ -583,6 +584,59 @@ class DiscordBot(discord.Client):
                 f"❌ Could not create the task: {exc}", ephemeral=True
             )
 
+    async def _project_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> List[app_commands.Choice[str]]:
+        """
+        Slash option autocomplete for `project`. Asks `mcp-taiga projects
+        --json` for the projects the bot's Taiga login can see and returns up
+        to 25 slug Choices, narrowed by whatever the user has typed so far.
+        The label carries the project name so a slug like `vc` is readable;
+        the value is the slug, which is what the command and the other two
+        autocomplete handlers take.
+
+        Same never-empty rule as the assignee handler: Discord renders an
+        empty autocomplete list as "Loading options failed", so every failure
+        branch returns a single sentinel Choice whose value is the default
+        project.
+        """
+        from src.tools.cli_read_tools import run_cli
+
+        fallback = [
+            app_commands.Choice(name=n, value=v) for n, v in _DEFAULT_PROJECTS
+        ]
+
+        try:
+            out = await asyncio.to_thread(
+                run_cli, ["mcp-taiga", "projects", "--json"], 5
+            )
+        except Exception as exc:
+            logger.warning("project autocomplete failed: %s", exc)
+            return fallback
+
+        if not out or not out.lstrip().startswith("["):
+            return fallback
+        try:
+            rows = json.loads(out)
+        except json.JSONDecodeError:
+            return fallback
+
+        pairs = [
+            (r.get("slug"), r.get("name") or r.get("slug"))
+            for r in rows
+            if isinstance(r, dict) and r.get("slug")
+        ]
+        pairs = _narrow(pairs, current, key=lambda p: f"{p[0]} {p[1]}")
+        if not pairs:
+            return fallback
+
+        # Discord caps autocomplete at 25 choices and choice labels at 100
+        # chars. Label is "name (slug)" so the slug stays visible.
+        return [
+            app_commands.Choice(name=f"{name} ({slug})"[:100], value=slug[:100])
+            for slug, name in pairs[:25]
+        ]
+
     async def _status_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> List[app_commands.Choice[str]]:
@@ -706,6 +760,10 @@ class DiscordBot(discord.Client):
             for r in rows
             if isinstance(r, dict) and r.get("username")
         ]
+        # A project with more than 25 members would otherwise have the tail of
+        # the list silently cut off with no way to reach it, so narrow by what
+        # the user has typed before the cap applies.
+        names = _narrow(names, current)
         if not names:
             return fallback
 
@@ -714,6 +772,20 @@ class DiscordBot(discord.Client):
         return [
             app_commands.Choice(name=n[:100], value=n[:100]) for n in names[:25]
         ]
+
+
+def _narrow(items, current, key=None):
+    """Keep the items whose text contains `current` (case-insensitive).
+
+    Discord sends the partially-typed value as `current` and does NOT filter
+    the Choices we return, so a list longer than the 25-choice cap needs this
+    or its tail is unreachable. An empty `current` keeps everything.
+    """
+    typed = (current or "").strip().lower()
+    if not typed:
+        return list(items)
+    text = key or (lambda i: str(i))
+    return [i for i in items if typed in text(i).lower()]
 
 
 # Taiga's default user-story status names (New, In Progress, Ready for Test,
@@ -736,6 +808,14 @@ _DEFAULT_ASSIGNEES: Tuple[Tuple[str, str], ...] = (
 # command's default value for optional parameters in autocomplete interactions,
 # so the handlers must default it themselves or the dropdown breaks.
 _DEFAULT_PROJECT = "vc"
+
+# Sentinel shown in the project dropdown when the project list could not be
+# read (CLI error, non-JSON output, nothing matching what was typed). Discord
+# renders an EMPTY autocomplete list as "Loading options failed", so this keeps
+# one Choice whose value is the default project.
+_DEFAULT_PROJECTS: Tuple[Tuple[str, str], ...] = (
+    (f"{_DEFAULT_PROJECT} (default)", _DEFAULT_PROJECT),
+)
 
 
 def _drop_task_guard(speaker: Speaker, requested_assignee: str) -> Tuple[str, str]:
