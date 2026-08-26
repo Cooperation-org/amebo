@@ -376,21 +376,24 @@ class DiscordBot(discord.Client):
             description="Create an equity task in Taiga (In Progress), equity paid on Done"
         )
         @app_commands.describe(
-            project="Taiga project slug",
+            project="Taiga project slug (defaults to vc)",
             title="Task title",
             equity="Equity points (cook tokens)",
             cash="Cash amount (optional)",
-            assignee="Taiga username (optional, defaults to you)",
+            assignee="Taiga username (optional, defaults to you; autocompletes from project)",
             description="Task description (optional)",
             deadline="Due date as YYYY-MM-DD (e.g. 2026-09-15)",
             status="Task status (autocompletes from project)",
         )
-        @app_commands.autocomplete(status=self._status_autocomplete)
+        @app_commands.autocomplete(
+            status=self._status_autocomplete,
+            assignee=self._assignee_autocomplete,
+        )
         async def drop_task(
             interaction: discord.Interaction,
-            project: str,
             title: str,
             equity: int,
+            project: str = "vc",
             cash: int = 0,
             assignee: str = "",
             description: str = "",
@@ -627,6 +630,58 @@ class DiscordBot(discord.Client):
         if not names:
             return fallback
 
+        # Discord caps autocomplete at 25 choices; truncate Choice name/value
+        # at 100 chars (Discord's hard limit on choice labels).
+        return [
+            app_commands.Choice(name=n[:100], value=n[:100]) for n in names[:25]
+        ]
+
+    async def _assignee_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> List[app_commands.Choice[str]]:
+        """
+        Slash option autocomplete for `assignee`. Reads the typed `project`
+        value from the interaction's options, asks mcp-taiga for that project's
+        members via `mcp-taiga members <project> --json`, and returns up to 25
+        username Choices. Names are the Taiga usernames (the same string the
+        Done webhook resolves by); mcp-taiga maps usernames to user IDs at
+        assign time. We never hardcode the user list — it is fetched per
+        project so a new joiner shows up immediately and removed members
+        disappear.
+        """
+        from src.tools.cli_read_tools import run_cli
+
+        project = ""
+        for opt in (interaction.data.options or []):
+            if opt.name == "project":
+                project = str(opt.value or "").strip()
+
+        if not project:
+            # No project to filter by; an empty dropdown nudges the user to
+            # pick a project first. There is no sensible global "default
+            # assignee" set the way there is for status names.
+            return []
+
+        try:
+            out = await asyncio.to_thread(
+                run_cli, ["mcp-taiga", "members", project, "--json"], 5
+            )
+        except Exception as exc:
+            logger.warning("assignee autocomplete failed: %s", exc)
+            return []
+
+        if not out or not out.lstrip().startswith("["):
+            return []
+        try:
+            rows = json.loads(out)
+        except json.JSONDecodeError:
+            return []
+
+        names = [
+            r.get("username")
+            for r in rows
+            if isinstance(r, dict) and r.get("username")
+        ]
         # Discord caps autocomplete at 25 choices; truncate Choice name/value
         # at 100 chars (Discord's hard limit on choice labels).
         return [
