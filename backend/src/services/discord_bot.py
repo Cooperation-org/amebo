@@ -28,9 +28,10 @@ development: python -m src.services.discord_bot
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
-from typing import Dict, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import discord
 from discord import app_commands
@@ -379,9 +380,12 @@ class DiscordBot(discord.Client):
             title="Task title",
             equity="Equity points (cook tokens)",
             cash="Cash amount (optional)",
-            assignee="Taiga username (optional)",
+            assignee="Taiga username (optional, defaults to you)",
             description="Task description (optional)",
+            deadline="Due date as YYYY-MM-DD (e.g. 2026-09-15)",
+            status="Task status (autocompletes from project)",
         )
+        @app_commands.autocomplete(status=self._status_autocomplete)
         async def drop_task(
             interaction: discord.Interaction,
             project: str,
@@ -390,9 +394,12 @@ class DiscordBot(discord.Client):
             cash: int = 0,
             assignee: str = "",
             description: str = "",
+            deadline: str = "",
+            status: str = "",
         ):
             await self._slash_drop_task(
-                interaction, project, title, equity, cash, assignee, description
+                interaction, project, title, equity, cash, assignee,
+                description, deadline, status,
             )
 
     async def _slash_ask(self, interaction: discord.Interaction, question: str, private: bool):
@@ -495,6 +502,8 @@ class DiscordBot(discord.Client):
         cash: int,
         assignee: str,
         description: str,
+        deadline: str,
+        status: str,
     ):
         """
         Create a Taiga task in 'In Progress' and store equity in pending_equity_tasks.
@@ -516,6 +525,16 @@ class DiscordBot(discord.Client):
                 "Equity and cash must be zero or positive.", ephemeral=True
             )
             return
+
+        if deadline:
+            from src.tools.gated_actuators import _valid_due_date
+            if not _valid_due_date(deadline):
+                await interaction.response.send_message(
+                    f"Deadline must be YYYY-MM-DD and today or later "
+                    f"(got '{deadline}').",
+                    ephemeral=True,
+                )
+                return
 
         await interaction.response.defer(ephemeral=True, thinking=True)
 
@@ -547,6 +566,8 @@ class DiscordBot(discord.Client):
                 cash=cash,
                 assignee=assignee or None,
                 description=description or None,
+                deadline=deadline or None,
+                status=status or None,
                 discord_user_id=str(interaction.user.id),
                 discord_username=interaction.user.display_name,
                 org_id=org_id,
@@ -558,6 +579,66 @@ class DiscordBot(discord.Client):
             await interaction.followup.send(
                 f"❌ Could not create the task: {exc}", ephemeral=True
             )
+
+    async def _status_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> List[app_commands.Choice[str]]:
+        """
+        Slash option autocomplete for `status`. Reads the typed `project` value
+        from the interaction's options, asks mcp-taiga for that project's status
+        NAMES, and returns up to 25 Choices. Discord renders the result as a
+        dropdown. We never touch numeric status IDs — the wrapper resolves them
+        at create time, so the dropdown stays per-project without hardcoding.
+        """
+        from src.tools.cli_read_tools import run_cli
+
+        project = ""
+        for opt in (interaction.data.options or []):
+            if opt.name == "project":
+                project = str(opt.value or "").strip()
+
+        fallback = [
+            app_commands.Choice(name=n, value=n) for n in _DEFAULT_STATUSES
+        ]
+
+        if not project:
+            return fallback
+
+        try:
+            out = await asyncio.to_thread(
+                run_cli, ["mcp-taiga", "statuses", project, "--json"], 5
+            )
+        except Exception as exc:
+            logger.warning("status autocomplete failed: %s", exc)
+            return fallback
+
+        if not out or not out.lstrip().startswith("["):
+            return fallback
+        try:
+            rows = json.loads(out)
+        except json.JSONDecodeError:
+            return fallback
+
+        names = [
+            r.get("name")
+            for r in rows
+            if isinstance(r, dict) and r.get("name")
+        ]
+        if not names:
+            return fallback
+
+        # Discord caps autocomplete at 25 choices; truncate Choice name/value
+        # at 100 chars (Discord's hard limit on choice labels).
+        return [
+            app_commands.Choice(name=n[:100], value=n[:100]) for n in names[:25]
+        ]
+
+
+# Taiga's default user-story status names (New, In Progress, Ready for Test,
+# Done). Used as the autocomplete fallback when the user has not yet typed a
+# project, so the dropdown is never empty. mcp-taiga resolves these to IDs at
+# create time via get_status_id — we never hardcode the numeric IDs here.
+_DEFAULT_STATUSES = ("New", "In Progress", "Ready for Test", "Done")
 
 
 def _drop_task_guard(speaker: Speaker, requested_assignee: str) -> Tuple[str, str]:
@@ -609,6 +690,8 @@ def _create_drop_task(
     discord_username: str,
     org_id: Optional[int],
     govkit_org_slug: str = "",
+    deadline: Optional[str] = None,
+    status: Optional[str] = None,
 ) -> str:
     """
     Create a Taiga story in 'In Progress' with equity/cash tags, store in
@@ -618,9 +701,12 @@ def _create_drop_task(
     from src.tools.cli_read_tools import run_cli
     from src.db.repositories.pending_equity_task_repo import PendingEquityTaskRepo
 
-    argv = ["mcp-taiga", "create", project, subject, "--status", "In Progress"]
+    status_name = status or "In Progress"
+    argv = ["mcp-taiga", "create", project, subject, "--status", status_name]
     if description:
         argv += ["--description", description]
+    if deadline:
+        argv += ["--due", deadline]
     if assignee:
         argv += ["--assign", assignee]
     if equity > 0:
