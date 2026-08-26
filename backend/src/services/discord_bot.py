@@ -654,6 +654,12 @@ class DiscordBot(discord.Client):
         assign time. We never hardcode the user list — it is fetched per
         project so a new joiner shows up immediately and removed members
         disappear.
+
+        On any failure (CLI exit, non-JSON output, malformed JSON, project
+        unknown to this Taiga instance) we return a single sentinel Choice
+        rather than an empty list. Discord renders an empty autocomplete list
+        as "Loading options failed" — the visible error the cohort saw before
+        this was added — so the dropdown must always have at least one entry.
         """
         from src.tools.cli_read_tools import run_cli
 
@@ -666,10 +672,14 @@ class DiscordBot(discord.Client):
                 if typed:
                     project = typed
 
+        fallback = [
+            app_commands.Choice(name=n, value=v) for n, v in _DEFAULT_ASSIGNEES
+        ]
+
         if not project:
             # Defensive: _DEFAULT_PROJECT is always non-empty, but keep the
             # guard so the call site stays obviously safe.
-            return []
+            return fallback
 
         try:
             out = await asyncio.to_thread(
@@ -677,20 +687,28 @@ class DiscordBot(discord.Client):
             )
         except Exception as exc:
             logger.warning("assignee autocomplete failed: %s", exc)
-            return []
+            return fallback
 
         if not out or not out.lstrip().startswith("["):
-            return []
+            # Non-JSON output. The most common cause on this deployment is
+            # that `_DEFAULT_PROJECT` is a slug this Taiga instance does not
+            # host (mcp-taiga prints "Project '<slug>' not found. ..."),
+            # which is not a coding error and not a user error — just a hint
+            # in the dropdown that they can still type a Taiga username.
+            return fallback
         try:
             rows = json.loads(out)
         except json.JSONDecodeError:
-            return []
+            return fallback
 
         names = [
             r.get("username")
             for r in rows
             if isinstance(r, dict) and r.get("username")
         ]
+        if not names:
+            return fallback
+
         # Discord caps autocomplete at 25 choices; truncate Choice name/value
         # at 100 chars (Discord's hard limit on choice labels).
         return [
@@ -703,6 +721,15 @@ class DiscordBot(discord.Client):
 # project, so the dropdown is never empty. mcp-taiga resolves these to IDs at
 # create time via get_status_id — we never hardcode the numeric IDs here.
 _DEFAULT_STATUSES = ("New", "In Progress", "Ready for Test", "Done")
+
+# Sentinel shown in the assignee dropdown when the project lookup failed (CLI
+# error, unknown project slug on this Taiga instance, etc.). Discord renders an
+# EMPTY autocomplete list as "Loading options failed", so we keep a single
+# Choice whose value is empty (i.e. "no assignee") and whose name tells the
+# user they can still type a Taiga username.
+_DEFAULT_ASSIGNEES: Tuple[Tuple[str, str], ...] = (
+    ("(no members loaded — type a Taiga username)", ""),
+)
 
 # Default Taiga project. Used by the slash command (project defaults to this)
 # AND by the autocomplete handlers — Discord does NOT send the slash

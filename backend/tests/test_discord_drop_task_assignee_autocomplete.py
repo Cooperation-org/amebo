@@ -81,21 +81,26 @@ async def test_status_autocomplete_empty_project_defaults_to_vc():
 
 
 @pytest.mark.asyncio
-async def test_assignee_autocomplete_unknown_project_returns_empty_list():
-    """`mcp-taiga members <bad>` fails; we return an empty dropdown rather
-    than surface an error to the user."""
+async def test_assignee_autocomplete_unknown_project_returns_sentinel():
+    """`mcp-taiga members <bad>` fails; we return a single sentinel Choice
+    rather than `[]`. Discord renders an empty autocomplete list as "Loading
+    options failed", so the dropdown must always have at least one entry.
+    """
     bot = DiscordBot(instance_slug="test")
     with patch("src.tools.cli_read_tools.run_cli", return_value="Error: project not found"):
         choices = await _run(bot, project="does-not-exist")
-    assert choices == []
+    assert len(choices) == 1
+    assert choices[0].value == ""
+    assert "no members" in choices[0].name.lower()
 
 
 @pytest.mark.asyncio
-async def test_assignee_autocomplete_malformed_json_returns_empty_list():
+async def test_assignee_autocomplete_malformed_json_returns_sentinel():
     bot = DiscordBot(instance_slug="test")
     with patch("src.tools.cli_read_tools.run_cli", return_value="not json at all"):
         choices = await _run(bot, project="vc")
-    assert choices == []
+    assert len(choices) == 1
+    assert choices[0].value == ""
 
 
 @pytest.mark.asyncio
