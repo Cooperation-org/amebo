@@ -652,14 +652,20 @@ def _drop_task_guard(speaker: Speaker, requested_assignee: str) -> Tuple[str, st
         Taiga (the speaker's mapped taiga_username if the caller did not
         name one, else the caller's value verbatim).
 
-    The map lives in GovKit; amebo only reads it. Two reasons to refuse:
+    Rule: an explicit `requested_assignee` always wins — anyone in the Discord
+    server can drop a task on behalf of someone else by naming them. The
+    GovKit map is only consulted as a fallback for the runner's own username
+    when they didn't specify one. Two refusal cases, both only when no
+    assignee was given:
       (a) the speaker is not enrolled in GovKit at all (no Membership row
-          keyed on this discord_user_id);
+          keyed on this discord_user_id) — no fallback to default from;
       (b) the speaker IS enrolled but Membership.taiga_username is empty —
           the Done webhook would fail at the membership lookup.
     Both surface as a clear instruction at slash time instead of an opaque
     error hours later on the webhook.
     """
+    if requested_assignee:
+        return "", requested_assignee
     if not speaker.known:
         return (
             "I don't have you in the cohort's member list yet. "
@@ -674,9 +680,7 @@ def _drop_task_guard(speaker: Speaker, requested_assignee: str) -> Tuple[str, st
             "Taiga username in your GovKit profile, then run this again.",
             "",
         )
-    if not requested_assignee:
-        return "", speaker.member.taiga_username
-    return "", requested_assignee
+    return "", speaker.member.taiga_username
 
 
 def _create_drop_task(

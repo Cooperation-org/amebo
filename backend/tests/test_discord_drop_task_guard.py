@@ -32,7 +32,7 @@ def _member(taiga_username="x-taiga", role="member"):
 
 
 def test_guard_refuses_unknown_speaker():
-    """No Membership keyed on this discord_user_id → refuse with the 'link Discord' message."""
+    """No Membership keyed on this discord_user_id AND no assignee given → refuse with the 'link Discord' message."""
     refusal, assignee = _drop_task_guard(_speaker(member=None), "")
     assert "Discord" in refusal
     assert "steward" in refusal.lower()
@@ -40,7 +40,7 @@ def test_guard_refuses_unknown_speaker():
 
 
 def test_guard_refuses_when_mapped_but_taiga_username_empty():
-    """Enrolled in GovKit but Membership.taiga_username is empty → refuse with the 'set Taiga username' message."""
+    """Enrolled in GovKit but Membership.taiga_username is empty AND no assignee given → refuse with the 'set Taiga username' message."""
     refusal, assignee = _drop_task_guard(_speaker(member=_member(taiga_username="")), "")
     assert "Taiga username" in refusal
     assert assignee == ""
@@ -54,5 +54,25 @@ def test_guard_defaults_assignee_from_membership():
 
 def test_guard_respects_explicit_assignee():
     refusal, assignee = _drop_task_guard(_speaker(member=_member()), "other-taiga")
+    assert refusal == ""
+    assert assignee == "other-taiga"
+
+
+def test_guard_allows_explicit_assignee_for_unmapped_speaker():
+    """Anyone in the Discord server can drop a task for someone else by naming
+    them. Unmapped runner + explicit assignee → allow, use the caller's value.
+    The Done webhook resolves equity by the assignee's Taiga username, not by
+    the runner's discord_user_id, so no GovKit membership is required."""
+    refusal, assignee = _drop_task_guard(_speaker(member=None), "other-taiga")
+    assert refusal == ""
+    assert assignee == "other-taiga"
+
+
+def test_guard_allows_explicit_assignee_when_mapped_without_taiga_username():
+    """Explicit assignee wins even when the runner is mapped but has no Taiga
+    username on file — the named assignee is who the work is for."""
+    refusal, assignee = _drop_task_guard(
+        _speaker(member=_member(taiga_username="")), "other-taiga"
+    )
     assert refusal == ""
     assert assignee == "other-taiga"
