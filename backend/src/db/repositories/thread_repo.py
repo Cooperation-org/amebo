@@ -157,6 +157,25 @@ class ThreadRepo:
         finally:
             DatabaseConnection.return_connection(conn)
 
+    def latest_by_ref_prefix(self, source_type: str, prefix: str) -> Optional[Dict]:
+        """Most recently active thread whose source_ref starts with prefix
+        (e.g. a user's last CLI session). Returns {id, source_ref, last_active_at} or None."""
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT id, source_ref, last_active_at FROM threads
+                    WHERE source_type = %s AND source_ref LIKE %s
+                    ORDER BY last_active_at DESC NULLS LAST LIMIT 1
+                    """,
+                    (source_type, prefix + '%'),
+                )
+                row = cur.fetchone()
+                return dict(row) if row else None
+        finally:
+            DatabaseConnection.return_connection(conn)
+
     def recent_for_org(self, org_id: int, limit: int = 5) -> List[Dict]:
         """
         Recent threads for an org, newest-active first.

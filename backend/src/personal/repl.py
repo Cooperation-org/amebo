@@ -1,36 +1,36 @@
 """
-Personal amebo REPL — piece 1 of "personal amebo".
+Personal amebo REPL — amebo in your own shell, running as YOU.
 
-A conversational amebo you launch in your own shell, running as YOU. Same
-conversation core as the Slack/qa path: it reuses ConversationManager, so it
-gets the SAME context management Claude Code has —
+Same conversation core as the Slack/qa path (ConversationManager):
 
   - stable system prefix (identity + rules), never per-turn volatile data, so
-    the cached prefix hash matches call-to-call and the server-side prompt
-    cache hits;
+    the cached prefix hash matches call-to-call and the prompt cache hits;
   - `cache_control` on the system block plus a rolling breakpoint on the last
     message, so each tool round's growing prefix is cached too;
   - turns persisted verbatim to the thread, so the next turn's prefix is
     byte-identical to what was cached;
   - compaction/summary of old turns past the token threshold.
 
-Plus one extra: a general `shell` tool, registered only because this process
-is a verified personal session (see shell_tool.register_shell_tool_if_personal).
-Read-only commands auto-run; anything else asks you to confirm in the terminal.
+Plus a general `shell` tool, registered only because this process is a verified
+personal session (shell_tool.register_shell_tool_if_personal). Read-only
+commands auto-run; anything else asks you to confirm in the terminal.
 
-Model and provider are NOT coupled to this mode. The loop runs whatever
-provider/model is configured; override for this process only via
-AMEBO_CLI_PROVIDER / AMEBO_CLI_MODEL without touching the running services.
+What the person sees: their question, a one-line trace per tool call, the
+answer. Tool output and the model's in-between narration are not printed —
+`/tools` shows the last turn's tool output in full when wanted.
 
 Run (as the owner uid):
-    AMEBO_PERSONAL_MODE=1 AMEBO_PERSONAL_UID=$(id -u) python -m src.personal.repl
+    AMEBO_PERSONAL_MODE=1 AMEBO_PERSONAL_UID=$(id -u) python -m src.personal.repl [-c]
 """
 
 from __future__ import annotations
 
 import os
+import shutil
 import sys
-from typing import Dict, List, Tuple
+import threading
+import time
+from typing import Dict, List, Optional, Tuple
 
 # A constant note appended to the instance identity so the model knows the shell
 # tool exists. MUST be constant — anything per-turn here would change the system
@@ -40,7 +40,10 @@ _SHELL_NOTE = (
     "session, as them. You can run shell commands with the `shell` tool "
     "(read-only commands run immediately; anything else asks them to confirm). "
     "Think a lot, work a lot, speak little — concise and concrete, like a "
-    "capable colleague. When a task needs commands, just use the shell tool."
+    "capable colleague. When a task needs commands, just use the shell tool. "
+    "Do not narrate what you are about to do; only the final answer is shown. "
+    "Answer in plain text for a terminal: short lines, no headings, no tables. "
+    "No closing offers or follow-up questions."
 )
 
 # The personal session's tool set: shell + amebo's safe read tools.
@@ -53,10 +56,67 @@ _PERSONAL_TOOLS = [
 _MAX_TOOL_ROUNDS = int(os.getenv("AMEBO_CLI_MAX_TOOL_ROUNDS", "16"))
 _MAX_TOKENS = int(os.getenv("AMEBO_CLI_MAX_TOKENS", "4000"))
 
+_TTY = sys.stdout.isatty()
+_DIM = "\033[2m" if _TTY else ""
+_BOLD = "\033[1m" if _TTY else ""
+_RESET = "\033[0m" if _TTY else ""
+
+
+def _width() -> int:
+    return shutil.get_terminal_size((100, 24)).columns
+
+
+def _one_line(s: str, room: int) -> str:
+    s = " ".join(str(s).split())
+    return s if len(s) <= room else s[: max(room - 1, 1)] + "…"
+
+
+class _Status:
+    """A single spinner line on stderr while the model or a tool is busy.
+    Cleared before anything else is printed, so the transcript stays clean."""
+
+    def __init__(self):
+        self._label = ""
+        self._stop = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+        self._t0 = 0.0
+
+    def start(self, label: str):
+        self._label = label
+        self._t0 = time.time()
+        if not _TTY or self._thread:
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(target=self._spin, daemon=True)
+        self._thread.start()
+
+    def set(self, label: str):
+        self._label = label
+
+    def stop(self):
+        if not self._thread:
+            return
+        self._stop.set()
+        self._thread.join()
+        self._thread = None
+        sys.stderr.write("\r\033[K")
+        sys.stderr.flush()
+
+    def _spin(self):
+        frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+        i = 0
+        while not self._stop.is_set():
+            el = int(time.time() - self._t0)
+            line = f"  {frames[i % len(frames)]} {self._label} {_DIM}{el}s{_RESET}"
+            sys.stderr.write("\r\033[K" + _one_line(line, _width() - 2))
+            sys.stderr.flush()
+            i += 1
+            self._stop.wait(0.1)
+
 
 def _terminal_confirm(command: str) -> bool:
     try:
-        ans = input(f"\n  ⚠ run a non-read command?\n    $ {command}\n  [y/N] ").strip().lower()
+        ans = input(f"\n  {_BOLD}$ {command}{_RESET}\n  run? [y/N] ").strip().lower()
     except EOFError:
         return False
     return ans in ("y", "yes")
@@ -114,11 +174,37 @@ def _serialize_blocks(content) -> List[Dict]:
     return out
 
 
-def _run_turn(client, model, system_prompt, messages, tools, tctx, principal, out) -> str:
+def _tool_label(name: str, inp: Dict) -> str:
+    """One line: tool name + its main argument. `shell` shows the command."""
+    if name == "shell":
+        arg = inp.get("command", "")
+    else:
+        vals = [str(v) for v in inp.values() if isinstance(v, (str, int, float))]
+        arg = " ".join(vals)
+    return f"{name} {arg}".strip()
+
+
+def _result_summary(res: str) -> str:
+    """What to show for a tool result: errors in full (first line), otherwise
+    a line count. The full output is kept for /tools."""
+    text = str(res or "").strip()
+    if not text:
+        return "no output"
+    first = text.splitlines()[0]
+    bad = first.startswith(("Error", "[exit", "Refused", "Declined", "Unknown tool"))
+    n = text.count("\n") + 1
+    if bad or n == 1:
+        return first
+    return f"{n} lines"
+
+
+def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
+              out, status, trace: List[Tuple[str, str]]) -> str:
     """One user turn: call the model, run tool rounds, return the final text.
     `messages` is the full history+question from ConversationManager.build_messages;
     tool-round scaffolding stays local and is NOT persisted (only the final answer
-    is), keeping the cross-turn prefix clean and byte-stable."""
+    is), keeping the cross-turn prefix clean and byte-stable. Each tool call is
+    printed as one line; its output goes to `trace` (for /tools), not the screen."""
     from src.tools.registry import get_tool, trust_gate
 
     work = list(messages)
@@ -131,7 +217,11 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal, ou
         # Last round: force an answer instead of another tool call.
         if _round == _MAX_TOOL_ROUNDS and tools:
             kwargs["tool_choice"] = {"type": "none"}
-        resp = client.messages.create(**kwargs)
+        status.start("thinking")
+        try:
+            resp = client.messages.create(**kwargs)
+        finally:
+            status.stop()
 
         work.append({"role": "assistant", "content": _serialize_blocks(resp.content)})
         if resp.stop_reason != "tool_use":
@@ -141,19 +231,63 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal, ou
         for b in resp.content:
             if b.type != "tool_use":
                 continue
+            label = _tool_label(b.name, dict(b.input))
             tool = get_tool(b.name)
             if tool is None:
                 res = f"Unknown tool: {b.name}"
             else:
                 denial = trust_gate(tool, principal)
-                res = denial if denial else (tool.execute(b.input, tctx) or "")
-            out(f"  · {b.name} {dict(b.input)} →\n{_indent(res)}")
+                if denial:
+                    res = denial
+                else:
+                    status.start(label)
+                    try:
+                        res = tool.execute(b.input, tctx) or ""
+                    finally:
+                        status.stop()
+            trace.append((label, str(res)))
+            room = _width() - 4
+            summary = _result_summary(res)
+            line = _one_line(label, room - len(summary) - 3)
+            out(f"  {_DIM}· {line} ⎿ {summary}{_RESET}")
             results.append({"type": "tool_result", "tool_use_id": b.id, "content": res})
         work.append({"role": "user", "content": results})
     return "(no answer)"
 
 
-def run_repl(in_stream=None, out=print) -> int:
+def _resume_session(uid: int) -> Optional[str]:
+    """source_ref of this user's most recent CLI session, if any."""
+    from src.db.repositories.thread_repo import ThreadRepo
+    row = ThreadRepo().latest_by_ref_prefix("cli", f"cli-{uid}-")
+    return row["source_ref"] if row else None
+
+
+def _setup_readline():
+    try:
+        import readline  # noqa: F401  (line editing + history for input())
+    except ImportError:
+        return
+    hist = os.path.expanduser("~/.amebo_history")
+    try:
+        readline.read_history_file(hist)
+    except OSError:
+        pass
+    readline.set_history_length(1000)
+    import atexit
+    atexit.register(lambda: _save_history(readline, hist))
+
+
+def _save_history(readline, path):
+    try:
+        readline.write_history_file(path)
+    except OSError:
+        pass
+
+
+def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    resume = any(a in ("-c", "--continue") for a in argv)
+
     # Provider/model are config, decoupled from this mode. Override for THIS
     # process only; the Slack service keeps whatever it was started with.
     if os.getenv("AMEBO_CLI_PROVIDER"):
@@ -168,8 +302,8 @@ def run_repl(in_stream=None, out=print) -> int:
     from src.services.llm_client import get_llm_client, resolve_model
 
     if not registered:
-        out("⚠ personal shell NOT available — set AMEBO_PERSONAL_MODE=1 and run "
-            "as AMEBO_PERSONAL_UID. Continuing with read tools only.")
+        out("shell off — set AMEBO_PERSONAL_MODE=1 and run as AMEBO_PERSONAL_UID. "
+            "Read tools only.")
 
     org_id = int(os.getenv("AMEBO_PERSONAL_ORG_ID", "1"))
     instance_id = int(os.getenv("AMEBO_PERSONAL_INSTANCE_ID", "1"))
@@ -195,31 +329,61 @@ def run_repl(in_stream=None, out=print) -> int:
     )
 
     # Persistent thread → history is stored verbatim and replayed byte-identically
-    # each turn, which is what makes the prefix cache hit. Reuse a session name to
-    # resume (and keep compaction state); default is per-process.
-    session = os.getenv("AMEBO_CLI_SESSION") or f"cli-{os.getuid()}-{os.getpid()}"
+    # each turn, which is what makes the prefix cache hit. `-c` resumes the last
+    # session; AMEBO_CLI_SESSION names one; default is fresh per process.
+    uid = os.getuid()
+    session = os.getenv("AMEBO_CLI_SESSION")
+    resumed = False
+    if not session and resume:
+        session = _resume_session(uid)
+        resumed = session is not None
+    session = session or f"cli-{uid}-{os.getpid()}"
     mgr = ConversationManager(
         source_type="cli", source_ref=session,
         instance_slug=os.getenv("AMEBO_CLI_INSTANCE", "whatscookin"),
     )
-    base_system = mgr.get_system_prompt() + _SHELL_NOTE
 
     reader = in_stream or sys.stdin
-    out(f"amebo personal — {model} — session {session} — 'exit' to quit. "
-        f"Shell: {'ON' if registered else 'off'}")
+    interactive = reader is sys.stdin and sys.stdin.isatty()
+    if interactive:
+        _setup_readline()
+    out(f"{_DIM}amebo · {model} · shell {'on' if registered else 'off'}"
+        f"{' · resumed' if resumed else ''} · /help{_RESET}")
 
     tctx = {"org_context": ctx, "org_id": org_id, "confirm": _terminal_confirm}
+    status = _Status()
+    last_trace: List[Tuple[str, str]] = []
     while True:
         try:
-            line = (input("\nyou › ") if reader is sys.stdin else reader.readline())
+            line = (input(f"\n{_BOLD}you ›{_RESET} ") if reader is sys.stdin
+                    else reader.readline())
         except EOFError:
             break
+        except KeyboardInterrupt:
+            out("")
+            continue
         if not line and reader is not sys.stdin:
             break
         user = line.strip()
-        if user in ("exit", "quit"):
+        if user in ("exit", "quit", "/exit", "/quit"):
             break
         if not user:
+            continue
+        if user in ("/help", "?"):
+            out("  /tools    full output of the last turn's tool calls\n"
+                "  /session  this session's name (resume: amebo -c, or "
+                "AMEBO_CLI_SESSION=<name> amebo)\n"
+                "  Ctrl-C    stop the current turn\n"
+                "  exit      quit")
+            continue
+        if user == "/session":
+            out(f"  {session}")
+            continue
+        if user == "/tools":
+            if not last_trace:
+                out("  (no tool calls yet)")
+            for label, res in last_trace:
+                out(f"\n  {_BOLD}· {label}{_RESET}\n{_indent(res)}")
             continue
 
         # build_messages gives system(identity+rules) + persisted history + this
@@ -228,18 +392,28 @@ def run_repl(in_stream=None, out=print) -> int:
         # the model needs instead.
         system_prompt, messages = mgr.build_messages(new_question=user, knowledge_context="")
         system_prompt = system_prompt + _SHELL_NOTE
-        answer = _run_turn(client, model, system_prompt, messages, tools, tctx, principal, out)
-        out(f"\namebo › {answer}")
+        last_trace = []
+        try:
+            answer = _run_turn(client, model, system_prompt, messages, tools, tctx,
+                               principal, out, status, last_trace)
+        except KeyboardInterrupt:
+            status.stop()
+            out(f"\n  {_DIM}interrupted{_RESET}")
+            continue
+        except Exception as exc:  # keep the session alive; show the cause
+            status.stop()
+            out(f"\n  error: {exc}")
+            continue
+        out(f"\n{_BOLD}amebo ›{_RESET} {answer}")
         # Persist only the clean question/answer pair (not tool scaffolding) and
         # compact if over threshold.
         mgr.add_exchange(user, answer)
-    out("bye.")
     return 0
 
 
 def _indent(s: str, n: int = 4) -> str:
     pad = " " * n
-    return "\n".join(pad + ln for ln in str(s).splitlines()[:40])
+    return "\n".join(pad + ln for ln in str(s).splitlines())
 
 
 if __name__ == "__main__":

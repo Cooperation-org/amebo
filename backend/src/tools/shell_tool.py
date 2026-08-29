@@ -34,27 +34,61 @@ MAX_OUTPUT = 20_000
 
 # First-token commands safe to auto-run (read-only). Everything else confirms.
 _READONLY_CMDS = {
-    "ls", "cat", "rg", "grep", "pwd", "head", "tail", "wc", "find", "tree",
-    "which", "echo", "date", "df", "du", "stat", "env", "printenv", "whoami",
-    "id", "hostname", "uname", "ps", "cut", "sort", "uniq", "diff",
+    "ls", "cat", "rg", "grep", "egrep", "fgrep", "pwd", "head", "tail", "wc",
+    "find", "tree", "which", "type", "echo", "printf", "date", "df", "du",
+    "stat", "file", "env", "printenv", "whoami", "id", "hostname", "uname",
+    "uptime", "free", "ps", "cut", "sort", "uniq", "diff", "tr", "nl",
+    "column", "jq", "awk", "basename", "dirname", "realpath", "readlink",
+    "md5sum", "sha256sum", "true", "test", "[", "cd", "less", "more",
+    "ss", "journalctl", "abra", "systemctl", "sed", "curl",
+}
+# Commands from the list that are read-only ONLY with these first arguments.
+_SUBCMD_READONLY = {
+    "systemctl": {"status", "is-active", "is-enabled", "list-units", "show", "cat"},
+    "abra": {"search", "about", "read", "who", "names", "related", "refs", "when"},
+}
+# sed/curl: read-only unless they write.
+_WRITE_FLAGS = {
+    "sed": ("-i",),
+    "curl": ("-o", "-O", "--output", "-T", "--upload-file", "-d", "--data",
+             "-F", "--form", "-X"),
 }
 # git subcommands that only read.
 _GIT_READONLY = {
-    "status", "log", "diff", "show", "branch", "remote", "ls-files",
-    "rev-parse", "describe", "blame", "shortlog", "config",
+    "status", "log", "diff", "show", "branch", "remote", "ls-files", "grep",
+    "rev-parse", "describe", "blame", "shortlog", "config", "ls-tree",
+    "cat-file", "reflog", "rev-list", "name-rev", "ls-remote", "fetch",
 }
-# Shell metacharacters that could hide a write behind a "read" first token.
-_UNSAFE_CHARS = set("|&;><`$(){}")
+# Metacharacters that can hide a write inside a "read" command line.
+# Pipes and && / || / ; are allowed: each segment is classified on its own.
+_UNSAFE_CHARS = set("><`$")
 
 
-def _is_readonly(command: str) -> bool:
-    """True only if the command is unambiguously a read (safe to auto-run)."""
-    if any(c in _UNSAFE_CHARS for c in command):
-        return False  # a pipe/redirect/subshell could hide a write → confirm
+def _segments(command: str):
+    """Split a command line on | || && ; into simple commands (quote-aware).
+    Returns a list of token lists, or None if the line cannot be parsed."""
     try:
-        toks = shlex.split(command)
+        lex = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lex.whitespace_split = True
+        toks = list(lex)
     except ValueError:
-        return False
+        return None
+    segs, cur = [], []
+    for t in toks:
+        if t in ("|", "||", "&&", ";"):
+            if cur:
+                segs.append(cur)
+            cur = []
+        elif t in ("&", ">", ">>", "<", "<<", "(", ")"):
+            return None
+        else:
+            cur.append(t)
+    if cur:
+        segs.append(cur)
+    return segs
+
+
+def _simple_is_readonly(toks) -> bool:
     if not toks:
         return False
     cmd = os.path.basename(toks[0])
@@ -72,7 +106,26 @@ def _is_readonly(command: str) -> bool:
             else:
                 return t in _GIT_READONLY
         return False
-    return cmd in _READONLY_CMDS
+    if cmd not in _READONLY_CMDS:
+        return False
+    if cmd in _SUBCMD_READONLY:
+        return len(toks) > 1 and toks[1] in _SUBCMD_READONLY[cmd]
+    if cmd in _WRITE_FLAGS:
+        flags = _WRITE_FLAGS[cmd]
+        return not any(t == f or t.startswith(f + "=") or
+                       (f.startswith("-") and not f.startswith("--") and t.startswith(f) and len(t) > 2 and cmd == "sed")
+                       for t in toks[1:] for f in flags)
+    return True
+
+
+def _is_readonly(command: str) -> bool:
+    """True only if every simple command on the line is unambiguously a read."""
+    if any(c in _UNSAFE_CHARS for c in command):
+        return False  # redirect / subshell / backtick could hide a write
+    segs = _segments(command)
+    if not segs:
+        return False
+    return all(_simple_is_readonly(toks) for toks in segs)
 
 
 def shell_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:

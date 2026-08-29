@@ -17,7 +17,8 @@
 # Opus needs Anthropic API credits (a Max subscription cannot fund the API):
 #   AMEBO_CLI_PROVIDER=anthropic AMEBO_CLI_MODEL=claude-opus-4-8 amebo
 #
-# Usage:  amebo
+# Usage:  amebo        new session
+#         amebo -c     resume your last session
 set -euo pipefail
 
 BACKEND="/opt/shared/repos/amebo/backend"
@@ -30,4 +31,4 @@ export AMEBO_PERSONAL_MODE=1
 export AMEBO_PERSONAL_UID="$(id -u)"
 export AMEBO_CLI_PROVIDER="${AMEBO_CLI_PROVIDER:-minimax}"
 
-exec ./venv/bin/python -m src.personal.repl
+exec ./venv/bin/python -m src.personal.repl "$@"
