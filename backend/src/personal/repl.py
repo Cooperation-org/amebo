@@ -369,7 +369,12 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
     out(f"{_DIM}amebo · {model} · shell {'on' if registered else 'off'}"
         f"{' · resumed' if resumed else ''}{' · auto' if auto else ''} · /help{_RESET}")
 
-    tctx = {"org_context": ctx, "org_id": org_id, "confirm": _auto_confirm if auto else _terminal_confirm}
+    mode = {"auto": auto}
+
+    def confirm(command: str) -> bool:
+        return _auto_confirm(command) if mode["auto"] else _terminal_confirm(command)
+
+    tctx = {"org_context": ctx, "org_id": org_id, "confirm": confirm}
     status = _Status()
     last_trace: List[Tuple[str, str]] = []
     while True:
@@ -393,9 +398,15 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
                 "  /session  this session's name (resume: amebo -c, or "
                 "AMEBO_CLI_SESSION=<name> amebo)\n"
                 "  Ctrl-C    stop the current turn\n"
-                "  amebo -y  auto mode: commands run without asking "
-                "(sudo, rm -rf, force-push, service stop still ask)\n"
+                "  /auto     toggle auto mode: commands run without asking "
+                "(sudo, rm -rf, force-push, service stop still ask); amebo -y starts in it\n"
                 "  exit      quit")
+            continue
+        if user in ("/auto", "/config"):
+            mode["auto"] = not mode["auto"]
+            out(f"  auto {'on' if mode['auto'] else 'off'}"
+                + (" — commands run without asking; sudo, rm -rf, force-push, "
+                   "service stop still ask" if mode["auto"] else " — every write asks"))
             continue
         if user == "/session":
             out(f"  {session}")
