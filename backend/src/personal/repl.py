@@ -114,6 +114,24 @@ class _Status:
             self._stop.wait(0.1)
 
 
+# Auto mode (amebo -y): everything runs without asking except these — they
+# still prompt. Matched as substrings of the whitespace-normalized command.
+_ALWAYS_ASK = (
+    "sudo ", "rm -rf /", "rm -rf ~", "rm -rf *", "rm -r /", "mkfs", "dd if=",
+    "shutdown", "reboot", "git push --force", "git push -f", "git reset --hard",
+    "git clean", "drop table", "drop database", "truncate ", "systemctl stop",
+    "systemctl restart", "systemctl disable", "kill -9", "pkill", "killall",
+    "chmod -r", "chown -r", "> /etc/", "> /dev/",
+)
+
+
+def _auto_confirm(command: str) -> bool:
+    norm = " ".join(command.split()).lower()
+    if any(p in norm for p in _ALWAYS_ASK):
+        return _terminal_confirm(command)
+    return True
+
+
 def _terminal_confirm(command: str) -> bool:
     try:
         ans = input(f"\n  {_BOLD}$ {command}{_RESET}\n  run? [y/N] ").strip().lower()
@@ -247,7 +265,7 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
                         status.stop()
             trace.append((label, str(res)))
             room = _width() - 4
-            summary = _result_summary(res)
+            summary = _one_line(_result_summary(res), room // 3)
             line = _one_line(label, room - len(summary) - 3)
             out(f"  {_DIM}· {line} ⎿ {summary}{_RESET}")
             results.append({"type": "tool_result", "tool_use_id": b.id, "content": res})
@@ -287,6 +305,7 @@ def _save_history(readline, path):
 def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     resume = any(a in ("-c", "--continue") for a in argv)
+    auto = any(a in ("-y", "--yes") for a in argv) or os.getenv("AMEBO_CLI_AUTO") == "1"
 
     # Provider/model are config, decoupled from this mode. Override for THIS
     # process only; the Slack service keeps whatever it was started with.
@@ -348,9 +367,9 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
     if interactive:
         _setup_readline()
     out(f"{_DIM}amebo · {model} · shell {'on' if registered else 'off'}"
-        f"{' · resumed' if resumed else ''} · /help{_RESET}")
+        f"{' · resumed' if resumed else ''}{' · auto' if auto else ''} · /help{_RESET}")
 
-    tctx = {"org_context": ctx, "org_id": org_id, "confirm": _terminal_confirm}
+    tctx = {"org_context": ctx, "org_id": org_id, "confirm": _auto_confirm if auto else _terminal_confirm}
     status = _Status()
     last_trace: List[Tuple[str, str]] = []
     while True:
@@ -374,6 +393,8 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
                 "  /session  this session's name (resume: amebo -c, or "
                 "AMEBO_CLI_SESSION=<name> amebo)\n"
                 "  Ctrl-C    stop the current turn\n"
+                "  amebo -y  auto mode: commands run without asking "
+                "(sudo, rm -rf, force-push, service stop still ask)\n"
                 "  exit      quit")
             continue
         if user == "/session":

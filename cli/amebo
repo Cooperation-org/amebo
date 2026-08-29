@@ -19,6 +19,7 @@
 #
 # Usage:  amebo        new session
 #         amebo -c     resume your last session
+#         amebo -y     auto mode: run commands without asking (destructive ones still ask)
 set -euo pipefail
 
 BACKEND="/opt/shared/repos/amebo/backend"
