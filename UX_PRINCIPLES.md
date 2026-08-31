@@ -197,6 +197,45 @@ shows that state and use that instead.
 
 ---
 
+## 17. Never say what a thing is not
+
+> "dont be cutesy never say what things are not" (golda, 2026-08-31)
+
+Say what it is, once. Every negation names a thing the reader was not thinking
+about and puts it in their head.
+
+A join page opened with "You do not have to join the cohort to be part of this."
+Nobody arriving had wondered whether they had to. The sentence invented an
+obligation and then excused them from it. Under the email field: "News about the
+ventures. Nothing else." Cut to nothing at all, because the button already said
+Subscribe.
+
+This is wider than the banned phrases in rule 1. No "you don't have to", no
+"no need to", no "nothing else", no "instead of", no "not a Y".
+
+## 18. Write from where the person is standing, not from inside the funnel
+
+> "Think in the mind of the user. What will make sense to the user, not what
+> makes sense to you." (golda, 2026-08-31)
+
+We know there is a `/commit/` page, a cohort, a pipeline. The visitor knows none
+of it and is not asking about any of it. Copy that references our own structure
+reads as an answer to a question nobody asked.
+
+Before writing a line, name the person and what they came for. Someone who
+arrives wanting to help wants to know how to help. Start there.
+
+## 19. Three things, not five
+
+> "3 things only" (golda, 2026-08-31)
+
+A menu of ways to help was drafted with five entries, in five equal rows. It was
+cut to three: subscribe, follow, send a lead. Five reads as a form to work
+through. Three reads as a choice.
+
+When a list of options runs past three, the extras are usually the same thing
+said twice or a path nobody takes. Find them and cut.
+
 ## Working this way
 
 - **Show a design, don't describe one.** "this is why i needed to SEE it. your
