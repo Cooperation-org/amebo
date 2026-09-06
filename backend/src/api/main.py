@@ -107,6 +107,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Startup/Shutdown events
 _goal_scheduler = None
+import asyncio
 import concurrent.futures
 
 @app.on_event("startup")
@@ -128,6 +129,16 @@ async def startup_event():
         await _goal_scheduler.start()
     else:
         logger.info("Goal scheduler off (set AMEBO_GOAL_SCHEDULER=on to enable)")
+    # The inbox is pre-assembled and kept warm for everyone who opened it
+    # recently (src/services/work_list_cache.py).
+    from src.services import work_list_cache
+    from src.api.routes.work_list import _assemble as _assemble_list
+
+    async def _build_for(key):
+        org_id, person = key
+        client = {"org_id": org_id, "email": person, "auth": "user"} if person else {"org_id": org_id}
+        return await _assemble_list(client)
+    app.state._work_list_warm = asyncio.create_task(work_list_cache.warm_loop(_build_for))
 
 
 @app.on_event("shutdown")

@@ -31,13 +31,14 @@ half), so a client can re-sort or filter later without a backend change.
 from __future__ import annotations
 
 import asyncio
+import time
 from datetime import date
 import json
 import logging
 import os
 from typing import Any, Dict, List, Optional, Sequence
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -119,6 +120,10 @@ class WorkListOut(BaseModel):
     # The org's rubric, in plain lines, so the page can say what it ranks on.
     # Empty when the org runs on the defaults.
     rubric: List[str] = []
+    # Seconds since this list was assembled. The page shows it; a person who
+    # wants it fresher reloads and gets the background rebuild's result.
+    age_seconds: int = 0
+    top_n: int = 5
 
 
 def _out(item: Item) -> ItemOut:
@@ -165,7 +170,60 @@ def subjects_for_org(repo: PendingActionRepo, org_id: int) -> List[str]:
 
 @router.get("/", response_model=WorkListOut)
 async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user),
-                        limit: Optional[str] = None):
+                        limit: Optional[str] = None,
+                        background: BackgroundTasks = None):
+    """Everything waiting on this person — served from the pre-assembled list
+    (src/services/work_list_cache.py) and rebuilt behind the reader."""
+    from src.services import work_list_cache as cache
+    org_id = client.get("org_id")
+    if not org_id:
+        raise HTTPException(status_code=403, detail="No organization for this client")
+    key = (org_id, viewer_person(client) or "")
+    hit = cache.get(key)
+    if hit is None:
+        full = await cache.rebuild(key, lambda: _assemble(client))
+        if full is None:              # a build is already in flight; wait for it
+            for _ in range(60):
+                await asyncio.sleep(0.5)
+                hit = cache.get(key)
+                if hit:
+                    break
+            full = hit[1] if hit else await _assemble(client)
+        built_at = time.time()
+    else:
+        built_at, full = hit
+        if time.time() - built_at > cache.STALE_AFTER and background is not None:
+            background.add_task(cache.rebuild, key, lambda: _assemble(client))
+    return _cut(full, limit, int(time.time() - built_at))
+
+
+def _forget_list(client: Dict[str, Any]) -> None:
+    """A write through amebo changes what the list should say; drop this
+    person's pre-assembled copy so the next read rebuilds it."""
+    from src.services import work_list_cache as cache
+    try:
+        cache.invalidate(client.get("org_id"), viewer_person(client) or "")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _cut(full: "WorkListOut", limit: Optional[str], age_seconds: int) -> "WorkListOut":
+    """The cached list is complete; ``limit`` is applied on the way out."""
+    cap = LIST_MAX
+    if limit == "top":
+        cap = max(1, min(LIST_MAX, full.top_n or 5))
+    elif limit:
+        try:
+            cap = max(1, min(LIST_MAX, int(limit)))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="limit is a number or 'top'")
+    return WorkListOut(pinned=full.pinned, live=full.live[:cap], past=full.past,
+                       buried=full.buried, live_total=full.live_total,
+                       past_total=full.past_total, rubric=full.rubric,
+                       top_n=full.top_n, age_seconds=age_seconds)
+
+
+async def _assemble(client: Dict[str, Any]) -> "WorkListOut":
     """Everything waiting on this person, from every system that holds some of it.
 
     ``limit`` caps the live rows: ``?limit=top`` means the org rubric's
@@ -179,8 +237,6 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user),
     goes blank when the CRM hiccups is worse than one missing a card.
     """
     org_id = client.get("org_id")
-    if not org_id:
-        raise HTTPException(status_code=403, detail="No organization for this client")
 
     # Whose list this is, and where the identity map lives, is needed before the
     # sources can be asked — it is one indexed read, not a round trip.
@@ -228,13 +284,6 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user),
     marked = apply_marks(live, _marks(org_id, viewer_person(client)))
 
     cap = LIST_MAX
-    if limit == "top":
-        cap = max(1, min(LIST_MAX, rubric.top_n))
-    elif limit:
-        try:
-            cap = max(1, min(LIST_MAX, int(limit)))
-        except ValueError:
-            raise HTTPException(status_code=422, detail="limit is a number or 'top'")
     if len(marked.live) > cap or len(past) > LIST_MAX:
         logger.info("work-list: showing %d of %d live and %d of %d past for "
                     "org %s — the rest are scored but below the cut",
@@ -245,7 +294,8 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user),
                        past=[_out(i) for i in top(past)],
                        buried=[_out(i) for i in marked.buried],
                        live_total=len(marked.live), past_total=len(past),
-                       rubric=rubric.describe() if rubric != Rubric() else [])
+                       rubric=rubric.describe() if rubric != Rubric() else [],
+                       top_n=rubric.top_n)
 
 
 def _marks(org_id: int, person: Optional[str]) -> Dict[str, str]:
@@ -730,6 +780,7 @@ async def edit(body: EditIn,
     stored in amebo for a snooze — the task carries its own date, and the claw
     surfaces it again when that date comes round.
     """
+    _forget_list(client)
     org_id = client.get("org_id")
     if not org_id:
         raise HTTPException(status_code=403, detail="No organization for this client")
@@ -963,6 +1014,7 @@ class FeedbackOut(BaseModel):
 @router.post("/feedback", response_model=FeedbackOut)
 async def feedback(body: FeedbackIn,
                    client: Dict[str, Any] = Depends(get_service_or_user)):
+    _forget_list(client)
     """Say what is wrong with the list, from the list.
 
     Filed as a story on the team's own board, because that is where work lives
@@ -1054,6 +1106,7 @@ class MarkOut(BaseModel):
 @router.post("/mark", response_model=MarkOut)
 async def set_mark(body: MarkIn,
                    client: Dict[str, Any] = Depends(get_service_or_user)):
+    _forget_list(client)
     """Pin a row, or bury it.
 
     The person overruling the ranking. The list caps at twenty rows, so without
@@ -1089,6 +1142,7 @@ async def clear_mark(subject: str,
                      client: Dict[str, Any] = Depends(get_service_or_user)):
     """Unpin, or dig it back up. One press, and the row falls straight back into
     its ranked place — nothing a person can do here is hard to undo."""
+    _forget_list(client)
     org_id = client.get("org_id")
     if not org_id:
         raise HTTPException(status_code=403, detail="No organization for this client")

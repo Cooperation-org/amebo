@@ -649,6 +649,10 @@ export type WorkMarkState = 'pinned' | 'buried';
 export interface WorkList {
   /** The org's rubric in plain lines; empty on the defaults. */
   rubric?: string[];
+  /** Seconds since the list was assembled (it is served pre-assembled). */
+  age_seconds: number;
+  /** How many rows the rubric calls the top. */
+  top_n: number;
   /** Lifted above the list, in the order they were pinned, never capped. */
   pinned: WorkItem[];
   live: WorkItem[];
