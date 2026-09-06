@@ -522,6 +522,14 @@ class ApiClient {
     return this.request(`/api/goals/${q}`);
   }
 
+  async getGoalsProgress(): Promise<GoalProgress[]> {
+    return this.request('/api/goals/progress');
+  }
+
+  async getWorkListTop(): Promise<WorkList> {
+    return this.request('/api/work-list/?limit=top');
+  }
+
   async answerGoal(id: string, answer: string): Promise<Goal> {
     return this.request(`/api/goals/${encodeURIComponent(id)}/answer`, {
       method: 'POST',
@@ -639,6 +647,8 @@ export interface WorkItem {
 export type WorkMarkState = 'pinned' | 'buried';
 
 export interface WorkList {
+  /** The org's rubric in plain lines; empty on the defaults. */
+  rubric?: string[];
   /** Lifted above the list, in the order they were pinned, never capped. */
   pinned: WorkItem[];
   live: WorkItem[];
@@ -702,6 +712,23 @@ export interface PendingAction {
   preview?: string | null;
   created_by?: string | null;
   error?: string | null;
+}
+
+export interface GoalProgress {
+  id: string;
+  title: string;
+  status: string;
+  state: 'waiting' | 'moving' | 'stalled' | 'paused' | 'done';
+  question?: string | null;
+  owner?: string | null;
+  org_label?: string | null;
+  kind?: string | null;
+  tasks_open: number;
+  tasks_done: number;
+  tasks_url?: string | null;
+  last_activity?: string | null;
+  quiet_days?: number | null;
+  trigger?: string | null;
 }
 
 export interface Goal {

@@ -382,6 +382,25 @@ class GoalRepo:
         finally:
             DatabaseConnection.return_connection(conn)
 
+    def last_activity(self, goal_ids: List[str]) -> Dict[str, Any]:
+        """When each goal last did anything: newest goal_events row per goal."""
+        if not goal_ids:
+            return {}
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT goal_id, MAX(created_at) AS last
+                    FROM goal_events WHERE goal_id = ANY(%s::uuid[])
+                    GROUP BY goal_id
+                    """,
+                    (list(goal_ids),),
+                )
+                return {str(r["goal_id"]): r["last"] for r in cur.fetchall()}
+        finally:
+            DatabaseConnection.return_connection(conn)
+
     def list_events(self, goal_id: str, limit: int = 500) -> List[Dict[str, Any]]:
         conn = DatabaseConnection.get_connection()
         try:

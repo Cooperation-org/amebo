@@ -26,10 +26,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { User, Settings, LogOut, MessageSquare, Menu, X, Inbox, Target } from 'lucide-react';
+import { User, Settings, LogOut, MessageSquare, Menu, X, Inbox, Target, Sun } from 'lucide-react';
 import { useWorkList } from '@/src/hooks/useWorkList';
 
 const navigation = [
+  { name: 'Now', href: '/dashboard/now', icon: Sun },
   { name: 'Inbox', href: '/dashboard/list', icon: Inbox },
   { name: 'Goals', href: '/dashboard/goals', icon: Target },
   { name: 'Chat', href: '/chat', icon: MessageSquare },

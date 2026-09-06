@@ -100,6 +100,24 @@ class TaigaStoryStore:
             page += 1
         return out
 
+    def stories_tagged(self, tags: List[str], page_size: int = 200) -> List[Dict[str, Any]]:
+        """Every story, open or closed, carrying any of these tags. Taiga's
+        ``tags`` filter takes a comma list and matches any."""
+        if not tags:
+            return []
+        from urllib.parse import quote
+        out: List[Dict[str, Any]] = []
+        page = 1
+        q = quote(",".join(tags), safe=",:")
+        while True:
+            batch, total = self._client._get_paged(
+                f"/api/v1/userstories?tags={q}&page_size={page_size}&page={page}")
+            out.extend(batch)
+            if not batch or len(batch) < page_size or (total and page * page_size >= total):
+                break
+            page += 1
+        return out
+
     def open_dated_stories(self, page_size: int = 200) -> List[Dict[str, Any]]:
         """Only the stories somebody put a date on. Kept because a caller that
         wants deadlines and nothing else should say so rather than filter."""

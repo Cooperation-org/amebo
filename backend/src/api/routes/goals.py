@@ -23,6 +23,7 @@ explicit "update title/description" endpoint when there is a real need.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 from datetime import datetime
@@ -208,6 +209,125 @@ async def create_goal(
     logger.info("Goal created: id=%s org=%s key=%s",
                 goal["id"], client["org_id"], client["key_name"])
     return _to_goal_response(goal)
+
+
+class GoalProgress(BaseModel):
+    id: str
+    title: str
+    status: str
+    state: str                      # waiting | moving | stalled | paused | done
+    question: Optional[str] = None
+    owner: Optional[str] = None
+    org_label: Optional[str] = None
+    kind: Optional[str] = None
+    tasks_open: int = 0
+    tasks_done: int = 0
+    tasks_url: Optional[str] = None
+    last_activity: Optional[datetime] = None
+    quiet_days: Optional[int] = None
+    trigger: Optional[str] = None
+
+
+STALLED_AFTER_DAYS = 7
+
+
+def _goal_tag(goal_id: str) -> str:
+    return f"goal:{str(goal_id)[:8]}"
+
+
+@router.get("/progress", response_model=List[GoalProgress])
+async def goals_progress(client: dict = Depends(get_service_or_user)):
+    """Every live goal with where it stands: its state as a traffic light, the
+    question it holds, its tasks done and open (stories tagged goal:<id8> or
+    named in its description), and how long since anything happened.
+
+    One Taiga read for the tag search, one for the events; a Taiga outage
+    loses the task counts and nothing else."""
+    from src.services.work_list import goal_task_refs
+    engine = _get_engine()
+    goals = [g for g in engine.list_for_org(client["org_id"])
+             if g.get("status") in ("waiting_user", "pending", "active", "paused")]
+    if not goals:
+        return []
+    ids = [str(g["id"]) for g in goals]
+    repo = GoalRepo()
+    questions: Dict[str, str] = {}
+    activity: Dict[str, datetime] = {}
+    try:
+        questions = repo.last_questions([i for i in ids])
+        activity = repo.last_activity(ids)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("goals/progress: events unreadable: %s", exc)
+
+    counts: Dict[str, Dict[str, int]] = {i: {"open": 0, "done": 0} for i in ids}
+    marten = os.getenv("MARTEN_URL", "https://marten.linkedtrust.us").rstrip("/")
+    try:
+        from src.services.work_list_taiga import TaigaStoryStore
+        store = TaigaStoryStore()
+        store.prime_slugs()
+        tagged = store.stories_tagged([_goal_tag(i) for i in ids])
+        seen: Dict[str, set] = {i: set() for i in ids}
+        for story in tagged:
+            closed = bool((story.get("status_extra_info") or {}).get("is_closed"))
+            for t in (story.get("tags") or []):
+                name = t[0] if isinstance(t, (list, tuple)) else t
+                for i in ids:
+                    if name == _goal_tag(i) and story.get("id") not in seen[i]:
+                        seen[i].add(story.get("id"))
+                        counts[i]["done" if closed else "open"] += 1
+        for g in goals:
+            for slug, ref in goal_task_refs(g):
+                try:
+                    story = store.story(slug, ref)
+                except Exception:  # noqa: BLE001
+                    story = None
+                if story and story.get("id") not in seen[str(g["id"])]:
+                    seen[str(g["id"])].add(story.get("id"))
+                    closed = bool((story.get("status_extra_info") or {}).get("is_closed"))
+                    counts[str(g["id"])]["done" if closed else "open"] += 1
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("goals/progress: taiga unreadable: %s", exc)
+
+    now = datetime.now(tz=None)
+    out: List[GoalProgress] = []
+    for g in goals:
+        gid = str(g["id"])
+        cfg = g.get("config") or {}
+        if isinstance(cfg, str):
+            try:
+                cfg = json.loads(cfg)
+            except Exception:  # noqa: BLE001
+                cfg = {}
+        last = activity.get(gid) or g.get("updated_at")
+        quiet = None
+        if last:
+            try:
+                quiet = max(0, (now - last.replace(tzinfo=None)).days)
+            except Exception:  # noqa: BLE001
+                quiet = None
+        status = g.get("status")
+        if status == "waiting_user":
+            state = "waiting"
+        elif status == "paused":
+            state = "paused"
+        elif quiet is not None and quiet > STALLED_AFTER_DAYS and counts[gid]["open"] == 0 and counts[gid]["done"] == 0:
+            state = "stalled"
+        elif quiet is not None and quiet > STALLED_AFTER_DAYS * 2:
+            state = "stalled"
+        else:
+            state = "moving"
+        out.append(GoalProgress(
+            id=gid, title=g["title"], status=status, state=state,
+            question=questions.get(gid), owner=cfg.get("owner"),
+            org_label=cfg.get("org_label"), kind=cfg.get("kind"),
+            tasks_open=counts[gid]["open"], tasks_done=counts[gid]["done"],
+            tasks_url=f"{marten}/board?tag={_goal_tag(gid)}",
+            last_activity=last, quiet_days=quiet,
+            trigger=(g.get("trigger_config") or {}).get("type"),
+        ))
+    order = {"waiting": 0, "stalled": 1, "moving": 2, "paused": 3}
+    out.sort(key=lambda p: (order.get(p.state, 9), p.title))
+    return out
 
 
 @router.get("/{goal_id}", response_model=GoalResponse)
