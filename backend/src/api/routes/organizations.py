@@ -383,6 +383,7 @@ async def get_org_links(client: dict = Depends(get_service_or_user)):
 class RubricRequest(BaseModel):
     """Fields to change; anything absent is kept. See src/services/rubric.py."""
     focus: Optional[str] = None
+    judgement: Optional[str] = None
     top_n: Optional[int] = None
     someone_waiting: Optional[float] = None
     contact_interested: Optional[float] = None

@@ -21,6 +21,10 @@ date always outranks everything judged; the rubric only orders the undated rest.
    - "partnerships, attention" → `contact_interested` up, `money` 0
    - "cases, advocacy, no money" → `money` 0, `someone_waiting` highest
    - "show me only the top few" → `top_n`
+   - anything that is a rule in words rather than a weight ("this month
+     Level Up comes first", "a warm intro cooling beats a cold lead") →
+     `judgement`, verbatim. A model applies it inside the hard order and
+     says why on the row.
 3. Change as little as possible. One or two weights, or the focus line. Do not
    rewrite weights nobody mentioned.
 4. `set_rubric` with only the changed fields and `why`. It is gated: a human

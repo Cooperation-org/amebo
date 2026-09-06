@@ -22,6 +22,10 @@ SET_RUBRIC_SCHEMA = {
         "focus": {"type": "string",
                   "description": "What matters to this team, in their own words. "
                                  "Shown, never scored."},
+        "judgement": {"type": "string",
+                      "description": "Instructions a model applies when ordering the undated rows, "
+                                     "in the team's words ('a warm intro cooling beats a cold lead'). "
+                                     "Hard signals still set the band; this moves rows inside it."},
         "top_n": {"type": "integer", "description": "Rows shown in the 'only what matters' view (3-7)."},
         **{w: {"type": "number", "description": f"Weight for signal '{w}'."} for w in _WEIGHTS},
         "why": {"type": "string",

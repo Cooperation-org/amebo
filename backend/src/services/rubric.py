@@ -32,8 +32,13 @@ Signals, in the team's words, each a weight added to an undated item's score:
 - ``quiet_cap``          quiet days on an opportunity stop counting past this
 
 ``focus`` is prose: what matters to this team, shown to the reader and to the
-claw, never scored. ``top_n`` is how many rows a person is shown when they ask
-for only what matters.
+claw, never scored. ``judgement`` is prose too, but it IS applied: when set, a
+model reads the hard-scored candidates with these instructions and may move
+each one up or down within the judged band, saying why on the row
+(src/services/rubric_judge.py). Golda (2026-09-06): "the rubric should allow
+some LLM judgement, it's kind of like a prompt, it can have some hard signal
+also." The clock still wins; judgement never reaches a dated row. ``top_n`` is
+how many rows a person is shown when they ask for only what matters.
 """
 from __future__ import annotations
 
@@ -59,6 +64,7 @@ OPEN_CONTEXT_QUIET_CAP = 180.0
 @dataclass(frozen=True)
 class Rubric:
     focus: str = ""
+    judgement: str = ""
     top_n: int = 5
     # undated tasks
     someone_waiting: float = UNDATED_ASKED

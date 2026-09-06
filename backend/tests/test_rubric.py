@@ -151,3 +151,38 @@ def test_a_parked_unowned_task_is_waiting_on_a_person_not_backlog():
     assert "taiga:core#16" not in subjects
     row = next(i for i in wl.live if i.subject == "taiga:core#15")
     assert "amebo asked" in row.reason.label
+
+
+def test_judgement_moves_rows_inside_the_band_and_never_a_dated_one():
+    from src.services import rubric_judge
+    from src.services.work_list import Item, Reason, CLOCK_FLOOR
+    rubric_judge._cache.clear()
+    dated = Item(subject="taiga:core#1", title="due soon", reason=Reason("tomorrow", "clock"),
+                 rank=CLOCK_FLOOR + 300, links=[], quote=None, due="2026-09-07", assignee=None)
+    a = Item(subject="taiga:core#2", title="level up flyer", reason=Reason("open", "judgement"),
+             rank=400, links=[], quote=None, due=None, assignee=None)
+    b = Item(subject="crm:lead/3", title="cold lead", reason=Reason("reached out", "judgement"),
+             rank=450, links=[], quote=None, due=None, assignee=None)
+
+    class Resp:
+        content = [type("T", (), {"text": '[{"subject":"taiga:core#2","nudge":120,"why":"Level Up first this month"},'
+                                          '{"subject":"taiga:core#1","nudge":-150,"why":"ignore"}]'})()]
+
+    class Client:
+        calls = 0
+        class messages:
+            @staticmethod
+            def create(**kw):
+                Client.calls += 1
+                return Resp()
+
+    r = Rubric(judgement="Level Up workshop comes first this month")
+    out = rubric_judge.judge([dated, b, a], rubric=r, org_id=1, viewer="golda", client=Client())
+    assert [i.subject for i in out] == ["taiga:core#1", "taiga:core#2", "crm:lead/3"]
+    assert out[0].rank == CLOCK_FLOOR + 300            # the clock never moves
+    assert out[1].rank == 520 and out[1].reason.label == "Level Up first this month"
+    # second read of the same candidates: cached, no second call
+    rubric_judge.judge([dated, b, a], rubric=r, org_id=1, viewer="golda", client=Client())
+    assert Client.calls == 1
+    # no judgement text: untouched, no call
+    assert rubric_judge.judge([b, a], rubric=Rubric(), org_id=1, viewer="golda", client=Client())[0].subject == "crm:lead/3"

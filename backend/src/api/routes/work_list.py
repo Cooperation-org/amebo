@@ -212,6 +212,13 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user),
     live.sort(key=lambda i: (-i.rank, i.title))
     past.sort(key=lambda i: (i.due or "", i.title))
 
+    # The org's judgement prose, applied by a model inside the judged band and
+    # cached — nothing here runs per page load unless the candidates changed.
+    if (rubric.judgement or "").strip():
+        from src.services.rubric_judge import judge
+        live = await asyncio.to_thread(
+            judge, live, rubric=rubric, org_id=org_id, viewer=viewer_person(client))
+
     # The reader's own pins and burials, applied last: they overrule the ranking
     # rather than competing with it, so they are read after everything is scored
     # and sorted.
