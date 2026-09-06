@@ -115,7 +115,12 @@ def test_drafts_fade_with_age_on_the_orgs_quiet_rule():
     items = items_from_drafts([fresh, july], today=TODAY, rubric=Rubric())
     by = {i.subject: i for i in items}
     assert by["draft:a"].rank > by["draft:b"].rank
-    assert by["draft:b"].rank == JUDGED_CEILING - 96   # 48 days * 2, under the cap
+    assert by["draft:a"].rank == 300 + 100 - 2          # one day old
+    assert by["draft:b"].rank == 300 + 100 - 96         # 48 days * 2, under the cap
     assert "48 days" in by["draft:b"].reason.label
     # no timestamp: unchanged from before
-    assert items_from_drafts([{"id": "c", "preview": "x", "payload": {}}])[0].rank == JUDGED_CEILING
+    assert items_from_drafts([{"id": "c", "preview": "x", "payload": {}}])[0].rank == 400
+    # a person waiting on a task beats amebo's own ask
+    asked = judged_rank(story(), today=TODAY, comment={"who": "kene", "text": "?"},
+                        viewer="goldavelez_org", rubric=Rubric(someone_waiting=300))
+    assert asked > by["draft:a"].rank

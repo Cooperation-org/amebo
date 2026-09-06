@@ -473,7 +473,9 @@ def items_from_drafts(actions: Sequence[Dict[str, Any]],
             subject=f"draft:{action.get('id')}",
             title=(text.strip().splitlines() or [""])[0][:120] or "(empty draft)",
             reason=Reason(label, "judgement"),
-            rank=JUDGED_CEILING - fade,
+            # Amebo's own ask starts below a person's: a draft never outranks
+            # a task somebody is waiting on. It used to sit at the ceiling.
+            rank=max(0.0, UNDATED_FLOOR + r.draft - fade),
             links=links,
             quote=None,
             due=None,

@@ -26,6 +26,8 @@ Signals, in the team's words, each a weight added to an undated item's score:
 - ``no_detail``          nothing written down to act on (subtracted)
 - ``quiet_fade``         points lost per day since anything happened, to
                          ``quiet_max``
+- ``draft``              a draft amebo is holding for approval (its own ask,
+                         so it starts below a person's)
 - ``stage_step``         each CRM stage further along is more real
 - ``quiet_cap``          quiet days on an opportunity stop counting past this
 
@@ -72,6 +74,8 @@ class Rubric:
     quiet_cap: float = OPEN_CONTEXT_QUIET_CAP
     contact_interested: float = 0.0
     money: float = 0.0
+    # a draft amebo wants approved: its own ask, so below any person's
+    draft: float = 100.0
 
     @classmethod
     def from_config(cls, config: Optional[Any]) -> "Rubric":
