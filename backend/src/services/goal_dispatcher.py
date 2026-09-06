@@ -24,6 +24,7 @@ Boundaries:
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
@@ -140,8 +141,10 @@ class GoalDispatcher:
         self._output_gate = HumanOutputGate()
         register_output_gate_gc(self._output_gate)
 
-        def _gated_notify(channel: str, message: str) -> bool:
-            decision = self._output_gate.gate(message, channel=channel)
+        def _gated_notify(channel: str, message: str,
+                          urgency: str = "normal") -> bool:
+            decision = self._output_gate.gate(message, channel=channel,
+                                              urgency=urgency)
             if decision.disposition is Disposition.SEND:
                 return bool(raw_notifier(channel, decision.text or message))
             # DEFER → queued for the daily stand-up; SUPPRESS → duplicate/noise.
@@ -895,8 +898,24 @@ class GoalDispatcher:
 
     # ------------------------------------------------------------- Notify
 
-    def _maybe_notify(self, goal: Dict[str, Any], summary: Optional[str]) -> bool:
+    def _channel_for(self, goal: Dict[str, Any]) -> Optional[str]:
+        """The goal's own channel, else the instance's ``config.notify_channel``.
+        Seven goals sat in waiting_user for two months with an empty channel and
+        their questions reached nobody (golda 2026-09-06)."""
         channel = goal.get("notify_channel")
+        if channel:
+            return channel
+        inst = self._load_instance(goal.get("org_id")) or {}
+        cfg = inst.get("config") or {}
+        if isinstance(cfg, str):
+            try:
+                cfg = json.loads(cfg)
+            except Exception:
+                cfg = {}
+        return (cfg or {}).get("notify_channel") or None
+
+    def _maybe_notify(self, goal: Dict[str, Any], summary: Optional[str]) -> bool:
+        channel = self._channel_for(goal)
         if not channel:
             return False
 
@@ -911,14 +930,16 @@ class GoalDispatcher:
             return False
 
     def _notify_alert(self, goal: Dict[str, Any], message: str) -> bool:
-        """Failure / budget alerts (WP16). Uses the RAW notifier — an alert must
-        always reach a human, never be batched or suppressed by the noise gate.
-        Exactly one call per event."""
-        channel = goal.get("notify_channel")
+        """Failure / budget / waiting-user alerts (WP16). Goes through the
+        output gate as ``urgent``: never rate-limited or deferred to the
+        stand-up, but still deduplicated and crystallized. The raw path let a
+        crash-looping goal post the same alert every tick (golda 2026-09-06:
+        "only if it's important, minimum, Slack is not to be cluttered")."""
+        channel = self._channel_for(goal)
         if not channel:
             return False
         try:
-            return bool(self._raw_notify(channel, message))
+            return bool(self._notify(channel, message, urgency="urgent"))
         except Exception as exc:
             logger.warning("Alert notifier raised for goal %s: %s", goal.get("id"), exc)
             return False

@@ -83,7 +83,7 @@ def cmd_create(args: argparse.Namespace) -> int:
     if args.description:
         body["description"] = args.description
     if args.cron:
-        body["trigger_config"] = {"cron": args.cron}
+        body["trigger_config"] = {"type": "cron", "expression": args.cron}
     if args.notify:
         body["notify_channel"] = args.notify
     config: dict = {}
