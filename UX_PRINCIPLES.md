@@ -19,6 +19,13 @@ What an agent tolerates — a dense blob of text, every link, a full quote, a
 report — is noise to a person. One line per thing, one press to act on it.
 The user experience is the most important thing in everything we do.
 
+> "snappy, fast, easy, clear, original words when possible not ai generated,
+> links ALWAYS clickable, omit needless words, show not tell, provide the most
+> important context not excessive, be able to get to full detail easily,
+> everything actionable, anything you see can edit or move or interact with,
+> or remove it" · "it should feel like a physical world where you can actually
+> interact with things, just by touching them" (golda, 2026-09-06)
+
 ## 1. Omit needless words. Show, don't tell.
 
 > "Omit Needless Words. Show Not Tell." · "no noise" (golda, 2026-08-06)
