@@ -227,11 +227,45 @@ class OdooActivityStore:
             rows = self._kw("crm.lead", "read", [[int(lead_id)]], {
                 "fields": ["name", "description", "user_id", "stage_id",
                            "partner_id", "date_last_stage_update",
-                           "expected_revenue", "email_from", "active"]})
+                           "expected_revenue", "email_from", "active",
+                           "website", "campaign_id"]})
         except Exception as exc:  # noqa: BLE001
             logger.info("work_list_crm: lead %r unreadable: %s", lead_id, exc)
             return None
         return rows[0] if rows else None
+
+    # ---- what a person does from the inbox card (UX_PRINCIPLES 4/5): a human
+    # press is not gated; these write straight to the CRM, the record's home.
+
+    def next_of_lead(self, lead_id: int) -> Optional[Dict[str, Any]]:
+        """The lead's open next step (its earliest open activity), or None."""
+        rows = self._kw("mail.activity", "search_read",
+                        [[["res_model", "=", "crm.lead"], ["res_id", "=", int(lead_id)]]],
+                        {"fields": ["summary", "date_deadline", "activity_type_id", "note"],
+                         "order": "date_deadline asc", "limit": 1})
+        return rows[0] if rows else None
+
+    def post_note(self, res_model: str, res_id: int, text: str) -> None:
+        """A person's own note onto the record's chatter, as a note."""
+        self._kw(res_model, "message_post", [[int(res_id)]],
+                 {"body": text, "message_type": "comment", "subtype_xmlid": "mail.mt_note"})
+
+    def set_next(self, lead_id: int, summary: str, date_deadline: str) -> None:
+        """ONE next step per lead: replace whatever is open, never pile up
+        (golda 2026-09-06: "replace a 'next' section on top, not have too much
+        ai cruft build up in there")."""
+        open_ids = self._kw("mail.activity", "search",
+                            [[["res_model", "=", "crm.lead"], ["res_id", "=", int(lead_id)]]], {})
+        if open_ids:
+            self._kw("mail.activity", "unlink", [open_ids], {})
+        self._kw("crm.lead", "activity_schedule", [[int(lead_id)]],
+                 {"act_type_xmlid": "mail.mail_activity_data_todo",
+                  "summary": summary, "date_deadline": date_deadline})
+
+    def activity_done(self, activity_id: int, feedback: str = "") -> None:
+        """Mark the next step done; Odoo logs it to the chatter."""
+        self._kw("mail.activity", "action_feedback", [[int(activity_id)]],
+                 {"feedback": feedback} if feedback else {})
 
     def last_messages(self, res_model: str,
                       res_ids: List[int]) -> Dict[int, Dict[str, str]]:

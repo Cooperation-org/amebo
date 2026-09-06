@@ -687,6 +687,9 @@ export interface WorkItemDetail {
   comments: WorkComment[];
   /** The board's own statuses, in board order — same list Marten shows. */
   statuses: string[];
+  /** A person in the CRM: the one next step on the record, and ways to reach them. */
+  next?: { activity_id?: number | null; summary: string; due?: string | null } | null;
+  links?: { label: string; url: string }[];
   /** Who can be assigned on this board. */
   members: string[];
 }

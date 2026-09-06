@@ -444,6 +444,21 @@ class DetailOut(BaseModel):
     # Who can be assigned on this board — a real list, not a free-text box that
     # fails silently on a typo.
     members: List[str] = []
+    # A person in the CRM: the one next step on the record (editable, replaced
+    # not appended) and the ways to reach them.
+    next: Optional["NextOut"] = None
+    links: List["LinkOut"] = []
+
+
+class NextOut(BaseModel):
+    activity_id: Optional[int] = None
+    summary: str = ""
+    due: Optional[str] = None
+
+
+class LinkOut(BaseModel):
+    label: str
+    url: str
 
 
 def _guard(subject: str, org_id: int) -> tuple:
@@ -570,6 +585,25 @@ def _draft_detail(action_id: str, org_id: int) -> DetailOut:
     )
 
 
+def _next_out(act: Optional[Dict[str, Any]]) -> Optional["NextOut"]:
+    if not act:
+        return None
+    return NextOut(activity_id=act.get("id"), summary=(act.get("summary") or "").strip(),
+                   due=act.get("date_deadline") or None)
+
+
+def _lead_links(lead: Dict[str, Any]) -> List["LinkOut"]:
+    out: List[LinkOut] = []
+    email = lead.get("email_from")
+    if isinstance(email, str) and email.strip():
+        out.append(LinkOut(label=email.strip(), url=f"mailto:{email.strip()}"))
+    for f in ("partner_linkedin", "website"):
+        u = lead.get(f)
+        if isinstance(u, str) and u.startswith("http"):
+            out.append(LinkOut(label=u.replace("https://", "").replace("http://", "")[:40], url=u))
+    return out
+
+
 def _crm_detail(activity_id: str) -> DetailOut:
     """A scheduled CRM follow-up, opened as itself.
 
@@ -615,6 +649,8 @@ def _crm_detail(activity_id: str) -> DetailOut:
                   else None),
         url=form_url(model, rid) if model and rid else "",
         comments=comments,
+        next=_next_out(act),
+        links=_lead_links(store.lead(rid) or {}) if model == "crm.lead" and rid else [],
         # A follow-up has no board of statuses and no member list to reassign
         # within, so the sheet offers neither rather than an empty dropdown.
         statuses=[],
@@ -670,6 +706,8 @@ def _crm_lead_detail(lead_id: str) -> DetailOut:
                   else None),
         url=form_url("crm.lead", ref),
         comments=comments,
+        next=_next_out(store.next_of_lead(ref)),
+        links=_lead_links(lead),
         statuses=[],
         members=[],
     )
@@ -721,6 +759,55 @@ class EditIn(BaseModel):
 
 class EditOut(BaseModel):
     applied: List[str]
+
+
+def _edit_crm(body: EditIn) -> EditOut:
+    """What a person does to a CRM record from the inbox card, written straight
+    to the CRM (a human press is not gated): a note onto the chatter, the ONE
+    next step (title + date, replacing what was there), or 'done' on that step.
+    """
+    from src.services.work_list_crm import OdooActivityStore
+    store = OdooActivityStore()
+    kind, _, ident = body.subject.partition(":")[2].partition("/")
+    try:
+        ref = int(ident)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Unreadable subject")
+    if kind == "activity":
+        act = store.activity(ref)
+        if not act:
+            raise HTTPException(status_code=404, detail="Follow-up not found")
+        lead_id = act.get("res_id") if act.get("res_model") == "crm.lead" else None
+        activity_id: Optional[int] = ref
+        model, rid = act.get("res_model"), act.get("res_id")
+    elif kind == "lead":
+        lead_id, model, rid = ref, "crm.lead", ref
+        nxt = store.next_of_lead(ref)
+        activity_id = nxt.get("id") if nxt else None
+    else:
+        raise HTTPException(status_code=400, detail="Not a CRM subject")
+
+    applied: List[str] = []
+    try:
+        if body.comment and model and rid:
+            store.post_note(model, rid, body.comment)
+            applied.append("comment")
+        if (body.due_date or body.title) and lead_id:
+            current = store.next_of_lead(lead_id) or {}
+            summary = (body.title or current.get("summary") or "follow up").strip()
+            due = body.due_date or current.get("date_deadline") or date.today().isoformat()
+            store.set_next(lead_id, summary, due)
+            applied.append("next")
+        if body.close and activity_id:
+            store.activity_done(activity_id, body.comment or "")
+            applied.append("close")
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001 - say what the CRM said
+        raise HTTPException(status_code=502, detail=f"CRM refused: {exc}")
+    if not applied:
+        raise HTTPException(status_code=400, detail="nothing to change")
+    return EditOut(applied=applied)
 
 
 def _claw_on_comment(org_id: int, slug: str, ref: Any, text: str,
@@ -804,6 +891,9 @@ async def edit(body: EditIn,
         return _changed(org_id, _edit_draft(
             body, org_id,
             approver=str(client.get("user") or client.get("email") or "list")))
+
+    if body.subject.startswith("crm:"):
+        return _changed(org_id, _edit_crm(body))
 
     slug, ref = _guard(body.subject, org_id)
 

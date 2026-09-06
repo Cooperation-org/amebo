@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink, X } from 'lucide-react';
 import { useEditWorkItem, useWorkItem } from '@/src/hooks/useWorkItem';
+import type { WorkItemDetail } from '@/src/lib/api';
 import { LATER_OPTIONS, inDays } from '@/src/lib/later';
 
 /**
@@ -282,36 +283,12 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
             )}
           </div>
         ) : data.kind === 'contact' ? (
-          /* A follow-up someone scheduled on a person in the CRM. The person is
-             what you came to see: what was last said to them, and one way
-             through to their record. Nothing here is editable — the CRM holds
-             this record and there is no write path to it yet, and a field that
-             throws away what you typed is worse than a field you cannot type
-             in. */
-          <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
-            <div>
-              <p className="text-[17px] font-semibold leading-snug text-gray-900">
-                {data.title}
-              </p>
-              {data.due && (
-                <p className="mt-1 font-mono text-xs text-gray-500">due {data.due}</p>
-              )}
-              {data.assignee && (
-                <p className="mt-0.5 text-xs text-gray-500">{data.assignee}</p>
-              )}
-            </div>
-            {data.description && (
-              <p className="whitespace-pre-wrap text-[15px] leading-relaxed text-gray-800">
-                {data.description}
-              </p>
-            )}
-            <div>
-              <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-widest text-gray-400">
-                Thread
-              </p>
-              {data.comments.length === 0 ? (
-                <p className="text-sm text-gray-400">Nobody has said anything here.</p>
-              ) : (
+          /* A person in the CRM, doable from here: the one next step (edit it
+             where it sits, replaced not appended), done in one press, their
+             last words with links live, and a box to log what you did. Writes
+             go straight to the CRM record — its home (UX_PRINCIPLES 4, 5). */
+          <ContactSheet data={data} apply={apply} pending={edit.isPending} />
+        ) : (
                 <ul className="space-y-2">
                   {data.comments.map((c, i) => (
                     <li key={i} className="text-sm leading-snug text-gray-800">
@@ -533,6 +510,122 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+
+const URL_RE = /(https?:\/\/[^\s<>"')\]]+)/g;
+function Linked({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(URL_RE).map((p, i) =>
+        /^https?:\/\//.test(p) ? (
+          <a key={i} href={p} target="_blank" rel="noreferrer" className="text-emerald-700 hover:underline">
+            {p.replace(/^https?:\/\//, '').slice(0, 48)} ↗
+          </a>
+        ) : (
+          <span key={i}>{p}</span>
+        ),
+      )}
+    </>
+  );
+}
+
+function ContactSheet({ data, apply, pending }:
+                      { data: WorkItemDetail; apply: (b: any) => void; pending: boolean }) {
+  const [summary, setSummary] = useState(data.next?.summary ?? '');
+  const [due, setDue] = useState(data.next?.due ?? '');
+  const [note, setNote] = useState('');
+  const [all, setAll] = useState(false);
+  const thread = all ? data.comments : data.comments.slice(0, 3);
+  const saveNext = () => {
+    if (summary.trim() === (data.next?.summary ?? '') && (due || '') === (data.next?.due ?? '')) return;
+    apply({ subject: data.subject, title: summary.trim() || undefined, due_date: due || undefined });
+  };
+  return (
+    <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-5">
+      <div>
+        <p className="text-[17px] font-semibold leading-snug text-gray-900">{data.title}</p>
+        <p className="mt-0.5 text-xs text-gray-500">
+          {[data.code, data.assignee].filter(Boolean).join(' · ')}
+        </p>
+        {(data.links ?? []).length > 0 && (
+          <p className="mt-1 flex flex-wrap gap-x-3 text-xs">
+            {(data.links ?? []).map((l) => (
+              <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="text-emerald-700 hover:underline">{l.label} ↗</a>
+            ))}
+          </p>
+        )}
+      </div>
+
+      <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+        <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-widest text-amber-800">Next</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            value={summary}
+            onChange={(e) => setSummary(e.target.value)}
+            onBlur={saveNext}
+            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+            placeholder="what to do next"
+            className="min-w-[12rem] flex-1 rounded-md border border-amber-200 bg-white px-3 py-1.5 text-sm text-gray-900 focus:border-amber-500 focus:outline-none"
+          />
+          <input
+            type="date"
+            value={due}
+            onChange={(e) => setDue(e.target.value)}
+            onBlur={saveNext}
+            className="rounded-md border border-amber-200 bg-white px-2 py-1.5 text-sm text-gray-900"
+          />
+          {data.next?.activity_id && (
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => apply({ subject: data.subject, close: true, comment: note.trim() || undefined })}
+              className="rounded-md bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white disabled:opacity-40"
+              title="done — logs it on the record"
+            >
+              done ✓
+            </button>
+          )}
+        </div>
+      </div>
+
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (note.trim()) { apply({ subject: data.subject, comment: note.trim() }); setNote(''); }
+        }}
+        className="flex items-start gap-2"
+      >
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); (e.currentTarget.form as HTMLFormElement).requestSubmit(); } }}
+          rows={1}
+          placeholder="what happened, in your words"
+          className="min-h-[36px] flex-1 resize-y rounded-md border border-gray-200 px-3 py-1.5 text-sm focus:border-emerald-600 focus:outline-none"
+        />
+        <button type="submit" disabled={!note.trim() || pending} className="rounded-md bg-gray-900 px-3 py-1.5 text-sm text-white disabled:opacity-40">log</button>
+      </form>
+
+      {data.comments.length > 0 && (
+        <ul className="space-y-2">
+          {thread.map((c, i) => (
+            <li key={i} className="text-sm leading-snug text-gray-800">
+              <span className="font-semibold">{c.who}:</span> <Linked text={c.text} />
+              {c.when && <span className="ml-2 font-mono text-[11px] text-gray-400">{c.when}</span>}
+            </li>
+          ))}
+          {data.comments.length > 3 && (
+            <li>
+              <button type="button" onClick={() => setAll((v) => !v)} className="text-xs text-gray-500 hover:underline">
+                {all ? 'fewer' : `${data.comments.length - 3} more`}
+              </button>
+            </li>
+          )}
+        </ul>
+      )}
     </div>
   );
 }
