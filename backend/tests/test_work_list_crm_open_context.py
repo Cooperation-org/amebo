@@ -115,14 +115,17 @@ def test_further_along_outranks_earlier():
     assert connected.rank > reached.rank
 
 
-def test_longer_quiet_outranks_recent_within_a_stage():
+def test_recent_outranks_long_quiet_within_a_stage():
+    """Reversed 2026-09-06 (golda's rubric: what makes an opportunity matter is
+    that somebody is interested; a record nobody touched for five months is not
+    that). Quiet now counts against a record, bounded, as it does for a task."""
     recent = build_open_context_item(
         lead(date_last_stage_update="2026-07-20 09:00:00"),
         today=TODAY, stage_rank=STAGE_RANK)
     cold = build_open_context_item(
         lead(date_last_stage_update="2026-03-03 09:00:00"),
         today=TODAY, stage_rank=STAGE_RANK)
-    assert cold.rank > recent.rank
+    assert recent.rank > cold.rank
 
 
 def test_quiet_stops_counting_after_six_months():

@@ -813,8 +813,9 @@ def build_open_context_item(lead: Dict[str, Any], *, today: date,
 
     It has no date, so it cannot rank on the clock. What stands in for one: how
     far along it is (a record at 'Connected' has more waiting on it than one at
-    'Reached Out') and how long it has been quiet. Both are stated in the label,
-    because a judged rank has to justify itself.
+    'Reached Out'), whether the contact wrote last, money on the record, and
+    how long it has been quiet (which counts against it). All stated in the
+    label, because a judged rank has to justify itself.
     """
     stage = lead.get("stage_id")
     stage_id = stage[0] if isinstance(stage, (list, tuple)) and stage else None
@@ -829,7 +830,12 @@ def build_open_context_item(lead: Dict[str, Any], *, today: date,
 
     rank = OPEN_CONTEXT_FLOOR
     rank += r.stage_step * stage_rank.get(stage_id, 0)
-    rank += min(float(quiet or 0), r.quiet_cap)
+    # Quiet counts against an opportunity the same way it counts against a
+    # task (golda 2026-08-11 for tasks; 2026-09-06 for the rubric: what makes
+    # it important is that somebody is interested, and nobody has been for two
+    # hundred days). It used to count for it, which put the stalest records at
+    # the top of the page. Bounded, so an old record fades rather than vanishes.
+    rank -= min(float(quiet or 0), r.quiet_cap)
 
     # The rubric's own signals (golda 2026-09-06): the contact themselves wrote
     # last, and money on the record. Each one names itself in the label,
