@@ -254,3 +254,20 @@ def test_an_agents_done_in_a_decision_status_is_still_a_review():
     out = collapse_reviews(items)
     assert [i.subject for i in out] == ["review:ready-for-test", "taiga:core#2", "taiga:core#4"]
     assert out[0].title.startswith("2 things")
+
+
+def test_forty_same_day_followups_are_one_row():
+    from src.services.work_list import Item, Reason, Link, collapse_followups, CLOCK_FLOOR
+    def c(n):
+        return Item(subject=f"crm:activity/{n}", title="Level Up partner-code invite",
+                    reason=Reason("in 2 days", "clock"), rank=CLOCK_FLOOR + 363,
+                    links=[Link("Org", f"https://elm.linkedtrust.us/c/37?lead={n}")],
+                    quote=None, due="2026-09-08", assignee="Golda Velez")
+    other = Item(subject="taiga:core#1", title="x", reason=Reason("open", "judgement"), rank=400,
+                 links=[], quote=None, due=None, assignee=None)
+    out = collapse_followups([c(1), c(2), c(3), c(4), other])
+    assert len(out) == 2
+    row = out[0]
+    assert row.title == "4 × Level Up partner-code invite" and row.due == "2026-09-08"
+    assert row.links[0].url == "https://elm.linkedtrust.us/c/37" and row.kind == "review"
+    assert [i.subject for i in collapse_followups([c(1), c(2), other])][0] == "crm:activity/1"

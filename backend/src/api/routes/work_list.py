@@ -47,6 +47,7 @@ from src.db.repositories.pending_action_repo import PendingActionRepo
 from src.services.rubric import Rubric
 from src.services.work_list import (
     Item, LIST_MAX, WorkList, apply_marks, assemble_crm, collapse_reviews,
+    collapse_followups,
     assemble_crm_open_context, assemble_stories, goal_task_refs, top,
     items_from_drafts, items_from_goals, parse_subject, story_url,
 )
@@ -284,8 +285,10 @@ async def _assemble(client: Dict[str, Any]) -> "WorkListOut":
         live = await asyncio.to_thread(
             judge, live, rubric=rubric, org_id=org_id, viewer=viewer_person(client))
 
-    # The agent's finished work folds into one row (docs: collapse_reviews).
-    live = collapse_reviews(live)
+    # The agent's finished work folds into one row, and so does one campaign
+    # step across many contacts (collapse_reviews, collapse_followups).
+    live = collapse_followups(collapse_reviews(live))
+    past = collapse_followups(past)
 
     # The reader's own pins and burials, applied last: they overrule the ranking
     # rather than competing with it, so they are read after everything is scored

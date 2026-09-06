@@ -71,6 +71,7 @@ class Reason:
 # could disagree.
 KINDS = {
     "review": "review",     # the agent's finished work, folded into one row
+    "followups": "review",  # one campaign step across many contacts, folded
     "taiga": "task",        # a story on a board
     "goal": "goal",         # a question a claw is holding
     "draft": "draft",       # something amebo wants to send as you
@@ -1280,5 +1281,40 @@ def collapse_reviews(items: Sequence[Item], *, keep: int = 0) -> List[Item]:
     )
     out = [i for i in items if id(i) not in folded]
     out.append(row)
+    out.sort(key=lambda i: (-i.rank, i.title))
+    return out
+
+
+def collapse_followups(items: Sequence[Item], *, min_group: int = 3) -> List[Item]:
+    """Follow-ups that are one campaign action — the same next step on the same
+    day across many contacts — become ONE row. Forty 'Level Up partner-code
+    invite' rows due Tuesday are one thing to do (golda 2026-09-06), and a list
+    that spends its whole top on them shows nothing else. The row keeps the
+    count, the day, the rank of the group, and links to the campaign in Elm
+    when they share one, else to the first contact.
+    """
+    groups: Dict[tuple, List[Item]] = {}
+    for i in items:
+        if i.kind == "contact" and i.due and i.subject.startswith("crm:activity/"):
+            groups.setdefault((i.title.strip().lower(), i.due), []).append(i)
+    fold = {k: g for k, g in groups.items() if len(g) >= min_group}
+    if not fold:
+        return list(items)
+    folded_ids = {id(i) for g in fold.values() for i in g}
+    out = [i for i in items if id(i) not in folded_ids]
+    for (title, due), g in fold.items():
+        campaigns = {re.search(r"/c/(\d+)", l.url).group(1)
+                     for i in g for l in i.links if re.search(r"/c/(\d+)", l.url)}
+        if len(campaigns) == 1:
+            base = next(l.url for i in g for l in i.links if "/c/" in l.url).split("?")[0]
+            links = [Link(f"{len(g)} in Elm", base)]
+        else:
+            links = g[0].links[:1]
+        out.append(Item(
+            subject=f"followups:{due}:{re.sub(r'[^a-z0-9]+', '-', title)[:40]}",
+            title=f"{len(g)} × {g[0].title.strip()}",
+            reason=g[0].reason, rank=max(i.rank for i in g), links=links,
+            quote=None, due=due, assignee=g[0].assignee, past=g[0].past,
+        ))
     out.sort(key=lambda i: (-i.rank, i.title))
     return out
