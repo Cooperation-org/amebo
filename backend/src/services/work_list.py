@@ -227,7 +227,7 @@ def judged_rank(story: Dict[str, Any], *, today: Optional[date] = None,
         # the ordering altogether.
         score -= min(float(quiet) * r.quiet_fade, r.quiet_max)
 
-    if _asked_of_viewer(comment, viewer):
+    if _asked_of_viewer(comment, viewer) or _waiting_status(story):
         score += r.someone_waiting
     return min(JUDGED_CEILING - 1.0, max(0.0, score))
 
@@ -253,6 +253,9 @@ def judged_reason(story: Dict[str, Any], *, today: Optional[date] = None,
     the scoring, so the words name whatever actually lifted the row."""
     if _asked_of_viewer(comment, viewer):
         return Reason(f"{comment['who'].strip()} asked, no deadline", "judgement")
+    if _waiting_status(story):
+        name = ((story.get("status_extra_info") or {}).get("name") or "").strip().lower()
+        return Reason(name, "judgement")
     age = _days_since(story.get("created_date"), today)
     if age is not None and age <= (rubric or DEFAULT_RUBRIC).new_days:
         return Reason("new, no deadline", "judgement")
@@ -984,6 +987,16 @@ def parse_subject(key: str) -> Optional[tuple]:
         return None
 
 
+WAITING_STATUSES = ("needs human", "ready for test")
+
+
+def _waiting_status(story: Dict[str, Any]) -> bool:
+    """The board's own word that a person is needed next: the status names the
+    task contract uses for 'a human decides' and 'a human tests'."""
+    name = ((story.get("status_extra_info") or {}).get("name") or "").strip().lower()
+    return name in WAITING_STATUSES
+
+
 def _needs_human(comment: Optional[Dict[str, str]]) -> bool:
     """A doer parked this: its last word is the contract's 'NEEDS: ...' line."""
     text = ((comment or {}).get("text") or "").lstrip()
@@ -1064,13 +1077,13 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
             continue
         (spare if is_backlog else kept).append((story, slug))
 
-    # An unowned task a doer parked with "NEEDS: ..." is waiting on a person,
-    # whoever that turns out to be. It is not backlog; it is the one kind of
-    # unowned undated row that belongs on every list (docs: prompts/skills/
-    # doer.md is the contract that writes that comment).
+    # An unowned task that is waiting on a person belongs on every list,
+    # whoever that person turns out to be: one a doer parked with "NEEDS: ..."
+    # (prompts/skills/doer.md), or one sitting in the board's "Needs human" or
+    # "Ready for test" status (the 09-04 task contract). Not backlog.
     comments = _comments_for(store, [s.get("id") for s, _ in kept + spare])
     parked = [(s, slug) for s, slug in spare
-              if _needs_human(comments.get(s.get("id")))]
+              if _needs_human(comments.get(s.get("id"))) or _waiting_status(s)]
     if parked:
         kept.extend(parked)
         spare = [pair for pair in spare if pair not in parked]

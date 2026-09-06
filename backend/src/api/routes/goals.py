@@ -245,8 +245,14 @@ async def goals_progress(client: dict = Depends(get_service_or_user)):
     loses the task counts and nothing else."""
     from src.services.work_list import goal_task_refs
     engine = _get_engine()
+    # A person's goals only. A cron-driven goal is a claw — amebo's own work —
+    # and is never something for a person to look at (golda 2026-09-06: "that
+    # is NOT for me, that is something for the agent to do"). A claw that has
+    # stopped to ask a question is the one exception: the question is theirs.
     goals = [g for g in engine.list_for_org(client["org_id"])
-             if g.get("status") in ("waiting_user", "pending", "active", "paused")]
+             if g.get("status") in ("waiting_user", "pending", "active", "paused")
+             and (g.get("status") == "waiting_user"
+                  or (g.get("trigger_config") or {}).get("type") != "cron")]
     if not goals:
         return []
     ids = [str(g["id"]) for g in goals]
