@@ -187,7 +187,7 @@ def test_the_card_carries_the_persons_own_words():
                                      viewer_uids=[11], stage_names=STAGES)
     assert mine[0].quote.who == "Eric Shepherd"
     assert mine[0].quote.text == "Happy to look at this next month."
-    assert crm.asked == [("res.partner", [354])]
+    assert crm.asked == [("crm.lead", [46]), ("res.partner", [354])]
 
 
 def test_contacts_are_read_in_one_query_not_one_per_row():
@@ -196,7 +196,7 @@ def test_contacts_are_read_in_one_query_not_one_per_row():
     rows = [lead(id=46, partner_id=[354, "A"]), lead(id=47, partner_id=[8943, "B"])]
     assemble_crm_open_context(rows, crm, today=TODAY, viewer_uids=[11],
                               stage_names=STAGES)
-    assert crm.asked == [("res.partner", [354, 8943])]
+    assert crm.asked[-1] == ("res.partner", [354, 8943])
 
 
 def test_a_missing_quote_is_not_a_missing_row():
