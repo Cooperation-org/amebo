@@ -11,6 +11,7 @@ import { useOpenTask } from '@/src/hooks/useOpenTask';
 import { useEditWorkItem } from '@/src/hooks/useWorkItem';
 import { useMarkWorkItem } from '@/src/hooks/useWorkListMark';
 import { LATER_OPTIONS, inDays } from '@/src/lib/later';
+import { useAuthStore } from '@/src/store/useAuthStore';
 
 /**
  * The inbox — one screen: what is top for this person, then every live goal
@@ -164,11 +165,9 @@ function Row({ item, state, onOpen, drag }:
       </div>
     );
   }
-  // A person in the CRM opens where the record is edited: Elm's lead drawer.
-  const go = item.kind === 'contact' && first ? () => { window.location.href = first.url; } : onOpen;
   return (
     <div
-      onClick={go}
+      onClick={onOpen}
       draggable
       {...drag}
       className={`flex cursor-pointer items-start gap-3 rounded-lg border bg-white px-4 py-3 hover:border-gray-300 ${
@@ -185,23 +184,18 @@ function Row({ item, state, onOpen, drag }:
           {item.due ? ` · ${item.due}` : ''}
         </p>
         {item.quote && (
-          <p className="mt-1 text-sm text-gray-700">
+          <p className="mt-1 truncate text-sm text-gray-700" title={item.quote.text}>
             <span className="text-gray-400">{item.quote.who}: </span>
-            <Words text={item.quote.text} />
+            {item.quote.text}
           </p>
         )}
-        {item.links.length > 0 && (
-          <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
-            {item.links.slice(0, 4).map((l) => (
-              <a key={l.url} href={l.url} target={item.kind === 'contact' && l === first ? undefined : '_blank'}
-                 rel="noreferrer" onClick={(e) => e.stopPropagation()}
-                 className="text-xs text-emerald-700 hover:underline">
-                {l.label.length > 32 ? l.label.slice(0, 32) + '…' : l.label}{l.found ? ' (?)' : ''} ↗
-              </a>
-            ))}
-          </div>
-        )}
       </div>
+      {first && (
+        <a href={first.url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+           className="mt-0.5 shrink-0 text-xs text-emerald-700 hover:underline">
+          {first.label.length > 22 ? first.label.slice(0, 22) + '…' : first.label} ↗
+        </a>
+      )}
       <Controls item={item} state={state} />
     </div>
   );
@@ -246,9 +240,23 @@ function ago(s: number) {
 }
 
 export default function InboxPage() {
+  const { user } = useAuthStore();
+  const admin = (user as { role?: string } | null)?.role === 'admin';
+  const [as, setAs] = useState<string>('');
+  const [q, setQ] = useState('');
+  const team = useQuery({
+    queryKey: ['team-members'],
+    queryFn: async () => {
+      const r = (await apiClient.getTeamMembers()) as any;
+      const rows: any[] = Array.isArray(r) ? r : r?.members ?? [];
+      return rows.map((m) => ({ email: String(m.email), name: String(m.name || m.full_name || m.email) }));
+    },
+    enabled: admin,
+    staleTime: 600 * 1000,
+  });
   const list = useQuery<WorkList>({
-    queryKey: ['work-list'],
-    queryFn: () => apiClient.getWorkList(),
+    queryKey: as ? ['work-list', 'as', as] : ['work-list'],
+    queryFn: () => apiClient.getWorkList(as || undefined),
     staleTime: 60 * 1000,
     refetchInterval: 5 * 60 * 1000,
   });
@@ -259,10 +267,19 @@ export default function InboxPage() {
   const [dragging, setDragging] = useState<string | null>(null);
 
   const data = list.data;
-  const pinned = data?.pinned ?? [];
+  const hit = (i: WorkItem) => {
+    if (!q.trim()) return true;
+    const t = q.toLowerCase();
+    return [i.title, i.reason.label, i.assignee ?? '', i.quote?.text ?? '', i.quote?.who ?? '', ...i.links.map((l) => l.label)]
+      .join(' ').toLowerCase().includes(t);
+  };
+  const searching = q.trim().length > 0;
+  const pinned = (data?.pinned ?? []).filter(hit);
   const topN = data?.top_n ?? 5;
-  const live = data?.live ?? [];
-  const shown = showAll ? live : live.slice(0, Math.max(0, topN - Math.min(pinned.length, topN)));
+  const live = (data?.live ?? []).filter(hit);
+  const shown = showAll || searching ? live : live.slice(0, Math.max(0, topN - Math.min(pinned.length, topN)));
+  const buried = (data?.buried ?? []).filter(hit);
+  const past = (data?.past ?? []).filter(hit);
 
   // Drag: dropping onto the pinned block (or onto a pinned row) pins the row
   // there; dropping a pinned row onto a live row unpins it. The pinned order is
@@ -310,6 +327,21 @@ export default function InboxPage() {
           )}
           {data && <span className="ml-auto shrink-0 font-normal normal-case tracking-normal">as of {ago(data.age_seconds)}</span>}
         </h2>
+        <div className="flex items-center gap-2">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="search, including what you pushed down"
+            className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-3 py-1.5 text-sm focus:border-emerald-600 focus:outline-none"
+          />
+          {admin && (
+            <select value={as} onChange={(e) => setAs(e.target.value)} title="see this page as someone else"
+                    className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-sm text-gray-700">
+              <option value="">as me</option>
+              {(team.data ?? []).map((m) => <option key={m.email} value={m.email}>as {m.name}</option>)}
+            </select>
+          )}
+        </div>
         {list.isLoading && <p className="text-sm text-gray-400">…</p>}
         <div
           onDragOver={(e) => e.preventDefault()}
@@ -325,7 +357,7 @@ export default function InboxPage() {
           <Row key={i.subject} item={i} state={null} onOpen={() => setOpen(i.subject)} drag={dragFor(i.subject, 'live')} />
         ))}
         {data && pinned.length + shown.length === 0 && <p className="text-sm text-gray-500">Nothing needs you.</p>}
-        {data && live.length > shown.length && (
+        {data && !searching && live.length > shown.length && (
           <button type="button" onClick={() => setShowAll(true)} className="block pt-1 text-xs text-gray-500 hover:underline">
             all {data.live_total} →
           </button>
@@ -333,21 +365,21 @@ export default function InboxPage() {
         {showAll && (
           <button type="button" onClick={() => setShowAll(false)} className="block pt-1 text-xs text-gray-500 hover:underline">← top only</button>
         )}
-        {data && data.buried.length > 0 && (
-          <details className="pt-2 text-xs text-gray-500">
-            <summary className="cursor-pointer">{data.buried.length} pushed down</summary>
+        {buried.length > 0 && (
+          <details open={searching} className="pt-2 text-xs text-gray-500">
+            <summary className="cursor-pointer">{buried.length} pushed down</summary>
             <div className="mt-2 space-y-1">
-              {data.buried.map((i) => (
+              {buried.map((i) => (
                 <Row key={i.subject} item={i} state="buried" onOpen={() => setOpen(i.subject)} drag={dragFor(i.subject, 'live')} />
               ))}
             </div>
           </details>
         )}
-        {showAll && data && data.past.length > 0 && (
-          <details className="pt-2 text-xs text-gray-500">
-            <summary className="cursor-pointer">{data.past_total} past their date</summary>
+        {(showAll || searching) && past.length > 0 && (
+          <details open={searching} className="pt-2 text-xs text-gray-500">
+            <summary className="cursor-pointer">{past.length} past their date</summary>
             <div className="mt-2 space-y-1">
-              {data.past.map((i) => (
+              {past.map((i) => (
                 <Row key={i.subject} item={i} state={null} onOpen={() => setOpen(i.subject)} drag={dragFor(i.subject, 'live')} />
               ))}
             </div>

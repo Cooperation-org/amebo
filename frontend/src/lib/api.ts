@@ -414,8 +414,8 @@ class ApiClient {
   }
 
   // Pending gated actions (drafts awaiting human approval)
-  async getWorkList(): Promise<WorkList> {
-    return this.request('/api/work-list/');
+  async getWorkList(as?: string): Promise<WorkList> {
+    return this.request('/api/work-list/' + (as ? `?as=${encodeURIComponent(as)}` : ''));
   }
 
   async getWorkItem(subject: string): Promise<WorkItemDetail> {

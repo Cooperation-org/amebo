@@ -9,6 +9,16 @@ a paragraph, it is not.
 
 ---
 
+## 0. Review as the human, after every change
+
+> "REVIEW AS A HUMAN AFTER EACH CHANGE" · "you don't care about huge verbose
+> context but that is a TERRIBLE EXPERIENCE for a human" (golda, 2026-09-06)
+
+Before a change is called done, open it and read it as the person it is for.
+What an agent tolerates — a dense blob of text, every link, a full quote, a
+report — is noise to a person. One line per thing, one press to act on it.
+The user experience is the most important thing in everything we do.
+
 ## 1. Omit needless words. Show, don't tell.
 
 > "Omit Needless Words. Show Not Tell." · "no noise" (golda, 2026-08-06)

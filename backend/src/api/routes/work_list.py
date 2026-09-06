@@ -38,7 +38,7 @@ import logging
 import os
 from typing import Any, Dict, List, Optional, Sequence
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -171,13 +171,22 @@ def subjects_for_org(repo: PendingActionRepo, org_id: int) -> List[str]:
 @router.get("/", response_model=WorkListOut)
 async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user),
                         limit: Optional[str] = None,
-                        background: BackgroundTasks = None):
+                        background: BackgroundTasks = None,
+                        as_: Optional[str] = Query(None, alias="as")):
     """Everything waiting on this person — served from the pre-assembled list
-    (src/services/work_list_cache.py) and rebuilt behind the reader."""
+    (src/services/work_list_cache.py) and rebuilt behind the reader.
+
+    ``as=<email>``: an org admin sees the list exactly as that person would
+    (golda 2026-09-06: "see as whoever, so we see if it's useful for her").
+    Read only — marks and edits still land as the admin."""
     from src.services import work_list_cache as cache
     org_id = client.get("org_id")
     if not org_id:
         raise HTTPException(status_code=403, detail="No organization for this client")
+    if as_:
+        if client.get("auth") != "user" or client.get("role") != "admin":
+            raise HTTPException(status_code=403, detail="only an admin can see as someone else")
+        client = {**client, "email": as_.strip().lower()}
     key = (org_id, viewer_person(client) or "")
     hit = cache.get(key)
     if hit is None:

@@ -34,12 +34,15 @@ const STATE: Record<string, { word: string; dot: string; chip: string }> = {
   completed: { word: 'done', dot: 'bg-gray-300', chip: 'border-gray-200 bg-white text-gray-500' },
 };
 
-const FILTERS: { key: string; label: string; statuses: string[] }[] = [
+const FILTERS: { key: string; label: string; statuses: string[]; claws?: boolean }[] = [
   { key: 'waiting', label: 'waiting on you', statuses: ['waiting_user'] },
   { key: 'running', label: 'running', statuses: ['active', 'pending'] },
   { key: 'paused', label: 'paused', statuses: ['paused', 'failed'] },
+  { key: 'claws', label: 'claws', statuses: ['waiting_user', 'active', 'pending', 'paused', 'failed'], claws: true },
   { key: 'done', label: 'done', statuses: ['completed'] },
 ];
+// A claw is a goal on a schedule: amebo's own work. Editable here, like any goal.
+const isClaw = (g: Goal) => (g.trigger_config as { type?: string } | null)?.type === 'cron';
 
 // Waiting first, then what is moving, then what stopped, then what finished.
 const ORDER = ['waiting_user', 'active', 'pending', 'failed', 'paused', 'completed'];
@@ -113,7 +116,7 @@ function Row({ goal, onOpen }: { goal: Goal; onOpen: () => void }) {
           {waiting && <Answer goal={goal} />}
           {!waiting && (
             <p className="mt-1 text-xs text-gray-400">
-              {st.word}
+              {isClaw(goal) ? 'claw · ' : ''}{st.word}
               {trigger ? ` · ${trigger}` : ''}
               {!trigger && goal.status !== 'completed' && (
                 <span className="text-amber-700"> · no trigger — cannot fire on its own</span>
@@ -140,11 +143,11 @@ export default function GoalsPage() {
     (a, b) => ORDER.indexOf(a.status) - ORDER.indexOf(b.status),
   );
   const counts = Object.fromEntries(
-    FILTERS.map((f) => [f.key, goals.filter((g) => f.statuses.includes(g.status)).length]),
+    FILTERS.map((f) => [f.key, goals.filter((g) => f.statuses.includes(g.status) && (f.claws ? isClaw(g) : true)).length]),
   );
   const active = FILTERS.find((f) => f.key === filter);
   const shown = active
-    ? goals.filter((g) => active.statuses.includes(g.status))
+    ? goals.filter((g) => active.statuses.includes(g.status) && (active.claws ? isClaw(g) : true))
     : goals.filter((g) => g.status !== 'completed');
   const done = goals.filter((g) => g.status === 'completed').length;
 
