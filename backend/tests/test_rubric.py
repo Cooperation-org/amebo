@@ -211,3 +211,31 @@ def test_waiting_status_counts_only_under_the_agent_contract():
     new = story(status_extra_info={"is_closed": False, "name": "Needs human"}, tags=[["agent", None]])
     assert not _waiting_status(old)
     assert _waiting_status(new)
+
+
+def test_twelve_dones_fold_into_one_row_and_needs_human_stays():
+    from src.services.work_list import Item, Reason, Link, collapse_reviews
+    def t(n, label, rank):
+        return Item(subject=f"taiga:core#{n}", title=f"thing {n}", reason=Reason(label, "judgement"),
+                    rank=rank, links=[Link("open", f"https://marten.linkedtrust.us/board?story={n}")],
+                    quote=None, due=None, assignee=None)
+    items = [t(1, "admin asks: ready for test", 380), t(2, "admin asks: ready for test", 376),
+             t(3, "admin asks: needs human", 379), t(4, "reached out", 392)]
+    out = collapse_reviews(items)
+    subjects = [i.subject for i in out]
+    assert subjects == ["taiga:core#4", "review:ready-for-test", "taiga:core#3"]
+    row = out[1]
+    assert row.title.startswith("2 things amebo finished")
+    assert [l.url for l in row.links] == ["https://marten.linkedtrust.us/board?story=1",
+                                          "https://marten.linkedtrust.us/board?story=2"]
+    assert row.kind == "review"
+    # one review is not a pile: left alone
+    assert [i.subject for i in collapse_reviews(items[1:])] == ["taiga:core#2", "taiga:core#3", "taiga:core#4"]
+
+
+def test_an_agents_new_story_is_not_news():
+    fresh = story(created_date="2026-09-05T09:00:00.000Z",
+                  owner_extra_info={"username": "admin"})
+    a = judged_rank(fresh, today=TODAY, agents=["admin"])
+    b = judged_rank(fresh, today=TODAY, agents=[])
+    assert b - a == Rubric().new

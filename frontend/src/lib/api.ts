@@ -628,7 +628,7 @@ export interface WorkReason {
 
 /** What a card is. The list is not task-only: a follow-up on a person, a
  *  question a claw is holding and a board row all sit on the same ladder. */
-export type WorkKind = 'task' | 'goal' | 'draft' | 'contact';
+export type WorkKind = 'task' | 'goal' | 'draft' | 'contact' | 'review';
 
 export interface WorkItem {
   subject: string;

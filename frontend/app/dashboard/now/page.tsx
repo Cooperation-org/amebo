@@ -30,6 +30,21 @@ const STATE: Record<GoalProgress['state'], { word: string; dot: string; bar: str
 function TopRow({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
   const clock = item.reason.kind === 'clock';
   const first = item.links[0];
+  if (item.kind === 'review') {
+    // The agent's finished work, folded: one row, every link, no sheet to open.
+    return (
+      <div className="rounded-lg border border-dashed bg-white px-4 py-3">
+        <p className="text-[15px] leading-snug text-gray-700">{item.title}</p>
+        <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+          {item.links.map((l) => (
+            <a key={l.url} href={l.url} target="_blank" rel="noreferrer" className="text-xs text-emerald-700 hover:underline">
+              {l.label} ↗
+            </a>
+          ))}
+        </div>
+      </div>
+    );
+  }
   return (
     <div
       onClick={onOpen}

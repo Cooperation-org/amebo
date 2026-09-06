@@ -45,7 +45,7 @@ from src.api.middleware.auth import get_service_or_user
 from src.db.repositories.pending_action_repo import PendingActionRepo
 from src.services.rubric import Rubric
 from src.services.work_list import (
-    Item, LIST_MAX, WorkList, apply_marks, assemble_crm,
+    Item, LIST_MAX, WorkList, apply_marks, assemble_crm, collapse_reviews,
     assemble_crm_open_context, assemble_stories, goal_task_refs, top,
     items_from_drafts, items_from_goals, parse_subject, story_url,
 )
@@ -218,6 +218,9 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user),
         from src.services.rubric_judge import judge
         live = await asyncio.to_thread(
             judge, live, rubric=rubric, org_id=org_id, viewer=viewer_person(client))
+
+    # The agent's finished work folds into one row (docs: collapse_reviews).
+    live = collapse_reviews(live)
 
     # The reader's own pins and burials, applied last: they overrule the ranking
     # rather than competing with it, so they are read after everything is scored

@@ -70,6 +70,7 @@ class Reason:
 # read back out of the subject rather than stored a second time where the two
 # could disagree.
 KINDS = {
+    "review": "review",     # the agent's finished work, folded into one row
     "taiga": "task",        # a story on a board
     "goal": "goal",         # a question a claw is holding
     "draft": "draft",       # something amebo wants to send as you
@@ -217,8 +218,9 @@ def judged_rank(story: Dict[str, Any], *, today: Optional[date] = None,
         score += r.picked_up
 
     age = _days_since(story.get("created_date"), today)
-    if age is not None and age <= r.new_days:
+    if age is not None and age <= r.new_days and not _created_by_agent(story, agents):
         # Brand new: nobody has triaged it yet, which is its own kind of waiting.
+        # A story an agent made is not news to the person it made twelve for.
         score += r.new
 
     quiet = _days_since(story.get("modified_date"), today)
@@ -235,6 +237,11 @@ def judged_rank(story: Dict[str, Any], *, today: Optional[date] = None,
     elif _waiting_status(story):
         score += r.agent_asks
     return min(JUDGED_CEILING - 1.0, max(0.0, score))
+
+
+def _created_by_agent(story: Dict[str, Any], agents: Sequence[str]) -> bool:
+    who = ((story.get("owner_extra_info") or {}).get("username") or "").strip()
+    return bool(who) and who in set(agents or ())
 
 
 def _is_agent(comment: Optional[Dict[str, str]], agents: Sequence[str]) -> bool:
@@ -264,6 +271,11 @@ def judged_reason(story: Dict[str, Any], *, today: Optional[date] = None,
     """Why an undated task sits where it does, in plain words. A judged rank has
     to justify itself; a dated one does not. The order here follows the order of
     the scoring, so the words name whatever actually lifted the row."""
+    age = _days_since(story.get("created_date"), today)
+    if (age is not None and age <= (rubric or DEFAULT_RUBRIC).new_days
+            and not _created_by_agent(story, agents)
+            and not _asked_of_viewer(comment, viewer) and not _waiting_status(story)):
+        return Reason("new, no deadline", "judgement")
     if _asked_of_viewer(comment, viewer):
         who = comment['who'].strip()
         if _is_agent(comment, agents):
@@ -273,9 +285,6 @@ def judged_reason(story: Dict[str, Any], *, today: Optional[date] = None,
     if _waiting_status(story):
         name = ((story.get("status_extra_info") or {}).get("name") or "").strip().lower()
         return Reason(name, "judgement")
-    age = _days_since(story.get("created_date"), today)
-    if age is not None and age <= (rubric or DEFAULT_RUBRIC).new_days:
-        return Reason("new, no deadline", "judgement")
     status = (story.get("status_extra_info") or {}).get("name")
     if column is not None and column > 0 and status:
         return Reason(status.strip().lower(), "judgement")
@@ -1008,6 +1017,13 @@ def parse_subject(key: str) -> Optional[tuple]:
 WAITING_STATUSES = ("needs human", "ready for test")
 
 
+def _under_contract(story: Dict[str, Any]) -> bool:
+    """Tagged ``agent``: a story a doer session or claw may work (the 09-04
+    task contract). Everything a doer parks is one of these."""
+    tags = [(t[0] if isinstance(t, (list, tuple)) else t) for t in (story.get("tags") or [])]
+    return "agent" in tags
+
+
 def _waiting_status(story: Dict[str, Any]) -> bool:
     """The board's own word that a person is needed next: the status names the
     task contract uses for 'a human decides' and 'a human tests' — on stories
@@ -1016,8 +1032,7 @@ def _waiting_status(story: Dict[str, Any]) -> bool:
     name = ((story.get("status_extra_info") or {}).get("name") or "").strip().lower()
     if name not in WAITING_STATUSES:
         return False
-    tags = [(t[0] if isinstance(t, (list, tuple)) else t) for t in (story.get("tags") or [])]
-    return "agent" in tags
+    return _under_contract(story)
 
 
 def _needs_human(comment: Optional[Dict[str, str]]) -> bool:
@@ -1105,8 +1120,12 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
     # whoever that person turns out to be: one a doer parked with "NEEDS: ..."
     # (prompts/skills/doer.md), or one sitting in the board's "Needs human" or
     # "Ready for test" status (the 09-04 task contract). Not backlog.
-    comments = _comments_for(store, [s.get("id") for s, _ in kept + spare])
-    parked = [(s, slug) for s, slug in spare
+    # Comments cost one Taiga call per story, so the backlog is not read
+    # wholesale: only the stories under the agent contract can be parked, and
+    # only those are asked.
+    candidates = [(s, slug) for s, slug in spare if _under_contract(s)]
+    comments = _comments_for(store, [s.get("id") for s, _ in kept + candidates])
+    parked = [(s, slug) for s, slug in candidates
               if _needs_human(comments.get(s.get("id"))) or _waiting_status(s)]
     if parked:
         kept.extend(parked)
@@ -1186,3 +1205,44 @@ def assemble(keys: Sequence[str], store: StoryStore, *, taiga_host: str,
     live.sort(key=lambda i: (-i.rank, i.title))
     past.sort(key=lambda i: (i.due or "", i.title))
     return WorkList(live=live, past=past)
+
+
+# ---------------------------------------------------------------------------
+# Folding the agent's finished work into one row
+# ---------------------------------------------------------------------------
+
+REVIEW_LABEL = "ready for test"
+
+
+def collapse_reviews(items: Sequence[Item], *, keep: int = 0) -> List[Item]:
+    """Every 'ready for test' row an agent is asking about becomes ONE row.
+
+    Twelve "Done: <doc>" rows are one fact — the agent finished twelve things
+    and would like a look — and a list that spends its top five on them shows
+    the person nothing else (golda 2026-09-06). The fold keeps each one's link,
+    ranks where the best of them ranked, and says the count. A 'needs human'
+    row is a decision, not a review, and stays its own row.
+    """
+    reviews = [i for i in items
+               if i.kind == "task" and i.reason.kind == "judgement"
+               and i.reason.label.endswith(REVIEW_LABEL)]
+    if len(reviews) <= max(keep, 1):
+        return list(items)
+    folded = set(id(i) for i in reviews[keep:])
+    group = reviews[keep:]
+    links: List[Link] = []
+    for i in group:
+        url = next((l.url for l in i.links if "/board?story=" in l.url), None) or (i.links[0].url if i.links else "")
+        if url:
+            links.append(Link(headline(i.title, 48), url))
+    row = Item(
+        subject="review:" + REVIEW_LABEL.replace(" ", "-"),
+        title=f"{len(group)} things amebo finished, waiting for your look",
+        reason=Reason("review when you can", "judgement"),
+        rank=max(i.rank for i in group),
+        links=links, quote=None, due=None, assignee=None, past=False,
+    )
+    out = [i for i in items if id(i) not in folded]
+    out.append(row)
+    out.sort(key=lambda i: (-i.rank, i.title))
+    return out
