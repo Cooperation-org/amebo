@@ -17,7 +17,7 @@ from src.api.auth_utils import get_current_user, require_admin
 from src.api.middleware.auth import get_service_or_user
 from src.db.connection import DatabaseConnection
 from pydantic import BaseModel
-from typing import List
+from typing import List, Optional
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -378,6 +378,54 @@ async def get_org_links(client: dict = Depends(get_service_or_user)):
             return {"links": (row['links'] if row and row['links'] else [])}
     finally:
         DatabaseConnection.return_connection(conn)
+
+
+class RubricRequest(BaseModel):
+    """Fields to change; anything absent is kept. See src/services/rubric.py."""
+    focus: Optional[str] = None
+    top_n: Optional[int] = None
+    someone_waiting: Optional[float] = None
+    contact_interested: Optional[float] = None
+    money: Optional[float] = None
+    owned: Optional[float] = None
+    picked_up: Optional[float] = None
+    new: Optional[float] = None
+    new_days: Optional[int] = None
+    no_detail: Optional[float] = None
+    quiet_fade: Optional[float] = None
+    quiet_max: Optional[float] = None
+    stage_step: Optional[float] = None
+    quiet_cap: Optional[float] = None
+
+
+@router.get("/rubric")
+async def get_org_rubric(client: dict = Depends(get_service_or_user)):
+    """The org's importance rubric — what the work list ranks on — as the
+    stored values plus plain lines a person can read. Defaults when unset."""
+    from src.services.rubric_store import read_rubric
+    r = read_rubric(client['org_id'])
+    return {"rubric": r.to_dict(), "lines": r.describe()}
+
+
+@router.put("/rubric")
+async def set_org_rubric(request: RubricRequest,
+                         current_user: dict = Depends(require_admin)):
+    """Change the rubric (admin only). Merges over what is stored; pass only
+    what changes. The ``set_rubric`` tool reaches the same store through the
+    approval gate, so a claw and an admin cannot disagree about where it lives."""
+    from src.services.rubric_store import write_rubric
+    changes = {k: v for k, v in request.dict().items() if v is not None}
+    if not changes:
+        raise HTTPException(status_code=422, detail="nothing to change")
+    try:
+        r = write_rubric(current_user['org_id'], changes)
+    except Exception as e:
+        logger.error(f"Set org rubric error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to set rubric")
+    if r is None:
+        raise HTTPException(status_code=404,
+                            detail="No instance configured for this organization")
+    return {"rubric": r.to_dict(), "lines": r.describe()}
 
 
 @router.get("/board")

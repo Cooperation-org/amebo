@@ -162,18 +162,16 @@ def clock_rank(due: str, today: date) -> float:
 # It used to run the other way — the longer a task went untouched the HIGHER it
 # climbed, on the reasoning that it was being ignored. That is a nag's ordering,
 # not a worker's, and it is what put months-old rows at the top.
-UNDATED_FLOOR = 300.0
-UNDATED_OWNED = 60.0            # someone owns it -> it can actually move
-UNDATED_NO_DETAIL = 10.0        # nothing written down to act on
-UNDATED_NEW_DAYS = 5            # under this, it has not been looked at yet
-UNDATED_NEW = 250.0
-UNDATED_ASKED = 120.0           # somebody's comment is waiting on an answer
-# Off the board's first column: somebody moved it, so it is live work rather
-# than something parked. Which column that is comes from the board's own order,
-# never from a column name — every team names its columns differently.
-UNDATED_PICKED_UP = 90.0
-UNDATED_QUIET_FADE = 2.0        # points lost per day since anything happened
-UNDATED_QUIET_MAX = 200.0       # ... down to a floor; forgotten work sinks, quietly
+# The weights are the org's rubric (src/services/rubric.py, configurable in
+# instances.config.rubric). The names below are the defaults, kept here so the
+# meaning of each signal stays next to the code that scores it.
+from src.services.rubric import (  # noqa: E402
+    DEFAULT as DEFAULT_RUBRIC, Rubric,
+    UNDATED_FLOOR, UNDATED_OWNED, UNDATED_NO_DETAIL, UNDATED_NEW_DAYS,
+    UNDATED_NEW, UNDATED_ASKED, UNDATED_PICKED_UP, UNDATED_QUIET_FADE,
+    UNDATED_QUIET_MAX, OPEN_CONTEXT_FLOOR, OPEN_CONTEXT_STAGE_STEP,
+    OPEN_CONTEXT_QUIET_CAP,
+)
 
 
 def _days_since(stamp: Optional[str], today: Optional[date]) -> Optional[int]:
@@ -191,7 +189,8 @@ def _days_since(stamp: Optional[str], today: Optional[date]) -> Optional[int]:
 def judged_rank(story: Dict[str, Any], *, today: Optional[date] = None,
                 comment: Optional[Dict[str, str]] = None,
                 viewer: Optional[str] = None,
-                column: Optional[int] = None) -> float:
+                column: Optional[int] = None,
+                rubric: Optional[Rubric] = None) -> float:
     """The judged half, kept deliberately small and explainable. Nothing here
     may exceed JUDGED_CEILING, so judgement can never bury a dated item.
 
@@ -205,30 +204,31 @@ def judged_rank(story: Dict[str, Any], *, today: Optional[date] = None,
     a path that carries no timestamps or no board still ranks rather than
     falling off.
     """
+    r = rubric or DEFAULT_RUBRIC
     score = UNDATED_FLOOR
     if story.get("assigned_to"):
-        score += UNDATED_OWNED
+        score += r.owned
     if not story.get("description"):
-        score -= UNDATED_NO_DETAIL
+        score -= r.no_detail
     if column is not None and column > 0:
         # Somebody dragged it out of the parking column. That is a person
         # saying they mean to do it, which is the strongest signal on a board.
-        score += UNDATED_PICKED_UP
+        score += r.picked_up
 
     age = _days_since(story.get("created_date"), today)
-    if age is not None and age <= UNDATED_NEW_DAYS:
+    if age is not None and age <= r.new_days:
         # Brand new: nobody has triaged it yet, which is its own kind of waiting.
-        score += UNDATED_NEW
+        score += r.new
 
     quiet = _days_since(story.get("modified_date"), today)
     if quiet is not None:
         # The longer nothing has happened, the further down it goes — to a
         # floor, so an old task fades off the page instead of vanishing from
         # the ordering altogether.
-        score -= min(float(quiet) * UNDATED_QUIET_FADE, UNDATED_QUIET_MAX)
+        score -= min(float(quiet) * r.quiet_fade, r.quiet_max)
 
     if _asked_of_viewer(comment, viewer):
-        score += UNDATED_ASKED
+        score += r.someone_waiting
     return min(JUDGED_CEILING - 1.0, max(0.0, score))
 
 
@@ -246,14 +246,15 @@ def _asked_of_viewer(comment: Optional[Dict[str, str]],
 def judged_reason(story: Dict[str, Any], *, today: Optional[date] = None,
                   comment: Optional[Dict[str, str]] = None,
                   viewer: Optional[str] = None,
-                  column: Optional[int] = None) -> Reason:
+                  column: Optional[int] = None,
+                  rubric: Optional[Rubric] = None) -> Reason:
     """Why an undated task sits where it does, in plain words. A judged rank has
     to justify itself; a dated one does not. The order here follows the order of
     the scoring, so the words name whatever actually lifted the row."""
     if _asked_of_viewer(comment, viewer):
         return Reason(f"{comment['who'].strip()} asked, no deadline", "judgement")
     age = _days_since(story.get("created_date"), today)
-    if age is not None and age <= UNDATED_NEW_DAYS:
+    if age is not None and age <= (rubric or DEFAULT_RUBRIC).new_days:
         return Reason("new, no deadline", "judgement")
     status = (story.get("status_extra_info") or {}).get("name")
     if column is not None and column > 0 and status:
@@ -390,7 +391,8 @@ def column_of(story: Dict[str, Any], store: Any, project_slug: str) -> Optional[
 def build_item(story: Dict[str, Any], *, project_slug: str, taiga_host: str,
                today: date, comment: Optional[Dict[str, str]] = None,
                viewer: Optional[str] = None,
-               column: Optional[int] = None) -> Item:
+               column: Optional[int] = None,
+               rubric: Optional[Rubric] = None) -> Item:
     """One story becomes one item. The most recent human comment, if there is
     one, becomes the headline; otherwise the item leads with the thing itself.
 
@@ -400,7 +402,8 @@ def build_item(story: Dict[str, Any], *, project_slug: str, taiga_host: str,
     ref = story.get("ref")
     due = story.get("due_date")
     clock = clock_reason(due, today)
-    judged = dict(today=today, comment=comment, viewer=viewer, column=column)
+    judged = dict(today=today, comment=comment, viewer=viewer, column=column,
+                  rubric=rubric)
     reason = clock or judged_reason(story, **judged)
     rank = clock_rank(due, today) if clock else judged_rank(story, **judged)
     past = bool(due and _is_past(due, today))
@@ -777,9 +780,6 @@ def assemble_crm(activities: Sequence[Dict[str, Any]], store: Any, *,
 # question amebo is holding for you (JUDGED_CEILING) because a person waiting on
 # an answer beats a record waiting on a next step, and well clear of the clock
 # band, because none of this is dated.
-OPEN_CONTEXT_FLOOR = 400.0
-OPEN_CONTEXT_STAGE_STEP = 60.0   # each stage further along is more real
-OPEN_CONTEXT_QUIET_CAP = 180.0   # past six months quiet, longer stops meaning more
 
 
 def _quiet_days(stamp: Optional[str], today: date) -> Optional[int]:
@@ -795,7 +795,8 @@ def _quiet_days(stamp: Optional[str], today: date) -> Optional[int]:
 
 def build_open_context_item(lead: Dict[str, Any], *, today: date,
                             stage_rank: Dict[int, int],
-                            message: Optional[Dict[str, str]] = None) -> Item:
+                            message: Optional[Dict[str, str]] = None,
+                            rubric: Optional[Rubric] = None) -> Item:
     """An opportunity someone engaged and then left without a next step.
 
     It has no date, so it cannot rank on the clock. What stands in for one: how
@@ -808,20 +809,35 @@ def build_open_context_item(lead: Dict[str, Any], *, today: date,
     stage_name = (stage[1] if isinstance(stage, (list, tuple)) and len(stage) > 1
                   else "")
     quiet = _quiet_days(lead.get("date_last_stage_update"), today)
+    r = rubric or DEFAULT_RUBRIC
+
+    partner = lead.get("partner_id")
+    partner_name = (partner[1] if isinstance(partner, (list, tuple))
+                    and len(partner) > 1 else None)
 
     rank = OPEN_CONTEXT_FLOOR
-    rank += OPEN_CONTEXT_STAGE_STEP * stage_rank.get(stage_id, 0)
-    rank += min(float(quiet or 0), OPEN_CONTEXT_QUIET_CAP)
+    rank += r.stage_step * stage_rank.get(stage_id, 0)
+    rank += min(float(quiet or 0), r.quiet_cap)
+
+    # The rubric's own signals (golda 2026-09-06): the contact themselves wrote
+    # last, and money on the record. Each one names itself in the label,
+    # because a judged rank has to say what lifted it.
+    lifted: List[str] = []
+    if r.contact_interested and _contact_wrote_last(message, partner_name):
+        rank += r.contact_interested
+        lifted.append(f"{partner_name or 'they'} wrote last")
+    revenue = lead.get("expected_revenue")
+    if r.money and isinstance(revenue, (int, float)) and revenue > 0:
+        rank += r.money
+        lifted.append(f"{revenue:,.0f} expected")
     rank = min(JUDGED_CEILING - 1.0, rank)
 
     if quiet is None:
         label = f"{stage_name.lower()}, nothing scheduled".strip(", ")
     else:
         label = f"{stage_name.lower()}, nothing scheduled for {quiet} days"
-
-    partner = lead.get("partner_id")
-    partner_name = (partner[1] if isinstance(partner, (list, tuple))
-                    and len(partner) > 1 else None)
+    if lifted:
+        label = ", ".join(lifted) + "; " + label
 
     links = [Link(label=partner_name or "the record",
                   url=_crm_form_url("crm.lead", lead.get("id")))]
@@ -846,10 +862,21 @@ def build_open_context_item(lead: Dict[str, Any], *, today: date,
     )
 
 
+def _contact_wrote_last(message: Optional[Dict[str, str]],
+                        partner_name: Optional[str]) -> bool:
+    """The last word on the record was the contact's own — they are interested,
+    or at least talking. Read off the message author, never guessed."""
+    if not message or not partner_name:
+        return False
+    who = (message.get("who") or "").strip().lower()
+    return bool(who) and who == partner_name.strip().lower()
+
+
 def assemble_crm_open_context(leads: Sequence[Dict[str, Any]], store: Any, *,
                               today: Optional[date] = None,
                               viewer_uids: Optional[Sequence[int]] = None,
-                              stage_names: Optional[Dict[int, str]] = None
+                              stage_names: Optional[Dict[int, str]] = None,
+                              rubric: Optional[Rubric] = None
                               ) -> List[Item]:
     """Engaged opportunities with no next step, filtered to the viewer.
 
@@ -883,7 +910,8 @@ def assemble_crm_open_context(leads: Sequence[Dict[str, Any]], store: Any, *,
 
     items = [build_open_context_item(
                 l, today=today, stage_rank=stage_rank,
-                message=quotes.get(_odoo_uid(l.get("partner_id"))))
+                message=quotes.get(_odoo_uid(l.get("partner_id"))),
+                rubric=rubric)
              for l in mine]
     items.sort(key=lambda i: (-i.rank, i.title))
     return items
@@ -958,7 +986,8 @@ def _undated_belongs(owner: Optional[str], viewer: Optional[str]) -> bool:
 def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
                      taiga_host: str, today: Optional[date] = None,
                      agent_username: Optional[str] = None,
-                     viewer_username: Optional[str] = None) -> WorkList:
+                     viewer_username: Optional[str] = None,
+                     rubric: Optional[Rubric] = None) -> WorkList:
     """Build the list straight from stories already in hand.
 
     The list's real source: every open story with a due date. Sourcing only from
@@ -1025,7 +1054,8 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
                           today=today, comment=comments.get(story.get("id")),
                           viewer=viewer_username,
                           column=None if story.get("due_date")
-                          else column_of(story, store, slug))
+                          else column_of(story, store, slug),
+                          rubric=rubric)
         (past if item.past else live).append(item)
     if backlog:
         logger.info("work_list: %d unowned undated stories left in the backlog, "

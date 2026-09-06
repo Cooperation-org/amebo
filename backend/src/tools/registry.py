@@ -840,6 +840,10 @@ from src.tools.cli_read_tools import (
     abra_search_impl, ABRA_SEARCH_SCHEMA,
     taiga_list_impl, TAIGA_LIST_SCHEMA,
 )
+from src.tools.rubric_tools import (
+    read_rubric_impl, READ_RUBRIC_SCHEMA,
+    set_rubric_impl, SET_RUBRIC_SCHEMA,
+)
 from src.tools.gated_actuators import (
     taiga_create_task_impl, TAIGA_CREATE_TASK_SCHEMA,
     taiga_update_task_impl, TAIGA_UPDATE_TASK_SCHEMA,
@@ -1108,6 +1112,36 @@ register_tool(Tool(
     is_read_only=False,
     needs_confirmation=True,
     category="crm",
+))
+
+register_tool(Tool(
+    name="read_rubric",
+    description=(
+        "Read this org's importance rubric: what makes an item rise to the top of "
+        "a person's list (someone waiting, contact wrote last, money, ...) and the "
+        "team's stated focus. Read only. Use before set_rubric, or when someone asks "
+        "why something is or is not at the top."
+    ),
+    input_schema=READ_RUBRIC_SCHEMA,
+    execute=read_rubric_impl,
+    is_read_only=True,
+    category="rubric",
+))
+
+register_tool(Tool(
+    name="set_rubric",
+    description=(
+        "Change this org's importance rubric — the focus line or a signal weight. "
+        "Use when someone says what matters to their team ('money first', 'a person "
+        "waiting beats everything', 'we care about partnerships not revenue'). "
+        "Changes what everyone in the org sees first, so it drafts a pending action "
+        "a human approves. Pass only the fields to change, plus 'why' in their words."
+    ),
+    input_schema=SET_RUBRIC_SCHEMA,
+    execute=set_rubric_impl,
+    is_read_only=False,
+    needs_confirmation=True,
+    category="rubric",
 ))
 
 register_tool(Tool(

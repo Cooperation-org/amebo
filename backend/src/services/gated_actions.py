@@ -51,6 +51,7 @@ FREE_ACTIONS: Set[str] = {
     "web_research",   # same — You.com research with citations
     "list_goals",
     "get_goal_events",
+    "read_rubric",
     "list_hot_tags",
     "list_projects",
     "read_main_md",

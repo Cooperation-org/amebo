@@ -42,6 +42,7 @@ from pydantic import BaseModel
 
 from src.api.middleware.auth import get_service_or_user
 from src.db.repositories.pending_action_repo import PendingActionRepo
+from src.services.rubric import Rubric
 from src.services.work_list import (
     Item, LIST_MAX, WorkList, apply_marks, assemble_crm,
     assemble_crm_open_context, assemble_stories, goal_task_refs, top,
@@ -114,6 +115,9 @@ class WorkListOut(BaseModel):
     # how much is waiting.
     live_total: int = 0
     past_total: int = 0
+    # The org's rubric, in plain lines, so the page can say what it ranks on.
+    # Empty when the org runs on the defaults.
+    rubric: List[str] = []
 
 
 def _out(item: Item) -> ItemOut:
@@ -159,8 +163,13 @@ def subjects_for_org(repo: PendingActionRepo, org_id: int) -> List[str]:
 
 
 @router.get("/", response_model=WorkListOut)
-async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user)):
+async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user),
+                        limit: Optional[str] = None):
     """Everything waiting on this person, from every system that holds some of it.
+
+    ``limit`` caps the live rows: ``?limit=top`` means the org rubric's
+    ``top_n`` (the "only what matters" view), a number means that many, absent
+    means the full page (LIST_MAX). Totals are reported either way.
 
     The sources know nothing about each other, so they are read at the same time
     rather than one after another: the list used to cost the sum of four systems
@@ -181,11 +190,13 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user)):
         logger.warning("work-list: instance config unreadable for %s: %s", org_id, exc)
         instance = {}
     config = instance.get("config")
+    rubric = Rubric.from_config(config)
 
     goals, boards, crm, drafts = await asyncio.gather(
         asyncio.to_thread(_goal_items, org_id),
-        asyncio.to_thread(_board_items, org_id, taiga_username(client, config)),
-        asyncio.to_thread(_crm_items, org_id, crm_logins(client, config)),
+        asyncio.to_thread(_board_items, org_id, taiga_username(client, config),
+                          rubric),
+        asyncio.to_thread(_crm_items, org_id, crm_logins(client, config), rubric),
         asyncio.to_thread(_draft_rows, org_id),
     )
 
@@ -204,16 +215,25 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user)):
     # and sorted.
     marked = apply_marks(live, _marks(org_id, viewer_person(client)))
 
-    if len(marked.live) > LIST_MAX or len(past) > LIST_MAX:
+    cap = LIST_MAX
+    if limit == "top":
+        cap = max(1, min(LIST_MAX, rubric.top_n))
+    elif limit:
+        try:
+            cap = max(1, min(LIST_MAX, int(limit)))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="limit is a number or 'top'")
+    if len(marked.live) > cap or len(past) > LIST_MAX:
         logger.info("work-list: showing %d of %d live and %d of %d past for "
                     "org %s — the rest are scored but below the cut",
-                    min(len(marked.live), LIST_MAX), len(marked.live),
+                    min(len(marked.live), cap), len(marked.live),
                     min(len(past), LIST_MAX), len(past), org_id)
     return WorkListOut(pinned=[_out(i) for i in marked.pinned],
-                       live=[_out(i) for i in top(marked.live)],
+                       live=[_out(i) for i in top(marked.live, limit=cap)],
                        past=[_out(i) for i in top(past)],
                        buried=[_out(i) for i in marked.buried],
-                       live_total=len(marked.live), past_total=len(past))
+                       live_total=len(marked.live), past_total=len(past),
+                       rubric=rubric.describe() if rubric != Rubric() else [])
 
 
 def _marks(org_id: int, person: Optional[str]) -> Dict[str, str]:
@@ -245,7 +265,8 @@ def _goal_items(org_id: int) -> List[Item]:
         return []
 
 
-def _board_items(org_id: int, viewer: Optional[str]) -> WorkList:
+def _board_items(org_id: int, viewer: Optional[str],
+                 rubric: Optional[Rubric] = None) -> WorkList:
     """Work on the boards: everything dated, plus this person's own undated
     tasks. Undated ones cost nothing extra to fetch — the same call already
     returned them and they were being thrown away."""
@@ -256,13 +277,14 @@ def _board_items(org_id: int, viewer: Optional[str]) -> WorkList:
         return assemble_stories(store.open_stories(), store,
                                 taiga_host=store.host,
                                 agent_username=os.getenv("TAIGA_USERNAME"),
-                                viewer_username=viewer)
+                                viewer_username=viewer, rubric=rubric)
     except Exception as exc:  # noqa: BLE001
         logger.warning("work-list: taiga source failed for org %s: %s", org_id, exc)
         return WorkList()
 
 
-def _crm_items(org_id: int, logins: List[str]) -> WorkList:
+def _crm_items(org_id: int, logins: List[str],
+               rubric: Optional[Rubric] = None) -> WorkList:
     """What the CRM is holding for this person: follow-ups someone scheduled,
     and conversations that were engaged and then left without a next step.
 
@@ -289,7 +311,8 @@ def _crm_items(org_id: int, logins: List[str]) -> WorkList:
     try:
         stages = crm.stages_past_first()
         scheduled.live.extend(assemble_crm_open_context(
-            crm.open_context(), crm, viewer_uids=uids, stage_names=stages))
+            crm.open_context(), crm, viewer_uids=uids, stage_names=stages,
+            rubric=rubric))
     except Exception as exc:  # noqa: BLE001
         logger.warning("work-list: crm open context failed for org %s: %s",
                        org_id, exc)
