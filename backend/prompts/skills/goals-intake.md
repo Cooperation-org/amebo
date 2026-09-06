@@ -59,6 +59,24 @@ If they said "this is for CIVICUS" and you do not know what CIVICUS is here:
    (`https://marten.linkedtrust.us/board?story=<ref>`), never a Taiga link.
    Slack gets one line and a link, if anything.
 
+## Ideas — on hold, in memory, connectable
+
+An idea is not being worked this week. It is remembered so that when something
+arrives that connects to it, it gets raised (golda 2026-09-06). Home:
+
+- abra name, scope `linkedtrust`, qualifier `idea`, their words verbatim; plus
+  a doc in `/opt/shared/projects/Ideas/` when there is more than a paragraph.
+- an amebo goal in status `paused` (so it sits grey on the goals page under
+  the "paused" filter, and can be resumed with one press), `config.kind` =
+  `idea`. Bind the abra name to it.
+- **No claw per idea.** One standing weekly claw, "ideas watch", reads every
+  paused idea goal, searches for what connects (web, CRM, abra), and writes a
+  finding onto the idea's abra name or its goal, never to Slack. Reuse it if
+  it exists (`amebo-claw list --status pending`), else create it once.
+- When new input mentions something an idea is about (`abra search` on every
+  intake), say so in one line: "connects to idea <pet-name>". Do not promote
+  it to a goal; that is the person's call.
+
 ## Never
 
 - Draft what a person will say to another person. Bullets and references only.

@@ -84,10 +84,15 @@ Notifier = Callable[[str, str], bool]
 
 def _default_notifier(channel: str, message: str) -> bool:
     """
-    Fallback notifier: log it. Channel-specific adapters (Slack, email,
-    etc.) plug in at GoalDispatcher construction time.
+    Default notifier. A Slack-shaped channel (``slack:#name``, ``#name``, a
+    channel id) is posted to Slack; anything else is logged. Nobody ever
+    plugged a Slack adapter in at construction time, so until 2026-09-06 every
+    claw notification ended in the journal (src/services/slack_notify.py).
     """
     logger.info("[goal-notify] %s :: %s", channel, message)
+    from src.services.slack_notify import looks_like_slack, post
+    if looks_like_slack(channel):
+        return post(channel, message)
     return True
 
 
