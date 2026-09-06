@@ -289,20 +289,6 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
              go straight to the CRM record — its home (UX_PRINCIPLES 4, 5). */
           <ContactSheet data={data} apply={apply} pending={edit.isPending} />
         ) : (
-                <ul className="space-y-2">
-                  {data.comments.map((c, i) => (
-                    <li key={i} className="text-sm leading-snug text-gray-800">
-                      <span className="font-semibold">{c.who}:</span> {c.text}
-                      {c.when && (
-                        <span className="ml-2 font-mono text-[11px] text-gray-400">{c.when}</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-        ) : (
           <div className="grid min-h-0 flex-1 grid-cols-1 gap-0 overflow-y-auto md:grid-cols-[1fr_300px]">
             <div className="space-y-4 p-5">
               <Field

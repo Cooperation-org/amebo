@@ -456,11 +456,6 @@ class NextOut(BaseModel):
     due: Optional[str] = None
 
 
-class LinkOut(BaseModel):
-    label: str
-    url: str
-
-
 def _guard(subject: str, org_id: int) -> tuple:
     """A subject may only be touched if it is something this org's list can
     actually contain.
