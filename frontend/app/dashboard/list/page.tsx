@@ -45,9 +45,13 @@ function TopRow({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
       </div>
     );
   }
+  // A person in the CRM opens where the record is edited: Elm's lead drawer.
+  // The amebo sheet has no write path to the CRM, and a pop-out you cannot act
+  // on is a bug (UX_PRINCIPLES 4).
+  const go = item.kind === 'contact' && first ? () => { window.location.href = first.url; } : onOpen;
   return (
     <div
-      onClick={onOpen}
+      onClick={go}
       className="flex cursor-pointer items-start gap-3 rounded-lg border bg-white px-4 py-3 hover:border-gray-300"
     >
       <span
@@ -70,7 +74,7 @@ function TopRow({ item, onOpen }: { item: WorkItem; onOpen: () => void }) {
       {first && (
         <a
           href={first.url}
-          target="_blank"
+          target={item.kind === 'contact' ? undefined : '_blank'}
           rel="noreferrer"
           onClick={(e) => e.stopPropagation()}
           className="shrink-0 text-xs text-emerald-700 hover:underline"

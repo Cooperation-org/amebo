@@ -41,6 +41,19 @@ logger = logging.getLogger(__name__)
 ODOO_PUBLIC_URL = os.getenv("ODOO_PUBLIC_URL", "https://crm.linkedtrust.us").rstrip("/")
 
 
+ELM_URL = os.getenv("ELM_URL", "https://elm.linkedtrust.us").rstrip("/")
+
+
+def lead_url(campaign_id: Any, lead_id: Any) -> str:
+    """Where a person goes to ACT on a lead: Elm's lead drawer, which edits the
+    CRM record in place (stage, owner, notes). The Odoo form is the fallback
+    only when the lead is on no campaign, because Elm is campaign-scoped
+    (UX_PRINCIPLES 4: if I can see it, I can edit it)."""
+    if campaign_id:
+        return f"{ELM_URL}/c/{campaign_id}?lead={lead_id}"
+    return form_url("crm.lead", lead_id)
+
+
 def form_url(model: str, record_id: Any) -> str:
     """Where a person goes to see an Odoo record. One place builds this so the
     form route cannot drift between callers."""
@@ -137,6 +150,19 @@ class OdooActivityStore:
     def _kw(self, model: str, method: str, args, kwargs=None):
         m, db, uid, pwd = self._connect()
         return m.execute_kw(db, uid, pwd, model, method, args, kwargs or {})
+
+    def campaigns_of_leads(self, lead_ids):
+        """{lead id: campaign id or None} for the given leads, one read."""
+        ids = [i for i in dict.fromkeys(lead_ids) if i]
+        if not ids:
+            return {}
+        rows = self._kw("crm.lead", "search_read", [[["id", "in", ids]]],
+                        {"fields": ["campaign_id"], "limit": len(ids)})
+        out = {}
+        for r in rows:
+            c = r.get("campaign_id")
+            out[r["id"]] = c[0] if isinstance(c, (list, tuple)) and c else None
+        return out
 
     def open_activities(self, limit: int = 200) -> List[Dict[str, Any]]:
         """Every scheduled follow-up, newest deadline last. Odoo only keeps an

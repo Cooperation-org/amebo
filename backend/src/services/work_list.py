@@ -806,9 +806,21 @@ def assemble_crm(activities: Sequence[Dict[str, Any]], store: Any, *,
 
     live: List[Item] = []
     past: List[Item] = []
+    # A follow-up on a lead opens Elm's drawer, where the record can be edited
+    # (UX_PRINCIPLES 4). One read for every lead's campaign.
+    lead_campaigns: Dict[Any, Any] = {}
+    lead_ids = [a.get("res_id") for a in mine if a.get("res_model") == "crm.lead"]
+    if lead_ids and hasattr(store, "campaigns_of_leads"):
+        try:
+            lead_campaigns = store.campaigns_of_leads(lead_ids)
+        except Exception as exc:  # noqa: BLE001 - the Odoo form still works
+            logger.debug("work_list: no campaigns for leads: %s", exc)
     for a in mine:
         model, rid = a.get("res_model"), a.get("res_id")
-        url = form_url(model, rid) if model and rid else ""
+        if model == "crm.lead" and rid:
+            url = _crm_lead_url(lead_campaigns.get(rid), rid)
+        else:
+            url = form_url(model, rid) if model and rid else ""
         item = build_crm_item(a, today=today, record_url=url,
                               message=quotes.get(model, {}).get(rid))
         (past if item.past else live).append(item)
@@ -887,8 +899,10 @@ def build_open_context_item(lead: Dict[str, Any], *, today: date,
     if lifted:
         label = ", ".join(lifted) + "; " + label
 
+    campaign = lead.get("campaign_id")
+    campaign_id = campaign[0] if isinstance(campaign, (list, tuple)) and campaign else None
     links = [Link(label=partner_name or "the record",
-                  url=_crm_form_url("crm.lead", lead.get("id")))]
+                  url=_crm_lead_url(campaign_id, lead.get("id")))]
     # The contact's address is already on the record; a row asking for outreach
     # should carry the way to do the outreach.
     email = lead.get("email_from")
@@ -963,6 +977,11 @@ def assemble_crm_open_context(leads: Sequence[Dict[str, Any]], store: Any, *,
              for l in mine]
     items.sort(key=lambda i: (-i.rank, i.title))
     return items
+
+
+def _crm_lead_url(campaign_id: Any, lead_id: Any) -> str:
+    from src.services.work_list_crm import lead_url
+    return lead_url(campaign_id, lead_id)
 
 
 def _crm_form_url(model: str, record_id: Any) -> str:
