@@ -139,7 +139,8 @@ def test_a_parked_unowned_task_is_waiting_on_a_person_not_backlog():
         def statuses(self, slug): return []
 
     parked = story(id=2, ref=15, subject="SNAP outreach brief", assigned_to=None,
-                   assigned_to_extra_info=None, created_date="2026-06-01T00:00:00Z")
+                   assigned_to_extra_info=None, created_date="2026-06-01T00:00:00Z",
+                   tags=[["agent", None]])
     plain = story(id=3, ref=16, subject="something unowned", assigned_to=None,
                   assigned_to_extra_info=None, created_date="2026-06-01T00:00:00Z")
     # fill the page so there is no room for backlog
@@ -186,3 +187,27 @@ def test_judgement_moves_rows_inside_the_band_and_never_a_dated_one():
     assert Client.calls == 1
     # no judgement text: untouched, no call
     assert rubric_judge.judge([b, a], rubric=Rubric(), org_id=1, viewer="golda", client=Client())[0].subject == "crm:lead/3"
+
+
+
+def test_an_agents_done_is_a_review_not_a_person_waiting():
+    agent = {"who": "admin", "text": "Done: /opt/shared/projects/Internal/x.md"}
+    human = {"who": "kene", "text": "can you look?"}
+    r = Rubric(someone_waiting=300, agent_asks=80)
+    a = judged_rank(story(), today=TODAY, comment=agent, viewer="goldavelez_org",
+                    rubric=r, agents=["amebo", "admin"])
+    h = judged_rank(story(), today=TODAY, comment=human, viewer="goldavelez_org",
+                    rubric=r, agents=["amebo", "admin"])
+    assert h - a == 220
+    from src.services.work_list import judged_reason
+    s = story(status_extra_info={"is_closed": False, "name": "Ready for test"})
+    assert judged_reason(s, today=TODAY, comment=agent, viewer="goldavelez_org",
+                         agents=["admin"]).label == "admin asks: ready for test"
+
+
+def test_waiting_status_counts_only_under_the_agent_contract():
+    from src.services.work_list import _waiting_status
+    old = story(status_extra_info={"is_closed": False, "name": "Ready for test"}, tags=[])
+    new = story(status_extra_info={"is_closed": False, "name": "Needs human"}, tags=[["agent", None]])
+    assert not _waiting_status(old)
+    assert _waiting_status(new)

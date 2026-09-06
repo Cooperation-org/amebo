@@ -35,7 +35,7 @@ from datetime import date
 import json
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -196,7 +196,7 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user),
     goals, boards, crm, drafts = await asyncio.gather(
         asyncio.to_thread(_goal_items, org_id),
         asyncio.to_thread(_board_items, org_id, taiga_username(client, config),
-                          rubric),
+                          rubric, _agent_users(config)),
         asyncio.to_thread(_crm_items, org_id, crm_logins(client, config), rubric),
         asyncio.to_thread(_draft_rows, org_id),
     )
@@ -274,8 +274,18 @@ def _goal_items(org_id: int) -> List[Item]:
         return []
 
 
+def _agent_users(config: Any) -> List[str]:
+    """Taiga accounts that are agents, not people: amebo's own plus whatever
+    the org lists in ``config.agent_taiga_users`` (the doer session's login)."""
+    out = [u for u in [os.getenv("TAIGA_USERNAME")] if u]
+    cfg = config if isinstance(config, dict) else {}
+    out.extend(str(u) for u in (cfg.get("agent_taiga_users") or []) if u)
+    return out
+
+
 def _board_items(org_id: int, viewer: Optional[str],
-                 rubric: Optional[Rubric] = None) -> WorkList:
+                 rubric: Optional[Rubric] = None,
+                 agents: Sequence[str] = ()) -> WorkList:
     """Work on the boards: everything dated, plus this person's own undated
     tasks. Undated ones cost nothing extra to fetch — the same call already
     returned them and they were being thrown away."""
@@ -286,7 +296,8 @@ def _board_items(org_id: int, viewer: Optional[str],
         return assemble_stories(store.open_stories(), store,
                                 taiga_host=store.host,
                                 agent_username=os.getenv("TAIGA_USERNAME"),
-                                viewer_username=viewer, rubric=rubric)
+                                viewer_username=viewer, rubric=rubric,
+                                agents=agents)
     except Exception as exc:  # noqa: BLE001
         logger.warning("work-list: taiga source failed for org %s: %s", org_id, exc)
         return WorkList()

@@ -190,7 +190,8 @@ def judged_rank(story: Dict[str, Any], *, today: Optional[date] = None,
                 comment: Optional[Dict[str, str]] = None,
                 viewer: Optional[str] = None,
                 column: Optional[int] = None,
-                rubric: Optional[Rubric] = None) -> float:
+                rubric: Optional[Rubric] = None,
+                agents: Sequence[str] = ()) -> float:
     """The judged half, kept deliberately small and explainable. Nothing here
     may exceed JUDGED_CEILING, so judgement can never bury a dated item.
 
@@ -227,9 +228,20 @@ def judged_rank(story: Dict[str, Any], *, today: Optional[date] = None,
         # the ordering altogether.
         score -= min(float(quiet) * r.quiet_fade, r.quiet_max)
 
-    if _asked_of_viewer(comment, viewer) or _waiting_status(story):
-        score += r.someone_waiting
+    if _asked_of_viewer(comment, viewer):
+        # A person waiting is the strongest signal there is. An agent's "done,
+        # please look" is real work for the reader, but it is not a person.
+        score += r.agent_asks if _is_agent(comment, agents) else r.someone_waiting
+    elif _waiting_status(story):
+        score += r.agent_asks
     return min(JUDGED_CEILING - 1.0, max(0.0, score))
+
+
+def _is_agent(comment: Optional[Dict[str, str]], agents: Sequence[str]) -> bool:
+    """The last word was an agent's (a doer session, a claw), per the org's
+    ``config.agent_taiga_users``. Never guessed from the text."""
+    who = ((comment or {}).get("who") or "").strip()
+    return bool(who) and who in set(agents or ())
 
 
 def _asked_of_viewer(comment: Optional[Dict[str, str]],
@@ -247,12 +259,17 @@ def judged_reason(story: Dict[str, Any], *, today: Optional[date] = None,
                   comment: Optional[Dict[str, str]] = None,
                   viewer: Optional[str] = None,
                   column: Optional[int] = None,
-                  rubric: Optional[Rubric] = None) -> Reason:
+                  rubric: Optional[Rubric] = None,
+                  agents: Sequence[str] = ()) -> Reason:
     """Why an undated task sits where it does, in plain words. A judged rank has
     to justify itself; a dated one does not. The order here follows the order of
     the scoring, so the words name whatever actually lifted the row."""
     if _asked_of_viewer(comment, viewer):
-        return Reason(f"{comment['who'].strip()} asked, no deadline", "judgement")
+        who = comment['who'].strip()
+        if _is_agent(comment, agents):
+            name = ((story.get("status_extra_info") or {}).get("name") or "").strip().lower()
+            return Reason(f"{who} asks: {name or 'look'}", "judgement")
+        return Reason(f"{who} asked, no deadline", "judgement")
     if _waiting_status(story):
         name = ((story.get("status_extra_info") or {}).get("name") or "").strip().lower()
         return Reason(name, "judgement")
@@ -395,7 +412,8 @@ def build_item(story: Dict[str, Any], *, project_slug: str, taiga_host: str,
                today: date, comment: Optional[Dict[str, str]] = None,
                viewer: Optional[str] = None,
                column: Optional[int] = None,
-               rubric: Optional[Rubric] = None) -> Item:
+               rubric: Optional[Rubric] = None,
+               agents: Sequence[str] = ()) -> Item:
     """One story becomes one item. The most recent human comment, if there is
     one, becomes the headline; otherwise the item leads with the thing itself.
 
@@ -406,7 +424,7 @@ def build_item(story: Dict[str, Any], *, project_slug: str, taiga_host: str,
     due = story.get("due_date")
     clock = clock_reason(due, today)
     judged = dict(today=today, comment=comment, viewer=viewer, column=column,
-                  rubric=rubric)
+                  rubric=rubric, agents=agents)
     reason = clock or judged_reason(story, **judged)
     rank = clock_rank(due, today) if clock else judged_rank(story, **judged)
     past = bool(due and _is_past(due, today))
@@ -992,9 +1010,14 @@ WAITING_STATUSES = ("needs human", "ready for test")
 
 def _waiting_status(story: Dict[str, Any]) -> bool:
     """The board's own word that a person is needed next: the status names the
-    task contract uses for 'a human decides' and 'a human tests'."""
+    task contract uses for 'a human decides' and 'a human tests' — on stories
+    under that contract (tagged ``agent``). Old boards use the same status
+    names for work nobody will test; those stay where they were."""
     name = ((story.get("status_extra_info") or {}).get("name") or "").strip().lower()
-    return name in WAITING_STATUSES
+    if name not in WAITING_STATUSES:
+        return False
+    tags = [(t[0] if isinstance(t, (list, tuple)) else t) for t in (story.get("tags") or [])]
+    return "agent" in tags
 
 
 def _needs_human(comment: Optional[Dict[str, str]]) -> bool:
@@ -1024,7 +1047,8 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
                      taiga_host: str, today: Optional[date] = None,
                      agent_username: Optional[str] = None,
                      viewer_username: Optional[str] = None,
-                     rubric: Optional[Rubric] = None) -> WorkList:
+                     rubric: Optional[Rubric] = None,
+                     agents: Sequence[str] = ()) -> WorkList:
     """Build the list straight from stories already in hand.
 
     The list's real source: every open story with a due date. Sourcing only from
@@ -1102,7 +1126,7 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
                           viewer=viewer_username,
                           column=None if story.get("due_date")
                           else column_of(story, store, slug),
-                          rubric=rubric)
+                          rubric=rubric, agents=agents)
         (past if item.past else live).append(item)
     if backlog:
         logger.info("work_list: %d unowned undated stories left in the backlog, "

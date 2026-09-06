@@ -28,6 +28,8 @@ Signals, in the team's words, each a weight added to an undated item's score:
                          ``quiet_max``
 - ``draft``              a draft amebo is holding for approval (its own ask,
                          so it starts below a person's)
+- ``agent_asks``         a doer or claw asked for a review or a decision
+                         (config.agent_taiga_users says which accounts are agents)
 - ``stage_step``         each CRM stage further along is more real
 - ``quiet_cap``          quiet days on an opportunity stop counting past this
 
@@ -82,6 +84,9 @@ class Rubric:
     money: float = 0.0
     # a draft amebo wants approved: its own ask, so below any person's
     draft: float = 100.0
+    # a doer or claw asking a person to review or decide (its comment, or a task
+    # it parked): real, but not a human waiting
+    agent_asks: float = 80.0
 
     @classmethod
     def from_config(cls, config: Optional[Any]) -> "Rubric":
@@ -130,6 +135,7 @@ class Rubric:
         weights = [
             ("someone is waiting on you", self.someone_waiting),
             ("the contact wrote last", self.contact_interested),
+            ("amebo asks you to review or decide", self.agent_asks),
             ("money on the record", self.money),
             ("just made, not yet looked at", self.new),
             ("somebody picked it up", self.picked_up),
