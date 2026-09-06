@@ -359,6 +359,29 @@ class GoalRepo:
         finally:
             DatabaseConnection.return_connection(conn)
 
+    def last_questions(self, goal_ids: List[str]) -> Dict[str, str]:
+        """The question each goal is holding for a person: the most recent
+        'question_asked' event per goal, in one query. A goal with none is
+        absent from the result."""
+        if not goal_ids:
+            return {}
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT DISTINCT ON (goal_id) goal_id, result_summary
+                    FROM goal_events
+                    WHERE goal_id = ANY(%s::uuid[]) AND action = 'question_asked'
+                    ORDER BY goal_id, step_index DESC
+                    """,
+                    (list(goal_ids),),
+                )
+                return {str(r["goal_id"]): (r["result_summary"] or "")
+                        for r in cur.fetchall() if r["result_summary"]}
+        finally:
+            DatabaseConnection.return_connection(conn)
+
     def list_events(self, goal_id: str, limit: int = 500) -> List[Dict[str, Any]]:
         conn = DatabaseConnection.get_connection()
         try:

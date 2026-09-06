@@ -104,3 +104,18 @@ def test_describe_reads_top_down():
     assert lines[1].startswith("+200 someone is waiting")
     assert lines[2].startswith("+150 the contact wrote last")
     assert lines[-1] == "shows top 5"
+
+
+def test_drafts_fade_with_age_on_the_orgs_quiet_rule():
+    from src.services.work_list import items_from_drafts
+    fresh = {"id": "a", "preview": "send this", "payload": {},
+             "requested_at": "2026-09-05T10:00:00+00:00"}
+    july = {"id": "b", "preview": "deadline ping", "payload": {},
+            "requested_at": "2026-07-20T10:00:00+00:00"}
+    items = items_from_drafts([fresh, july], today=TODAY, rubric=Rubric())
+    by = {i.subject: i for i in items}
+    assert by["draft:a"].rank > by["draft:b"].rank
+    assert by["draft:b"].rank == JUDGED_CEILING - 96   # 48 days * 2, under the cap
+    assert "48 days" in by["draft:b"].reason.label
+    # no timestamp: unchanged from before
+    assert items_from_drafts([{"id": "c", "preview": "x", "payload": {}}])[0].rank == JUDGED_CEILING

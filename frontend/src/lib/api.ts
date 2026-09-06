@@ -719,6 +719,8 @@ export interface Goal {
   } | null;
   /** How this goal fires: cron, event, manual — or absent, meaning it cannot. */
   trigger_config?: { type?: string; expression?: string } | null;
+  /** The question it is holding for a person, when status is waiting_user. */
+  question?: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -31,6 +31,7 @@ half), so a client can re-sort or filter later without a backend change.
 from __future__ import annotations
 
 import asyncio
+from datetime import date
 import json
 import logging
 import os
@@ -205,7 +206,8 @@ async def get_work_list(client: Dict[str, Any] = Depends(get_service_or_user),
     # Drafts last on purpose: a draft about a task already listed is not a
     # second row, so it needs to see everything else first.
     live.extend(items_from_drafts(
-        drafts, already=[i.subject for i in live] + [i.subject for i in past]))
+        drafts, already=[i.subject for i in live] + [i.subject for i in past],
+        today=date.today(), rubric=rubric))
 
     live.sort(key=lambda i: (-i.rank, i.title))
     past.sort(key=lambda i: (i.due or "", i.title))

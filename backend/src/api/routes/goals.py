@@ -70,6 +70,9 @@ class GoalResponse(BaseModel):
     # optionally a person's. Exposed so a client can tell mine from ours
     # without a second call — the column has always been on the row.
     assigned_to_user_id: Optional[int] = None
+    # The question this goal is holding for a person, when status is
+    # waiting_user. Read off the last 'question_asked' event, never stored twice.
+    question: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
@@ -171,7 +174,20 @@ async def list_goals(
 
     engine = _get_engine()
     goals = engine.list_for_org(client["org_id"], status=status)[:limit]
-    return [_to_goal_response(g) for g in goals]
+    waiting = [str(g["id"]) for g in goals if g.get("status") == "waiting_user"]
+    questions: Dict[str, str] = {}
+    if waiting:
+        try:
+            from src.db.repositories.goal_repo import GoalRepo
+            questions = GoalRepo().last_questions(waiting)
+        except Exception as exc:  # noqa: BLE001 - the list stands without them
+            logger.warning("goals: questions unreadable: %s", exc)
+    out = []
+    for g in goals:
+        r = _to_goal_response(g)
+        r.question = questions.get(str(g["id"]))
+        out.append(r)
+    return out
 
 
 @router.post("/", response_model=GoalResponse, status_code=201)

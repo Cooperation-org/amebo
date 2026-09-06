@@ -442,16 +442,23 @@ def _is_past(due: str, today: date) -> bool:
 
 
 def items_from_drafts(actions: Sequence[Dict[str, Any]],
-                      already: Sequence[str] = ()) -> List[Item]:
+                      already: Sequence[str] = (), *,
+                      today: Optional[date] = None,
+                      rubric: Optional[Rubric] = None) -> List[Item]:
     """Gated drafts the claw is holding become items too.
 
     A draft whose subject is already in the list as a story is dropped: the task
     is the thing, and the message about the task is not a second row. What is
     left is a draft that stands on its own — an email or a post amebo wants to
     send as you — and that genuinely needs a decision.
+
+    A draft fades with age on the org's own quiet rule, the same as a task
+    nobody touched. Thirty-seven July deadline pings sat at the ceiling rank for
+    two months and were the whole top of the list (golda 2026-09-06).
     """
     seen = set(already)
     items: List[Item] = []
+    r = rubric or DEFAULT_RUBRIC
     for action in actions:
         payload = action.get("payload") or {}
         key = payload.get("followup_task")
@@ -459,11 +466,14 @@ def items_from_drafts(actions: Sequence[Dict[str, Any]],
             continue
         text = payload.get("text") or action.get("preview") or ""
         links = links_in(text)
+        quiet = _days_since(str(action.get("requested_at") or ""), today)
+        fade = min(float(quiet) * r.quiet_fade, r.quiet_max) if quiet else 0.0
+        label = "waiting on you" if not quiet else f"waiting on you {quiet} days"
         items.append(Item(
             subject=f"draft:{action.get('id')}",
             title=(text.strip().splitlines() or [""])[0][:120] or "(empty draft)",
-            reason=Reason("waiting on you", "judgement"),
-            rank=JUDGED_CEILING,
+            reason=Reason(label, "judgement"),
+            rank=JUDGED_CEILING - fade,
             links=links,
             quote=None,
             due=None,
