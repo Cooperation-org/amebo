@@ -258,9 +258,16 @@ class OdooActivityStore:
                             [[["res_model", "=", "crm.lead"], ["res_id", "=", int(lead_id)]]], {})
         if open_ids:
             self._kw("mail.activity", "unlink", [open_ids], {})
-        self._kw("crm.lead", "activity_schedule", [[int(lead_id)]],
-                 {"act_type_xmlid": "mail.mail_activity_data_todo",
-                  "summary": summary, "date_deadline": date_deadline})
+        # mail.activity.create returns an id XML-RPC can carry;
+        # crm.lead.activity_schedule returns a recordset it cannot.
+        model_id = self._kw("ir.model", "search", [[["model", "=", "crm.lead"]]], {"limit": 1})
+        todo = self._kw("mail.activity.type", "search",
+                        [[["name", "=", "To-Do"]]], {"limit": 1})
+        vals = {"res_model_id": model_id[0], "res_id": int(lead_id),
+                "summary": summary, "date_deadline": date_deadline}
+        if todo:
+            vals["activity_type_id"] = todo[0]
+        self._kw("mail.activity", "create", [vals], {})
 
     def activity_done(self, activity_id: int, feedback: str = "") -> None:
         """Mark the next step done; Odoo logs it to the chatter."""
