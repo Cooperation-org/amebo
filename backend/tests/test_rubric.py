@@ -124,3 +124,30 @@ def test_drafts_fade_with_age_on_the_orgs_quiet_rule():
     asked = judged_rank(story(), today=TODAY, comment={"who": "kene", "text": "?"},
                         viewer="goldavelez_org", rubric=Rubric(someone_waiting=300))
     assert asked > by["draft:a"].rank
+
+
+def test_a_parked_unowned_task_is_waiting_on_a_person_not_backlog():
+    """A doer session parks with 'NEEDS: ...' (prompts/skills/doer.md). That
+    task has no owner and no date, which used to make it backlog nobody saw."""
+    from src.services.work_list import assemble_stories
+
+    class Store:
+        def project_slug_of(self, story): return "core"
+        def project_blocked(self, slug): return False
+        def last_comment(self, sid):
+            return {"who": "amebo", "text": "NEEDS: the SNAP contact's email. Because: nothing on the record."} if sid == 2 else None
+        def statuses(self, slug): return []
+
+    parked = story(id=2, ref=15, subject="SNAP outreach brief", assigned_to=None,
+                   assigned_to_extra_info=None, created_date="2026-06-01T00:00:00Z")
+    plain = story(id=3, ref=16, subject="something unowned", assigned_to=None,
+                  assigned_to_extra_info=None, created_date="2026-06-01T00:00:00Z")
+    # fill the page so there is no room for backlog
+    owned = [story(id=100 + i, ref=100 + i, subject=f"mine {i}") for i in range(20)]
+    wl = assemble_stories([parked, plain, *owned], Store(), taiga_host="h",
+                          today=TODAY, viewer_username="goldavelez_org")
+    subjects = [i.subject for i in wl.live]
+    assert "taiga:core#15" in subjects
+    assert "taiga:core#16" not in subjects
+    row = next(i for i in wl.live if i.subject == "taiga:core#15")
+    assert "amebo asked" in row.reason.label

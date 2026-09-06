@@ -984,6 +984,12 @@ def parse_subject(key: str) -> Optional[tuple]:
         return None
 
 
+def _needs_human(comment: Optional[Dict[str, str]]) -> bool:
+    """A doer parked this: its last word is the contract's 'NEEDS: ...' line."""
+    text = ((comment or {}).get("text") or "").lstrip()
+    return text.upper().startswith("NEEDS:")
+
+
 def _undated_belongs(owner: Optional[str], viewer: Optional[str]) -> bool:
     """Whether an undated task belongs to this person outright.
 
@@ -1058,6 +1064,17 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
             continue
         (spare if is_backlog else kept).append((story, slug))
 
+    # An unowned task a doer parked with "NEEDS: ..." is waiting on a person,
+    # whoever that turns out to be. It is not backlog; it is the one kind of
+    # unowned undated row that belongs on every list (docs: prompts/skills/
+    # doer.md is the contract that writes that comment).
+    comments = _comments_for(store, [s.get("id") for s, _ in kept + spare])
+    parked = [(s, slug) for s, slug in spare
+              if _needs_human(comments.get(s.get("id")))]
+    if parked:
+        kept.extend(parked)
+        spare = [pair for pair in spare if pair not in parked]
+
     # Room, not ownership, is what decides whether unowned undated work shows.
     # A full page never reaches it; a nearly empty one is filled with it rather
     # than showing a new team nothing.
@@ -1066,7 +1083,6 @@ def assemble_stories(stories: Sequence[Dict[str, Any]], store: Any, *,
         kept.extend(spare[:room])
     backlog = max(0, len(spare) - room)
 
-    comments = _comments_for(store, [s.get("id") for s, _ in kept])
     for story, slug in kept:
         item = build_item(story, project_slug=slug, taiga_host=taiga_host,
                           today=today, comment=comments.get(story.get("id")),
