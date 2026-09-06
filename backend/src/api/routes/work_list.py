@@ -591,11 +591,11 @@ def _lead_links(lead: Dict[str, Any]) -> List["LinkOut"]:
     out: List[LinkOut] = []
     email = lead.get("email_from")
     if isinstance(email, str) and email.strip():
-        out.append(LinkOut(label=email.strip(), url=f"mailto:{email.strip()}"))
+        out.append(LinkOut(label=email.strip(), url=f"mailto:{email.strip()}", found=False))
     for f in ("partner_linkedin", "website"):
         u = lead.get(f)
         if isinstance(u, str) and u.startswith("http"):
-            out.append(LinkOut(label=u.replace("https://", "").replace("http://", "")[:40], url=u))
+            out.append(LinkOut(label=u.replace("https://", "").replace("http://", "")[:40], url=u, found=False))
     return out
 
 
