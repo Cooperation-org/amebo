@@ -690,6 +690,8 @@ export interface WorkItemDetail {
   /** A person in the CRM: the one next step on the record, and ways to reach them. */
   next?: { activity_id?: number | null; summary: string; due?: string | null } | null;
   links?: { label: string; url: string }[];
+  /** A claw's runs, newest first. */
+  runs?: { when: string; outcome: string; summary: string; tools: string[] }[];
   /** Who can be assigned on this board. */
   members: string[];
 }

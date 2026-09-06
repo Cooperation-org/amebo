@@ -961,7 +961,14 @@ def assemble_crm_open_context(leads: Sequence[Dict[str, Any]], store: Any, *,
 
     # The person's own last words, read off the contact the opportunity hangs on
     # — a lead record carries no chatter of its own. One query for the page.
+    # The last word on the lead's own chatter first (that is where Elm and the
+    # claws write), else on the contact.
     quotes: Dict[int, Dict[str, str]] = {}
+    lead_quotes: Dict[int, Dict[str, str]] = {}
+    try:
+        lead_quotes = store.last_messages("crm.lead", [l.get("id") for l in mine if l.get("id")])
+    except Exception as exc:  # noqa: BLE001 - the quote is a nicety
+        logger.debug("work_list: no CRM messages for leads: %s", exc)
     partner_ids = [_odoo_uid(l.get("partner_id")) for l in mine]
     partner_ids = [p for p in partner_ids if p]
     if partner_ids:
@@ -972,7 +979,7 @@ def assemble_crm_open_context(leads: Sequence[Dict[str, Any]], store: Any, *,
 
     items = [build_open_context_item(
                 l, today=today, stage_rank=stage_rank,
-                message=quotes.get(_odoo_uid(l.get("partner_id"))),
+                message=lead_quotes.get(l.get("id")) or quotes.get(_odoo_uid(l.get("partner_id"))),
                 rubric=rubric)
              for l in mine]
     items.sort(key=lambda i: (-i.rank, i.title))

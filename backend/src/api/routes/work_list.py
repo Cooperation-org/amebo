@@ -448,6 +448,16 @@ class DetailOut(BaseModel):
     # not appended) and the ways to reach them.
     next: Optional["NextOut"] = None
     links: List["LinkOut"] = []
+    # A claw's runs, newest first — like a workflow's runs: when, how it ended,
+    # what it said, which tools it used.
+    runs: List["RunOut"] = []
+
+
+class RunOut(BaseModel):
+    when: str
+    outcome: str
+    summary: str = ""
+    tools: List[str] = []
 
 
 class NextOut(BaseModel):
@@ -548,7 +558,43 @@ def _goal_detail(goal_id: str, org_id: int) -> DetailOut:
         assignee="amebo",
         members=["amebo"],
         trigger=(goal.get("trigger_config") or {}).get("type"),
+        runs=_goal_runs(goal_id),
     )
+
+
+def _goal_runs(goal_id: str, limit: int = 10) -> List["RunOut"]:
+    """Group the goal's events into runs: each 'activated' opens one; the
+    completion, failure, rearm or question closes it."""
+    from src.db.repositories.goal_repo import GoalRepo
+    try:
+        events = GoalRepo().list_events(goal_id, limit=2000)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("work-list: events unreadable for goal %s: %s", goal_id, exc)
+        return []
+    runs: List[RunOut] = []
+    cur: Optional[Dict[str, Any]] = None
+    ends = {"completed": "done", "failed": "failed", "rearmed": "done, will run again",
+            "question_asked": "asked you", "paused": "paused"}
+    for e in events:
+        action = (e.get("action") or "")
+        when = str(e.get("created_at") or "")[:16].replace("T", " ")
+        if action == "activated" or (cur is None and action.startswith("tool_call:")):
+            if cur:
+                runs.append(RunOut(**cur))
+            cur = {"when": when, "outcome": "running", "summary": "", "tools": []}
+        if cur is None:
+            continue
+        if action.startswith("tool_call:"):
+            cur["tools"].append(action.split(":", 1)[1])
+        elif action in ends:
+            cur["outcome"] = ends[action]
+            cur["summary"] = (e.get("result_summary") or "")[:400]
+            runs.append(RunOut(**cur))
+            cur = None
+    if cur:
+        runs.append(RunOut(**cur))
+    runs.reverse()
+    return runs[:limit]
 
 
 def _draft_detail(action_id: str, org_id: int) -> DetailOut:
@@ -677,10 +723,13 @@ def _crm_lead_detail(lead_id: str) -> DetailOut:
                   else None)
     partner_name = (partner[1] if isinstance(partner, (list, tuple))
                     and len(partner) > 1 else None)
-    # A lead carries no chatter of its own; what was said lives on the contact.
+    # What was said lives on the lead's own chatter (Elm and the claws write
+    # there), and older notes may sit on the contact. Both, lead first.
+    said = list(store.messages("crm.lead", ref))
+    if partner_id:
+        said.extend(store.messages("res.partner", partner_id))
     comments = [CommentOut(who=m["who"], text=m["text"], when=m["when"] or None)
-                for m in (store.messages("res.partner", partner_id)
-                          if partner_id else [])]
+                for m in said]
 
     owner = lead.get("user_id")
     stage = lead.get("stage_id")
@@ -747,6 +796,9 @@ class EditIn(BaseModel):
     comment: Optional[str] = None
     close: bool = False
     archive: bool = False
+    # Goals only: run the claw now, whatever its schedule (golda 2026-09-06:
+    # "run now manually so I can see results").
+    run_now: bool = False
     # Irreversible, and the only thing here that is. The client asks for it
     # explicitly behind a confirm; nothing else on the surface can reach it.
     delete: bool = False
@@ -994,6 +1046,18 @@ def _edit_goal(body: "EditIn", org_id: int) -> "EditOut":
         raise HTTPException(status_code=404, detail="Not on your list")
 
     applied: List[str] = []
+    if body.run_now:
+        import threading
+        from src.services.goal_dispatcher import GoalDispatcher
+        from src.services.llm_client import get_llm_client
+
+        def _run() -> None:
+            try:
+                GoalDispatcher(anthropic_client=get_llm_client()).dispatch(goal_id)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("run_now: goal %s: %s", goal_id, exc)
+        threading.Thread(target=_run, name=f"run-now-{goal_id[:8]}", daemon=True).start()
+        applied.append("run_now")
     if body.delete:
         repo.delete(goal_id, org_id)
         return EditOut(applied=["delete"])

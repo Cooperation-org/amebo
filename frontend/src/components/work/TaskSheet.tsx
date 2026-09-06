@@ -390,6 +390,26 @@ export function TaskSheet({ subject, onClose }: { subject: string; onClose: () =
                     <option value="cron">daily until done</option>
                     <option value="manual">only when I say</option>
                   </select>
+                  <button
+                    type="button"
+                    disabled={edit.isPending}
+                    onClick={() => apply({ subject: target, run_now: true })}
+                    className="mt-2 w-full rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-40"
+                  >
+                    ▶ run now
+                  </button>
+                  {(data.runs ?? []).length > 0 && (
+                    <ul className="mt-3 space-y-2">
+                      {(data.runs ?? []).map((r, i) => (
+                        <li key={i} className="text-xs text-gray-700">
+                          <span className="font-mono text-gray-500">{r.when}</span>{' '}
+                          <span className={r.outcome === 'failed' ? 'text-red-700' : r.outcome === 'running' ? 'text-amber-700' : 'text-emerald-800'}>{r.outcome}</span>
+                          {r.tools.length > 0 && <span className="text-gray-400"> · {r.tools.join(', ')}</span>}
+                          {r.summary && <p className="mt-0.5 whitespace-pre-wrap text-gray-800"><Linked text={r.summary} /></p>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </label>
               )}
 
@@ -524,6 +544,7 @@ function ContactSheet({ data, apply, pending }:
   const [due, setDue] = useState(data.next?.due ?? '');
   const [note, setNote] = useState('');
   const [all, setAll] = useState(false);
+  const [more, setMore] = useState(false);
   const thread = all ? data.comments : data.comments.slice(0, 3);
   const saveNext = () => {
     if (summary.trim() === (data.next?.summary ?? '') && (due || '') === (data.next?.due ?? '')) return;
@@ -544,6 +565,17 @@ function ContactSheet({ data, apply, pending }:
           </p>
         )}
       </div>
+
+      {data.description && (
+        <div className={`text-sm leading-relaxed text-gray-800 ${more ? '' : 'line-clamp-4'}`}>
+          <Linked text={data.description} />
+        </div>
+      )}
+      {data.description && data.description.length > 280 && (
+        <button type="button" onClick={() => setMore((v) => !v)} className="-mt-3 text-xs text-gray-500 hover:underline">
+          {more ? 'less' : 'more'}
+        </button>
+      )}
 
       <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
         <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-widest text-amber-800">Next</p>
