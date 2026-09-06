@@ -239,3 +239,18 @@ def test_an_agents_new_story_is_not_news():
     a = judged_rank(fresh, today=TODAY, agents=["admin"])
     b = judged_rank(fresh, today=TODAY, agents=[])
     assert b - a == Rubric().new
+
+
+def test_an_agents_done_in_a_decision_status_is_still_a_review():
+    from src.services.work_list import Item, Reason, Link, Quote, collapse_reviews
+    def t(n, label, text):
+        return Item(subject=f"taiga:core#{n}", title=f"thing {n}", reason=Reason(label, "judgement"),
+                    rank=456, links=[Link("open", f"https://marten.linkedtrust.us/board?story={n}")],
+                    quote=Quote("admin", text), due=None, assignee=None)
+    items = [t(1, "admin asks: needs human", "Done: /opt/x.md"),
+             t(2, "admin asks: needs human", "No CIVICUS grant document exists anywhere."),
+             t(3, "admin asks: new", "Shipped 2026-08-05 (govkit main)"),
+             t(4, "admin asks: needs human", "NEEDS: the SNAP contact's email")]
+    out = collapse_reviews(items)
+    assert [i.subject for i in out] == ["review:ready-for-test", "taiga:core#2", "taiga:core#4"]
+    assert out[0].title.startswith("2 things")

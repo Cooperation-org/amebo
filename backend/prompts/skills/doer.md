@@ -34,8 +34,11 @@ take the same one.
 
 ## Finish
 
-    mcp-taiga comment <board> <ref> "<what changed, how verified, links>"
+    mcp-taiga comment <board> <ref> "DONE: <what changed, how verified, links>"
     mcp-taiga move <board> <ref> "Ready for test"
+
+The first word is the contract: `DONE:` folds into the person's review pile,
+`NEEDS:` is a decision that stands on its own row.
 
 ## Park
 

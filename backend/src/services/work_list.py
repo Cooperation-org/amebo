@@ -1212,6 +1212,15 @@ def assemble(keys: Sequence[str], store: StoryStore, *, taiga_host: str,
 # ---------------------------------------------------------------------------
 
 REVIEW_LABEL = "ready for test"
+_DONE_RE = re.compile(r"^\s*(done|shipped|update)\b", re.I)
+
+
+def _agent_said_done(quote: Optional[Quote]) -> bool:
+    """The agent's own word for finished: a comment opening with DONE (the
+    doer contract, prompts/skills/doer.md), or the words the 09-04 session
+    used before the contract existed. Whatever status the story sits in, a
+    finished thing is a review, not a decision."""
+    return bool(quote and _DONE_RE.match(quote.text or ""))
 
 
 def collapse_reviews(items: Sequence[Item], *, keep: int = 0) -> List[Item]:
@@ -1225,7 +1234,8 @@ def collapse_reviews(items: Sequence[Item], *, keep: int = 0) -> List[Item]:
     """
     reviews = [i for i in items
                if i.kind == "task" and i.reason.kind == "judgement"
-               and i.reason.label.endswith(REVIEW_LABEL)]
+               and (i.reason.label.endswith(REVIEW_LABEL)
+                    or (" asks: " in i.reason.label and _agent_said_done(i.quote)))]
     if len(reviews) <= max(keep, 1):
         return list(items)
     folded = set(id(i) for i in reviews[keep:])
