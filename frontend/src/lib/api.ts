@@ -697,6 +697,8 @@ export interface WorkItemDetail {
 }
 
 export interface WorkEdit {
+  /** Goals only: run the claw now, whatever its schedule. */
+  run_now?: boolean;
   subject: string;
   /** Goals only: '' one-shot, 'cron' daily until done, 'manual' on request. */
   trigger?: string;

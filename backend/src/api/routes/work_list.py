@@ -733,6 +733,7 @@ def _crm_lead_detail(lead_id: str) -> DetailOut:
 
     owner = lead.get("user_id")
     stage = lead.get("stage_id")
+    from src.services.work_list_crm import _clean
     return DetailOut(
         subject=f"crm:lead/{ref}",
         kind="contact",
@@ -742,7 +743,7 @@ def _crm_lead_detail(lead_id: str) -> DetailOut:
               else None),
         project=partner_name or "the CRM",
         title=(lead.get("name") or "").strip() or partner_name or "(opportunity)",
-        description=lead.get("description") or None,
+        description=_clean(lead.get("description") or "") or None,
         status=(stage[1] if isinstance(stage, (list, tuple)) and len(stage) > 1
                 else None),
         due=None,
