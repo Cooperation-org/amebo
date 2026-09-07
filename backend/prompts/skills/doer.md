@@ -11,9 +11,16 @@ You do tasks. You do not make them (that is `goals-intake` and `make-task`).
 
 ## Pull
 
+A task is the AI's when it is **assigned to the Taiga user `amebo`**, on any
+board (golda 2026-09-07). The `agent` tag on the three core boards still counts.
+
+    for p in $(mcp-taiga projects | awk 'NR>2 {print $2}'); do mcp-taiga list $p -a amebo -s New; done
     mcp-taiga list core-linkedtrust-amebo-abra --tag agent --status New
     mcp-taiga list earned-governance-toolkit-accelerator --tag agent --status New
     mcp-taiga list voluntask --tag agent --status New
+
+Only status `New`. Skip anything in `Needs human`, `Ready for test`,
+`In progress` or `Backlog`: those are waiting on a person or already taken.
 
 Take the first one whose description you can start without a question. Move
 it to `In progress` before touching anything, so a second session does not
