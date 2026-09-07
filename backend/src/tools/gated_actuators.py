@@ -608,6 +608,15 @@ CRM_TAG_CONTACT_SCHEMA = {
     "required": ["contact", "tag"],
 }
 
+CRM_NOTE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "contact": {"type": "string", "description": "Contact name (or email)."},
+        "text": {"type": "string", "description": "One or two lines. A finding worth a person's attention, with at most one link. Nothing else."},
+    },
+    "required": ["contact", "text"],
+}
+
 CRM_LOG_CONTACTED_SCHEMA = {
     "type": "object",
     "properties": {
@@ -735,6 +744,34 @@ register_executor("slack_post", execute_slack_post)
 # odoo-cli --help (contact-create <name> <email>; campaign-create <name>
 # [project-ref]; campaign-link <campaign> <contact> [summary]).
 # ---------------------------------------------------------------------------
+
+
+def execute_crm_note(action: Dict[str, Any]) -> str:
+    """odoo-cli note <contact> <text> — a short note on the person's CRM record."""
+    p = action.get("payload") or {}
+    contact, text = p.get("contact"), (p.get("text") or "").strip()
+    if not contact or not text:
+        return "Error: cannot note — payload missing contact or text."
+    out = run_cli(["odoo-cli", "note", str(contact), text], env=_crm_env(p))
+    if _cli_failed(out):
+        raise RuntimeError(f"crm_note failed: {out.strip()}")
+    return out
+
+
+def crm_note_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """One or two lines on a person's CRM record. Free (runs directly)."""
+    contact = (tool_input.get("contact") or "").strip()
+    text = (tool_input.get("text") or "").strip()
+    if not contact or not text:
+        return "Error: contact and text are both required."
+    if len(text) > 400:
+        return "Error: a note is one or two lines (400 characters max). Narrow it down."
+    payload = {"contact": contact, "text": text, "org_id": _ctx_org_id(context)}
+    return _route_through_gate(
+        action_type="crm_note", context=context, target=contact,
+        payload=payload, preview=f"CRM: note on {contact!r}: {text[:80]}",
+        executor=execute_crm_note,
+    )
 
 
 def execute_crm_create_contact(action: Dict[str, Any]) -> str:

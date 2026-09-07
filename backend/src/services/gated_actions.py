@@ -80,6 +80,7 @@ FREE_ACTIONS: Set[str] = {
     "crm_create_contact",
     "campaign_create",
     "campaign_link",
+    "crm_note",          # one or two lines on a person's CRM record; our own data
 }
 
 

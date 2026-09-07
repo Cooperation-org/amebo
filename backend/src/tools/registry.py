@@ -853,6 +853,7 @@ from src.tools.gated_actuators import (
     crm_tag_contact_impl, CRM_TAG_CONTACT_SCHEMA,
     crm_log_contacted_impl, CRM_LOG_CONTACTED_SCHEMA,
     crm_create_contact_impl, CRM_CREATE_CONTACT_SCHEMA,
+    crm_note_impl, CRM_NOTE_SCHEMA,
     campaign_create_impl, CAMPAIGN_CREATE_SCHEMA,
     campaign_link_impl, CAMPAIGN_LINK_SCHEMA,
     slack_post_impl as slack_post_gated_impl, SLACK_POST_SCHEMA as SLACK_POST_GATED_SCHEMA,
@@ -1194,6 +1195,18 @@ register_tool(Tool(
     execute=crm_create_contact_impl,
     is_read_only=False,
     needs_confirmation=True,
+    category="crm",
+))
+
+register_tool(Tool(
+    name="crm_note",
+    description=(
+        "Write one or two lines on a person's CRM record: a finding worth a "
+        "person's attention, at most one link. Runs directly."
+    ),
+    input_schema=CRM_NOTE_SCHEMA,
+    execute=crm_note_impl,
+    is_read_only=False,
     category="crm",
 ))
 
