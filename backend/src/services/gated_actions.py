@@ -73,6 +73,13 @@ FREE_ACTIONS: Set[str] = {
     # 2026-07-06: claw's question became an approval draft nobody saw and
     # the goal completed unasked).
     "ask_user",
+    # CRM records are our own editable data, not an outbound act (golda
+    # 2026-09-07: "ungate the creation"). A claw that finds a channel or a
+    # person writes it to the CRM directly; a human corrects data in the CRM,
+    # not in an approval queue. Contacting anyone stays gated.
+    "crm_create_contact",
+    "campaign_create",
+    "campaign_link",
 }
 
 

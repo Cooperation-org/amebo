@@ -34,6 +34,7 @@ subprocess is NOT run at tool-call time — only the draft is created.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Callable, Dict, Optional
 
 from src.services.draft_approval_service import DraftApprovalService
@@ -778,12 +779,20 @@ def execute_campaign_link(action: Dict[str, Any]) -> str:
     return out
 
 
+def _placeholder_email(name: str) -> str:
+    """A CRM record for a channel or an org often has no published address.
+    Odoo wants one, and which one is not a human's problem (golda 2026-09-07).
+    RFC 2606 reserves .invalid for exactly this: unmistakably not deliverable."""
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:40] or "contact"
+    return f"{slug}@placeholder.invalid"
+
+
 def crm_create_contact_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
-    """Draft creating a new CRM contact. Gated."""
+    """Create a new CRM contact. Free (runs directly) since 2026-09-07."""
     name = (tool_input.get("name") or "").strip()
-    email = (tool_input.get("email") or "").strip()
-    if not name or not email:
-        return "Error: name and email are both required to create a contact."
+    email = (tool_input.get("email") or "").strip() or _placeholder_email(name)
+    if not name:
+        return "Error: name is required to create a contact."
     payload = {"name": name, "email": email, "org_id": _ctx_org_id(context)}
     return _route_through_gate(
         action_type="crm_create_contact", context=context, target=name,
@@ -835,7 +844,7 @@ CRM_CREATE_CONTACT_SCHEMA = {
         "name": {"type": "string", "description": "Full name for the new contact."},
         "email": {"type": "string", "description": "Email address for the new contact."},
     },
-    "required": ["name", "email"],
+    "required": ["name"],
 }
 
 CAMPAIGN_CREATE_SCHEMA = {
