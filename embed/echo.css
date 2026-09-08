@@ -12,6 +12,7 @@
           --accent:#6cb0ff; --accent-fg:#000; --line:#444; --today:#6cb0ff; }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; background: var(--bg); color: var(--fg);
   font: 18px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
 button, input { font: inherit; color: inherit; }

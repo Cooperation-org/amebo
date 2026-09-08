@@ -207,7 +207,7 @@
 
   // ---------- drag (pointer events; long-press on touch so scrolling still works) ----------
   function enableDrag(li, l) {
-    let timer = null, dragging = false, startX = 0, startY = 0, target = null;
+    let timer = null, dragging = false, armed = false, startX = 0, startY = 0, target = null, pointerId = null;
     const clearDrop = () => document.querySelectorAll('.drop').forEach((n) => n.classList.remove('drop'));
     const findTarget = (x, y) => {
       const el = document.elementFromPoint(x, y);
@@ -215,22 +215,35 @@
       if (!t || t === li || (t.dataset.drop === 'parent' && Number(t.dataset.dropValue) === l.id)) return null;
       return t;
     };
+    const begin = () => {
+      dragging = true; armed = false; timer = null;
+      li.classList.add('dragging');
+      try { li.setPointerCapture(pointerId); } catch (_) { /* pointer already gone */ }
+    };
     li.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('button, input, .text')) return;
-      startX = e.clientX; startY = e.clientY;
-      const begin = () => { dragging = true; li.classList.add('dragging'); li.setPointerCapture(e.pointerId); };
-      if (e.pointerType === 'touch') timer = setTimeout(begin, 350); else begin();
+      if (e.target.closest('button, input') || editingId === l.id) return;
+      startX = e.clientX; startY = e.clientY; pointerId = e.pointerId; armed = true;
+      // Touch: hold to lift, so the page still scrolls. Mouse: lift once it moves.
+      if (e.pointerType === 'touch') timer = setTimeout(begin, 350);
     });
     li.addEventListener('pointermove', (e) => {
-      if (!dragging) { if (timer && Math.hypot(e.clientX - startX, e.clientY - startY) > 8) { clearTimeout(timer); timer = null; } return; }
+      if (!dragging) {
+        if (!armed) return;
+        const moved = Math.hypot(e.clientX - startX, e.clientY - startY) > 8;
+        if (!moved) return;
+        if (timer) { clearTimeout(timer); timer = null; armed = false; return; } // touch scroll, not a lift
+        begin();
+      }
       e.preventDefault();
       const t = findTarget(e.clientX, e.clientY);
       if (t !== target) { clearDrop(); target = t; if (t) t.classList.add('drop'); }
     });
-    const end = (e) => {
+    const end = () => {
       if (timer) { clearTimeout(timer); timer = null; }
+      armed = false;
       if (!dragging) return;
       dragging = false; li.classList.remove('dragging'); clearDrop();
+      li.dataset.justDragged = '1'; setTimeout(() => { delete li.dataset.justDragged; }, 0);
       const t = target; target = null;
       if (!t) return;
       const v = t.dataset.dropValue;
@@ -240,6 +253,8 @@
     };
     li.addEventListener('pointerup', end);
     li.addEventListener('pointercancel', end);
+    // A drop must not also count as a tap on the text underneath.
+    li.addEventListener('click', (e) => { if (li.dataset.justDragged) { e.stopPropagation(); e.preventDefault(); } }, true);
     li.style.touchAction = 'pan-y';
   }
 
