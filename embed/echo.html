@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Echo</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="/embed/echo.css">
+</head>
+<body>
+<div id="signin" hidden>
+  <a class="btn primary" id="signin-link">Continue with LinkedTrust</a>
+</div>
+<div id="app" hidden>
+  <header>
+    <div id="chips" class="chips" role="toolbar" aria-label="Categories"></div>
+  </header>
+  <nav id="crumb" class="crumb" hidden>
+    <button class="btn icon" id="up" aria-label="Back">‹</button>
+    <span id="crumb-text" class="crumb-text"></span>
+  </nav>
+  <form id="add" class="add" autocomplete="off">
+    <input id="add-text" type="text" aria-label="New line" enterkeyhint="done">
+    <button class="btn icon primary" type="submit" aria-label="Add">+</button>
+  </form>
+  <main id="line" class="line" aria-live="polite"></main>
+</div>
+<div id="toast" class="toast" hidden></div>
+<script src="/embed/echo.js"></script>
+</body>
+</html>

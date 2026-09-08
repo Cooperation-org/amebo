@@ -65,6 +65,11 @@ PUBLIC_EXACT = frozenset({
     # not configured) — it is not a session-JWT/API-key endpoint, so the gate
     # must pass it through like /slack/ webhooks.
     "/api/orgs/provision",
+    # Echo page + its assets: the page is public, the data behind it is not
+    # (routes/echo.py requires a session; the page shows a sign-in button).
+    "/echo",
+    "/embed/echo.js",
+    "/embed/echo.css",
 })
 
 
