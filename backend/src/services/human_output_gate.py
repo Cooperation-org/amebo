@@ -51,6 +51,7 @@ documented in docs/OUTPUT_GATE.md.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -170,6 +171,12 @@ class _PassthroughCrystallizer:
         if not lines:
             return ""
         cap = self.THREAD_MAX_LINES if in_thread else self.COLD_MAX_LINES
+        if not in_thread:
+            # Golda 2026-09-10: "Slack is only for stuff that actually needs a
+            # human or is important to a human, and then two sentences max."
+            # Whatever arrives, a cold post leaves as at most two sentences
+            # and one link. The rest is on the record it came from.
+            return two_sentences_and_a_link("\n".join(lines))
         if len(lines) <= cap:
             return "\n".join(lines)
         head = lines[: cap - 1]
@@ -181,6 +188,37 @@ class _PassthroughCrystallizer:
 # ===========================================================================
 # Decision result
 # ===========================================================================
+
+
+_URL_RE = re.compile(r"https?://\S+")
+_MENTION_RE = re.compile(r"<@[A-Z0-9]+>")
+_SENT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def two_sentences_and_a_link(text: str) -> str:
+    """The most a person is asked to read cold: mentions, two sentences, one
+    link. Markdown bullets and headings are prose here; a list of eleven
+    findings is not two sentences however it is formatted."""
+    text = (text or "").strip()
+    if not text:
+        return ""
+    mentions = " ".join(dict.fromkeys(_MENTION_RE.findall(text)))
+    links = _URL_RE.findall(text)
+    body = _MENTION_RE.sub("", text)
+    lines = [ln for ln in body.splitlines() if ln.strip()]
+    bullets = [ln for ln in lines if re.match(r"\s*(?:[-*•]|\d+[.)])\s+", ln)]
+    if len(bullets) >= 2:
+        # A list is not a sentence. Keep what introduced it and say how many.
+        head = next((ln for ln in lines if ln not in bullets), "")
+        body = f"{head} ({len(bullets)} items, on the record)"
+    body = re.sub(r"[*_`#>-]+", " ", _URL_RE.sub("", body))
+    body = re.sub(r"\s+", " ", body).strip()
+    sentences = [x.strip() for x in _SENT_RE.split(body) if x.strip()]
+    out = " ".join(sentences[:2])
+    if len(sentences) > 2 and not out.endswith((".", "!", "?")):
+        out += "."
+    parts = [p for p in (mentions, out, links[0] if links else "") if p]
+    return " ".join(parts)
 
 
 class Disposition(str, Enum):

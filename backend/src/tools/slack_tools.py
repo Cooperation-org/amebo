@@ -18,6 +18,7 @@ dispatcher can record it in goal_events for traceability.
 from __future__ import annotations
 
 import logging
+import re
 import os
 from typing import Any, Dict, Optional
 
@@ -99,6 +100,28 @@ def _bot_token(context=None) -> str:
     return token
 
 
+_SENT_SPLIT_RE = re.compile(r"(?<=[.!?])\s+")
+
+
+def _more_than_two_sentences(text: str) -> str:
+    """'' when the text fits a person's Slack (two sentences, one link), else
+    what it is instead. Golda 2026-09-10."""
+    body = re.sub(r"<@[A-Z0-9]+>", "", text)
+    links = re.findall(r"https?://\S+", body)
+    body = re.sub(r"https?://\S+", "", body)
+    lines = [ln for ln in body.splitlines() if ln.strip()]
+    bullets = sum(1 for ln in lines if re.match(r"\s*(?:[-*•]|\d+[.)])\s+", ln))
+    prose = re.sub(r"[*_`#>]+", " ", " ".join(lines))
+    sentences = [x for x in _SENT_SPLIT_RE.split(prose) if x.strip()]
+    if bullets >= 2:
+        return f"a list of {bullets} items"
+    if len(sentences) > 2:
+        return f"{len(sentences)} sentences"
+    if len(links) > 1:
+        return f"{len(links)} links"
+    return ""
+
+
 def slack_post_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
     channel = (tool_input.get("channel") or "").strip()
     text = tool_input.get("text") or ""
@@ -131,6 +154,13 @@ def slack_post_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
         return "Error: text is required."
     if len(text) > MAX_TEXT_LEN:
         return f"Error: text must be <= {MAX_TEXT_LEN} chars."
+    too_long = _more_than_two_sentences(text)
+    if too_long:
+        return ("Error: not posted. Slack is for a person who must act or a thing "
+                "important to a person: at most TWO sentences and ONE link, addressed "
+                f"to them. This was {too_long}. Put the detail on the record it belongs "
+                "to (the CRM card, the task, the goal) and post one line with its link — "
+                "or post nothing if nobody needs to act.")
 
     if require_mention and not mention_user_id:
         return (

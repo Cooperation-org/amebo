@@ -165,3 +165,21 @@ That is the entire integration. No change to `goal_dispatcher.py`, `main.py`,
 | `daily_standup_hour` | 9 | local hour (0-23) the scheduler flushes stand-ups |
 | `dedup_lookback` | 24 hours | how far back a repeat is suppressed |
 | `state_ttl` | 24 hours | idle-channel state GC horizon (must be ≥ longest lookback) |
+
+## The rule, 2026-09-10 (golda)
+
+"Slack is only for stuff that actually needs a human or is important to a
+human, and then two sentences max. Don't let it make noise in Slack telling
+about its own shit." Enforced in three places, so it holds for every claw and
+not only for a well-behaved session:
+
+- **A finished run is silent.** `GoalDispatcher._maybe_notify` posts nothing
+  on completion unless the run summary carries a line starting `NEEDS:`; that
+  line and a link to the goal are the whole message. The summary itself is on
+  the goal (its runs on the goals page).
+- **Cold posts are two sentences and one link.** `two_sentences_and_a_link`
+  in this gate rewrites anything sent cold; a list becomes its heading and a
+  count.
+- **The Slack tools refuse essays.** `slack_post` / `slack_post_gated` return
+  an error, not a post, for more than two sentences, a list, or more than one
+  link, and tell the model where the detail belongs.

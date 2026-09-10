@@ -26,6 +26,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
@@ -80,6 +82,21 @@ class DispatchResult:
 
 # A notifier takes (channel_spec, message_text) and returns True on success.
 Notifier = Callable[[str, str], bool]
+
+
+_NEED_RE = re.compile(r"^\s*(?:[*_>#-]+\s*)?NEEDS?\s*:\s*(.+)$", re.I | re.M)
+
+
+def _human_need(summary: Optional[str]) -> Optional[str]:
+    """The one line in a run summary that asks a person for something, if
+    any. Everything else a run says is its own business."""
+    if not summary:
+        return None
+    m = _NEED_RE.search(summary)
+    if not m:
+        return None
+    line = re.sub(r"\s+", " ", m.group(1)).strip()
+    return f"NEEDS: {line}" if line else None
 
 
 def _default_notifier(channel: str, message: str) -> bool:
@@ -920,14 +937,21 @@ class GoalDispatcher:
         return (cfg or {}).get("notify_channel") or None
 
     def _maybe_notify(self, goal: Dict[str, Any], summary: Optional[str]) -> bool:
+        """A finished run says nothing in Slack unless a person is needed.
+
+        Golda 2026-09-10: "don't let it make noise in Slack telling about its
+        own shit. Slack is only for stuff that actually needs a human or is
+        important to a human, two sentences max." The run's summary is on the
+        goal (its runs on the goals page); Slack gets only a line that starts
+        with NEEDS: — the same word the doer contract uses — and a link."""
         channel = self._channel_for(goal)
         if not channel:
             return False
-
-        message = (
-            f"Goal completed: {goal['title']}\n\n"
-            f"{summary or '(no summary)'}"
-        )
+        need = _human_need(summary)
+        if not need:
+            return False
+        base = os.getenv("AMEBO_PUBLIC_URL", "https://amebo.linkedtrust.us").rstrip("/")
+        message = f"{need} {base}/dashboard/goals?task=goal%3A{goal['id']}"
         try:
             return bool(self._notify(channel, message))
         except Exception as exc:
