@@ -29,28 +29,41 @@
     return sameYear ? name : d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
   };
 
-  // ---------- api ----------
-  async function call(method, path, body) {
-    const r = await fetch(API + path, {
-      method, credentials: 'include',
-      headers: body ? { 'Content-Type': 'application/json' } : {},
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (r.status === 401) { showSignin(); throw new Error('signed out'); }
-    if (!r.ok) { toast('Not saved'); throw new Error(`${method} ${path} ${r.status}`); }
-    return r.status === 204 ? null : r.json();
+  // ---------- store ----------
+  // The live page talks to /api/echo/. A host page may set window.EchoStore
+  // first (same four methods) — the demo at demos.linkedtrust.us/echo/ does,
+  // with sample lines held in memory.
+  function apiStore() {
+    async function call(method, path, body) {
+      const r = await fetch(API + path, {
+        method, credentials: 'include',
+        headers: body ? { 'Content-Type': 'application/json' } : {},
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (r.status === 401) { showSignin(); throw new Error('signed out'); }
+      if (!r.ok) { toast('Not saved'); throw new Error(`${method} ${path} ${r.status}`); }
+      return r.status === 204 ? null : r.json();
+    }
+    return {
+      list: () => call('GET', ''),
+      add: (fields) => call('POST', '', fields),
+      patch: (id, changes) => call('PATCH', String(id), changes),
+      remove: (id) => call('DELETE', String(id)),
+    };
   }
-  const load = async () => { lines = await call('GET', ''); };
+  const store = window.EchoStore || apiStore();
+
+  const load = async () => { lines = await store.list(); };
   async function add(text) {
-    const line = await call('POST', '', { text, on_date: today(), category: filterCat, parent_id: parentId });
+    const line = await store.add({ text, on_date: today(), category: filterCat, parent_id: parentId });
     lines.push(line); render();
   }
   async function patch(id, changes) {
-    const line = await call('PATCH', String(id), changes);
+    const line = await store.patch(id, changes);
     lines = lines.map((l) => (l.id === id ? line : l)); render();
   }
   async function remove(id) {
-    await call('DELETE', String(id));
+    await store.remove(id);
     const gone = new Set([id]);
     let grew = true;
     while (grew) { grew = false; for (const l of lines) if (l.parent_id && gone.has(l.parent_id) && !gone.has(l.id)) { gone.add(l.id); grew = true; } }
