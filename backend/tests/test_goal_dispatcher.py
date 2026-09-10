@@ -119,10 +119,23 @@ class TestDispatchHappyPath:
         )
         result = dispatcher.dispatch(g["id"])
 
-        assert result.notification_sent is True
-        assert len(sent) == 1
+        # Golda 2026-09-10: a finished run says nothing in Slack unless its
+        # summary names a human need (a NEEDS: line). The summary lives on the
+        # goal. So: no message here.
+        assert result.notification_sent is False
+        assert sent == []
+
+    def test_notification_only_for_a_need(self, engine, test_org_id):
+        g = engine.create_goal(test_org_id, "X", notify_channel="slack:#goals")
+        sent: list[tuple[str, str]] = []
+        dispatcher = GoalDispatcher(anthropic_client=_make_fake_client(),
+                                    notifier=lambda ch, msg: sent.append((ch, msg)) or True)
+        assert dispatcher._maybe_notify(g, "did things.\nNEEDS: your ok on the code.") is True
         assert sent[0][0] == "slack:#goals"
-        assert "Goal completed" in sent[0][1]
+        assert sent[0][1].startswith("NEEDS: your ok on the code.")
+        assert "/dashboard/goals?task=goal%3A" in sent[0][1]
+        assert dispatcher._maybe_notify(g, "did things, all fine") is False
+        assert len(sent) == 1
 
     def test_no_notification_when_channel_missing(self, engine, test_org_id):
         g = engine.create_goal(test_org_id, "X")
