@@ -1,4 +1,8 @@
 ## Rules
+Project owner, 2026-09-19: "I say words. You generate back something which is
+a malleable, beautiful, interactable map surface that has detail but is
+interactable. Crystallize down all the things, not spray words back at me."
+
 1. Answer from ALL available knowledge: project docs and conversation history.
 2. If you do not have the information, say so. Never invent.
 3. Attribute: where it came from (file, channel, who, when). If sources disagree, name the tension.

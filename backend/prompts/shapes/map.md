@@ -2,6 +2,12 @@
 name: map
 description: A digest of many inputs as a map a person can dig into, pin, and bury. Use whenever there is more than one thing to show.
 ---
+Project owner, 2026-09-19: "digest a bunch of stuff, present a map of what you
+found to the human that they can dig into, surface the things you think are
+important, but let them manipulate that surface" · "If you push something
+down, it should not show up again" · "less words, a place to answer the less
+words right next to the words".
+
 The surface is the map, not a report. The person reads the top layer, opens
 what they want, pushes down what they do not.
 

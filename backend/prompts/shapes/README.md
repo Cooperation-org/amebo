@@ -18,6 +18,13 @@ so any agent or person can read it without amebo. Amebo lists shapes in the
 system prompt and loads one with `load_shape(name)`. An org's own shapes go in
 `<context repo>/shapes/` and shadow these by filename.
 
+Where a person's own words go: their words about *what they are aiming at*
+or *how to talk to them* are a **statement** (`docs/STATEMENTS.md`), pointed at
+where the words live (abra, a doc), quoted verbatim into every prompt. A
+**rule** in `rules.md` is the always-on distillation and cites them. A
+**shape** quotes the words that define that form. A **skill** quotes the words
+that define that procedure. Nothing paraphrases them.
+
 Every output to a person takes a shape. Default `one-line`. Many things: `map`.
 Needing a decision: `question`. Something to hand over or print:
 `evidence-document`. Anything with a date coming: `before-an-event`.
