@@ -45,7 +45,14 @@ class GoalScheduler:
         tick_seconds: int = DEFAULT_TICK_SECONDS,
         org_ids: Optional[List[int]] = None,
     ):
-        self._dispatcher = dispatcher or GoalDispatcher()
+        if dispatcher is None:
+            # A bare GoalDispatcher() has no LLM client and every cron fire
+            # returns "[no-llm] Goal pursued in offline mode" (20 of 26
+            # dispatches, 2026-09-07..18). Wire the same client the
+            # dispatch-now route uses.
+            from src.services.llm_client import get_llm_client
+            dispatcher = GoalDispatcher(anthropic_client=get_llm_client())
+        self._dispatcher = dispatcher
         self._goal_repo = goal_repo or GoalRepo()
         # Narrow the pass to specific orgs. Production leaves this None and
         # sweeps every enabled org; a test scopes itself to the org it created,
@@ -77,7 +84,11 @@ class GoalScheduler:
             return
         self._stopped.clear()
         self._task = asyncio.create_task(self._run())
-        logger.info("GoalScheduler started (tick=%ss)", self._tick_seconds)
+        logger.info(
+            "GoalScheduler started (tick=%ss, llm_client=%s)",
+            self._tick_seconds,
+            "yes" if getattr(self._dispatcher, "_client", None) is not None else "NO",
+        )
 
     async def stop(self):
         if self._task is None:

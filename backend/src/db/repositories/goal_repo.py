@@ -17,11 +17,15 @@ callers get clear errors before round-tripping to Postgres.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from psycopg2 import extras
 
 from src.db.connection import DatabaseConnection
+
+# Full uuid (36) or a prefix of at least 8 hex/dash chars.
+_ID_PREFIX_RE = re.compile(r"^[0-9a-f-]{8,36}$")
 
 logger = logging.getLogger(__name__)
 
@@ -100,12 +104,25 @@ class GoalRepo:
             DatabaseConnection.return_connection(conn)
 
     def get(self, goal_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch by full id, or by an unambiguous id prefix (the CLI and the
+        list output show the first 8 chars). Anything that is not hex/dash
+        returns None instead of reaching Postgres and 500ing on a bad uuid."""
+        goal_id = (goal_id or "").strip().lower()
+        if not _ID_PREFIX_RE.match(goal_id):
+            return None
         conn = DatabaseConnection.get_connection()
         try:
             with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
-                cur.execute("SELECT * FROM goals WHERE id = %s", (goal_id,))
-                row = cur.fetchone()
-                return dict(row) if row else None
+                if len(goal_id) == 36:
+                    cur.execute("SELECT * FROM goals WHERE id = %s", (goal_id,))
+                    row = cur.fetchone()
+                    return dict(row) if row else None
+                cur.execute(
+                    "SELECT * FROM goals WHERE id::text LIKE %s LIMIT 2",
+                    (goal_id + "%",),
+                )
+                rows = cur.fetchall()
+                return dict(rows[0]) if len(rows) == 1 else None
         finally:
             DatabaseConnection.return_connection(conn)
 
