@@ -86,7 +86,11 @@ def _from_abra(pointer: str, org_id: int) -> Optional[str]:
         # (With an org_id it reads amebo's own local bindings, so a pointer to
         # a name in abra never resolved before 2026-09-19.)
         repo = BindingRepo()
-        for b in repo.search_bindings_by_name(name) or []:
+        # Newest binding first: `abra store` on an existing name adds a
+        # binding, and the latest words are the ones meant.
+        bindings = sorted(repo.search_bindings_by_name(name) or [],
+                          key=lambda b: int(b.get("id") or 0), reverse=True)
+        for b in bindings:
             ref = str(b.get("target_ref") or "")
             if b.get("target_type") == "content" and ref.isdigit():
                 row = repo.get_content(int(ref)) or {}
