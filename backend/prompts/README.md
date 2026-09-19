@@ -4,9 +4,16 @@ Map of every prompt that shapes how amebo talks and decides — what each layer 
 where it lives, which code path uses it, and what's editable as a file vs. in code.
 Edit the files in this folder directly; the in-code prompts are noted with pointers.
 
-> TL;DR layers: **Identity** (who/purpose) → **Rules** (always-on) → **Skill**
-> (task-specific, keyword-triggered) → **Knowledge** (runtime). Plus separate
-> prompts for the **claw** and **intentions** paths.
+> TL;DR layers: **Identity** (who/purpose) → **Rules** (always-on, `rules.md`)
+> → **Shapes** (the form an output takes, `shapes/`) → **Skill** (how to do a
+> kind of work, `skills/`) → **Knowledge** (runtime). The claw path gets the
+> same rules and catalogs as chat via `src/services/prompt_layers.py`; only the
+> **intentions** path has its own prompt.
+>
+> Three levels, named on purpose: a **shape** is a high-level pattern of the
+> description of things; a **skill** is a capability with knowledge; an
+> **implementation skill** is precise and lives with its tool. See
+> [`shapes/README.md`](shapes/README.md).
 
 ---
 
