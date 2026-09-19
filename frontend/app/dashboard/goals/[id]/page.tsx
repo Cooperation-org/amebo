@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronsDown, ChevronsUp, Pin, PinOff } from 'lucide-react';
+import { ChevronsDown, ChevronsUp } from 'lucide-react';
 import { apiClient, type GoalMap, type GoalMapItem } from '@/src/lib/api';
 
 /**
@@ -53,37 +53,34 @@ function Line({ item, goalId }: { item: GoalMapItem; goalId: string }) {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const mark = useMutation({
-    mutationFn: (state: 'pinned' | 'buried' | null) =>
+    mutationFn: (state: 'buried' | null) =>
       state ? apiClient.markWorkItem(item.subject, state) : apiClient.unmarkWorkItem(item.subject),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['goal-map', goalId] }),
   });
   const stop = (fn: () => void) => (e: React.MouseEvent) => { e.stopPropagation(); fn(); };
   const btn = 'rounded p-1.5 text-gray-300 hover:bg-gray-100 hover:text-gray-700';
   const hasDetail = !!item.detail;
+  const control = item.state === 'buried' ? (
+    <button className={btn} aria-label="bring back" onClick={stop(() => mark.mutate(null))}><ChevronsUp className="h-3.5 w-3.5" /></button>
+  ) : (
+    <button className={btn} aria-label="push down" onClick={stop(() => mark.mutate('buried'))}><ChevronsDown className="h-3.5 w-3.5" /></button>
+  );
   return (
     <div onClick={() => hasDetail && setOpen((o) => !o)}
          className={`rounded-lg border bg-white px-3 py-2.5 ${item.ask ? 'border-amber-200' : ''} ${hasDetail ? 'cursor-pointer hover:border-gray-300' : ''} ${item.state === 'buried' ? 'opacity-60' : ''}`}>
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-3">
-        <p className="min-w-0 flex-1 text-[15px] leading-snug text-gray-900">
-          {item.link ? (
-            <a href={item.link} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
-               className="hover:underline">{item.line} <span className="text-emerald-700">↗</span></a>
-          ) : item.line}
-        </p>
+        <div className="flex min-w-0 flex-1 items-start gap-2">
+          <p className="min-w-0 flex-1 text-[15px] leading-snug text-gray-900">
+            {item.link ? (
+              <a href={item.link} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}
+                 className="hover:underline">{item.line} <span className="text-emerald-700">↗</span></a>
+            ) : item.line}
+          </p>
+          <span className="sm:hidden">{control}</span>
+        </div>
         {item.ask && item.answer === null && <AnswerBox goalId={goalId} item={item} />}
         {item.answer !== null && <span className="text-sm text-gray-500">{item.answer}</span>}
-        <div className="flex shrink-0 gap-0.5 self-end sm:self-auto">
-          {item.state === 'pinned' ? (
-            <button className={btn} aria-label="unpin" onClick={stop(() => mark.mutate(null))}><PinOff className="h-3.5 w-3.5" /></button>
-          ) : item.state === 'buried' ? (
-            <button className={btn} aria-label="bring back" onClick={stop(() => mark.mutate(null))}><ChevronsUp className="h-3.5 w-3.5" /></button>
-          ) : (
-            <>
-              <button className={btn} aria-label="pin" onClick={stop(() => mark.mutate('pinned'))}><Pin className="h-3.5 w-3.5" /></button>
-              <button className={btn} aria-label="push down" onClick={stop(() => mark.mutate('buried'))}><ChevronsDown className="h-3.5 w-3.5" /></button>
-            </>
-          )}
-        </div>
+        <span className="hidden sm:inline">{control}</span>
       </div>
       {open && hasDetail && (
         <div className="mt-2 whitespace-pre-line text-sm text-gray-700"><Words text={item.detail} /></div>
@@ -117,7 +114,6 @@ export default function GoalMapPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-2 p-4 sm:p-6">
-      <p className="mb-3 text-sm text-gray-500">{data.title}</p>
       {data.items.map((it) => <Line key={it.key} item={it} goalId={data.id} />)}
       {data.items.length === 0 && data.buried.length === 0 && data.answered.length === 0 && (
         <p className="whitespace-pre-line text-sm text-gray-600"><Words text={data.description ?? ''} /></p>
