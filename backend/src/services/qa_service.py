@@ -805,6 +805,10 @@ Answer the question based on this context. Be comprehensive and include all rele
             # data (arch §7) and must not leak to an unknown user, and without
             # the load_skill tool the catalog is useless anyway.
             if allow_tools:
+                from src.services.prompt_layers import catalog as _catalog
+                shapes = _catalog("shapes", self.org_id)
+                if shapes:
+                    system_prompt += f"\n\n{shapes}"
                 catalog = _skill_catalog()
                 if catalog:
                     system_prompt += f"\n\n{catalog}"

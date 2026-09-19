@@ -109,7 +109,11 @@ function Row({ goal, onOpen }: { goal: Goal; onOpen: () => void }) {
           aria-label={st.word}
         />
         <div className="min-w-0 flex-1">
-          <p className="text-[15px] leading-snug text-gray-900">{goal.title}</p>
+          <p className="text-[15px] leading-snug text-gray-900">
+            {goal.title}{' '}
+            <a href={`/dashboard/goals/${goal.id}`} onClick={(e) => e.stopPropagation()}
+               className="text-xs text-emerald-700 hover:underline" title="map">↗</a>
+          </p>
           {waiting && goal.question && (
             <p className="mt-1 whitespace-pre-line text-sm text-amber-900">{goal.question}</p>
           )}

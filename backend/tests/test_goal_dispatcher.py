@@ -94,14 +94,15 @@ class TestDispatchHappyPath:
         # The loop appends stats; the model's text is still the leading content.
         assert result.summary.startswith("Drafted the post.")
 
-        # Goal row reflects completion
+        # A dispatch ending is not the goal being achieved: a goal with no
+        # trigger is a person's, and only goal_done or the person retires it.
         final = engine.get(g["id"])
-        assert final["status"] == "completed"
-        assert final["completed_at"] is not None
+        assert final["status"] == "pending"
+        assert final["completed_at"] is None
 
-        # Audit trail: created → activated → dispatch_summary → completed
+        # Audit trail: created → activated → dispatch_summary → rearmed
         actions = [e["action"] for e in engine.events(g["id"])]
-        assert actions == ["created", "activated", "dispatch_summary", "completed"]
+        assert actions == ["created", "activated", "dispatch_summary", "rearmed"]
 
     def test_notification_sent_when_channel_set(self, engine, test_org_id):
         g = engine.create_goal(
@@ -248,21 +249,23 @@ class TestRecurringGoalReArms:
             "activated", "dispatch_summary", "rearmed",
         ]
 
-    def test_one_shot_goals_still_complete_terminally(self, engine, test_org_id):
+    def test_one_shot_goals_go_back_to_pending(self, engine, test_org_id):
+        """No dispatch completes a goal on its own. A goal without a trigger is
+        a person's goal (goals-intake); it stays until goal_done or the person
+        marks it done. Before 2026-09-19 a claw reading files for three minutes
+        marked the owner's goal 'completed'."""
         dispatcher = GoalDispatcher(anthropic_client=None)
 
-        # No trigger_config → one-shot → unchanged terminal completion.
         g1 = engine.create_goal(test_org_id, "Send one digest")
         dispatcher.dispatch(g1["id"])
-        assert engine.get(g1["id"])["status"] == "completed"
+        assert engine.get(g1["id"])["status"] == "pending"
 
-        # A cron trigger with no expression is not recurring → completes.
         g2 = engine.create_goal(
             test_org_id, "Misconfigured cron",
             trigger_config={"type": "cron"},
         )
         dispatcher.dispatch(g2["id"])
-        assert engine.get(g2["id"])["status"] == "completed"
+        assert engine.get(g2["id"])["status"] == "pending"
 
 
 class TestBudgetAndFailureAlerts:

@@ -116,9 +116,11 @@ def _make_dispatcher_mock():
 class TestShouldFire:
     NOW = datetime(2026, 5, 13, 12, 0, 0, tzinfo=timezone.utc)
 
-    def test_no_trigger_fires_immediately(self):
+    def test_no_trigger_never_auto_fires(self):
+        # A goal with no trigger is a person's goal: dispatch-now only. The
+        # goals page has said "cannot fire on its own" since 2026-09-06.
         assert _should_fire({"trigger_config": None,
-                             "updated_at": self.NOW}, now=self.NOW) is True
+                             "updated_at": self.NOW}, now=self.NOW) is False
 
     def test_manual_never_fires(self):
         g = {"trigger_config": {"type": "manual"}, "updated_at": self.NOW}
@@ -166,11 +168,14 @@ class TestTick:
     def test_tick_dispatches_pending_goal_for_enabled_org(
         self, engine, org_with_enabled_instance,
     ):
-        g = engine.create_goal(org_with_enabled_instance, "auto goal")
+        g = engine.create_goal(
+            org_with_enabled_instance, "auto goal",
+            trigger_config={"type": "cron", "expression": "* * * * *"},
+        )
         dispatcher = _make_dispatcher_mock()
         scheduler = GoalScheduler(dispatcher=dispatcher, org_ids=[org_with_enabled_instance])
 
-        count = scheduler.tick()
+        count = scheduler.tick(now=datetime.now(timezone.utc) + timedelta(minutes=5))
 
         assert count == 1
         dispatcher.dispatch.assert_called_once_with(g["id"])
@@ -202,13 +207,16 @@ class TestTick:
     def test_tick_swallows_dispatcher_errors(
         self, engine, org_with_enabled_instance,
     ):
-        engine.create_goal(org_with_enabled_instance, "boom")
+        engine.create_goal(
+            org_with_enabled_instance, "boom",
+            trigger_config={"type": "cron", "expression": "* * * * *"},
+        )
 
         dispatcher = MagicMock()
         dispatcher.dispatch.side_effect = RuntimeError("boom")
         scheduler = GoalScheduler(dispatcher=dispatcher, org_ids=[org_with_enabled_instance])
 
         # Tick should not raise; the failed goal is not counted as dispatched.
-        count = scheduler.tick()
+        count = scheduler.tick(now=datetime.now(timezone.utc) + timedelta(minutes=5))
         assert count == 0
         dispatcher.dispatch.assert_called_once()

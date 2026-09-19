@@ -23,23 +23,36 @@ from typing import Any, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
-def core_skills_dir() -> Path:
-    """The core catalog packaged with amebo."""
-    return Path(__file__).resolve().parent.parent.parent / "prompts" / "skills"
+PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "prompts"
 
 
-def org_skills_dir(org_id: Optional[int]) -> Optional[Path]:
-    """An org's own skills overlay: `<its context repo>/skills` (arch §7, durable
-    text in repos). None when there is no org or the org has no context repo."""
+def core_dir(kind: str = "skills") -> Path:
+    """The packaged catalog of one kind: ``prompts/skills``, ``prompts/shapes``."""
+    return PROMPTS_DIR / kind
+
+
+def org_dir(kind: str, org_id: Optional[int]) -> Optional[Path]:
+    """An org's own overlay of one kind: `<its context repo>/<kind>` (arch §7,
+    durable text in repos). None when there is no org or no context repo."""
     if org_id is None:
         return None
     try:
         from src.credentials.connections import _org_context_repo
         repo = _org_context_repo(org_id)
     except Exception:
-        logger.exception("org skills dir resolve failed")
+        logger.exception("org %s dir resolve failed", kind)
         return None
-    return Path(repo) / "skills" if repo else None
+    return Path(repo) / kind if repo else None
+
+
+def core_skills_dir() -> Path:
+    """The core skills catalog packaged with amebo."""
+    return core_dir("skills")
+
+
+def org_skills_dir(org_id: Optional[int]) -> Optional[Path]:
+    """An org's own skills overlay."""
+    return org_dir("skills", org_id)
 
 
 def _fallback_meta(block: str) -> Dict[str, Any]:
@@ -114,12 +127,13 @@ def read_skills(dirs: List[Optional[Path]]) -> List[Dict[str, Any]]:
         if not d or not d.exists():
             continue
         for path in sorted(d.glob("*.md")):
-            if path.stem.startswith("_") or path.stem in seen:
+            # "_" prefix = template; README = the folder's own note, not an entry.
+            if path.stem.startswith("_") or path.stem.lower() == "readme" or path.stem in seen:
                 continue
             skill = read_skill(path)
             if skill is None:
                 continue
             seen.add(path.stem)
-            skill["source"] = "org" if d != core_skills_dir() else "core"
+            skill["source"] = "core" if d.parent == PROMPTS_DIR else "org"
             out.append(skill)
     return out

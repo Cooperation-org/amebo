@@ -233,11 +233,12 @@ def _should_fire(goal: Dict[str, Any], now: datetime) -> bool:
         {"type": "cron", "expression": "*/5 * * * *"} — fires when cron is due
         {"type": "event", "event": "..."}          — handled by event system,
                                                       not the periodic ticker
-        None / missing                              — fire immediately
+        None / missing                              — a person's goal: never
+                                                      auto-fires (dispatch-now only)
     """
     cfg = goal.get("trigger_config") or None
     if not cfg:
-        return True
+        return False
 
     ttype = (cfg.get("type") or "").lower()
     if ttype == "manual":

@@ -530,6 +530,15 @@ class ApiClient {
     return this.request('/api/work-list/?limit=top');
   }
 
+  /** The goal as a map: latest map items with this viewer's pins and burials. */
+  async getGoalMap(id: string): Promise<GoalMap> {
+    return this.request(`/api/goals/${id}/map`);
+  }
+
+  async unmarkWorkItem(subject: string): Promise<{ subject: string; state: string | null }> {
+    return this.request(`/api/work-list/mark?subject=${encodeURIComponent(subject)}`, { method: 'DELETE' });
+  }
+
   async answerGoal(id: string, answer: string): Promise<Goal> {
     return this.request(`/api/goals/${encodeURIComponent(id)}/answer`, {
       method: 'POST',
@@ -723,6 +732,28 @@ export interface PendingAction {
   preview?: string | null;
   created_by?: string | null;
   error?: string | null;
+}
+
+export interface GoalMapItem {
+  key: string;
+  line: string;
+  detail: string;
+  link: string;
+  source: string;
+  subject: string;
+  state: 'pinned' | 'buried' | null;
+}
+
+export interface GoalMap {
+  id: string;
+  title: string;
+  status: string;
+  question?: string | null;
+  description?: string | null;
+  mapped_at?: string | null;
+  items: GoalMapItem[];
+  buried: GoalMapItem[];
+  runs: { at: string; line: string }[];
 }
 
 export interface GoalProgress {

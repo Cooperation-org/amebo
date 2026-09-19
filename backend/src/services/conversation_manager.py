@@ -287,15 +287,9 @@ class ConversationManager:
             return conversation_text[:SUMMARY_MAX_TOKENS * CHARS_PER_TOKEN]
 
     def _get_rules(self) -> str:
-        return """## Rules
-1. Answer using ALL available knowledge — both project docs AND conversation history
-2. Project & Reference Knowledge contains team docs, plans, and project descriptions — prioritize these for questions about projects, plans, strategy, or team work
-3. If you don't have information, say so — don't invent
-4. Attribute: say where information came from (source file, channel, who, when)
-5. If sources disagree, name the tension
-6. Be concise but thorough
-7. Use *single asterisks* for bold (Slack-compatible)
-8. No emojis"""
+        """The always-on rules, from prompts/rules.md (edit the file, not this)."""
+        from src.services.prompt_layers import rules_text
+        return rules_text() or "## Rules\n1. If you do not have the information, say so. Never invent."
 
     def get_thread_info(self) -> Dict:
         """Thread metadata for debugging/display."""

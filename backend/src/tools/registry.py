@@ -836,6 +836,8 @@ from src.tools.cli_read_tools import (
     crm_list_contacts_impl, CRM_LIST_CONTACTS_SCHEMA,
     load_skill_impl, LOAD_SKILL_SCHEMA,
     list_skills_impl, LIST_SKILLS_SCHEMA,
+    load_shape_impl, LOAD_SHAPE_SCHEMA,
+    list_shapes_impl, LIST_SHAPES_SCHEMA,
     file_skill_impl, FILE_SKILL_SCHEMA,
     abra_search_impl, ABRA_SEARCH_SCHEMA,
     taiga_list_impl, TAIGA_LIST_SCHEMA,
@@ -929,6 +931,28 @@ register_tool(Tool(
     execute=crm_list_contacts_impl,
     is_read_only=True,
     category="crm",
+))
+
+register_tool(Tool(
+    name="load_shape",
+    description=(
+        "Load a shape: the form an output to a person takes (map, one-line, "
+        "question, evidence-document, before-an-event). Your system prompt lists "
+        "them; load the one that fits before writing the answer. Read only."
+    ),
+    input_schema=LOAD_SHAPE_SCHEMA,
+    execute=load_shape_impl,
+    is_read_only=True,
+    category="skills",
+))
+
+register_tool(Tool(
+    name="list_shapes",
+    description="List the available shapes (name, description). Read only.",
+    input_schema=LIST_SHAPES_SCHEMA,
+    execute=list_shapes_impl,
+    is_read_only=True,
+    category="skills",
 ))
 
 register_tool(Tool(

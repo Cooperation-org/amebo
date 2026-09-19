@@ -520,42 +520,66 @@ def _read_skill_body(path: _Path) -> str:
     return split_frontmatter(path.read_text())[1]
 
 
-def load_skill_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
-    """Load a skill's full instructions by name. Read only. Checks the acting
-    org's skills overlay first, then the packaged core catalog."""
+def _dirs(kind: str, context: Any):
+    """Org overlay first (it shadows), then the packaged catalog, for one kind
+    of prompt layer: 'skills' or 'shapes'."""
+    from src.services.skill_files import core_dir, org_dir
+    return (org_dir(kind, _org_id_from_context(context)), core_dir(kind))
+
+
+def _load_named_impl(kind: str, singular: str, tool_input: Dict[str, Any],
+                     context: Dict[str, Any]) -> str:
     name = (tool_input.get("name") or "").strip()
     if not name:
         return "Error: name is required."
     slug = _skill_slug(name)
-    # org overlay wins over a packaged skill of the same name
-    for d in (_org_skills_dir(context), _packaged_skills_dir()):
+    for d in _dirs(kind, context):
         if d is None:
             continue
         for candidate in (d / f"{name}.md", d / f"{slug}.md"):
             if candidate.exists():
-                return _read_skill_body(candidate) or "(skill has no body)"
-    avail = _list_skill_names(context)
-    return f"No skill named '{name}'. Available: {avail or '(none)'}"
+                return _read_skill_body(candidate) or f"({singular} has no body)"
+    avail = _list_names(kind, context)
+    return f"No {singular} named '{name}'. Available: {avail or '(none)'}"
 
 
-def _list_skill_names(context: Any) -> str:
+def _list_names(kind: str, context: Any) -> str:
     names = set()
-    for d in (_packaged_skills_dir(), _org_skills_dir(context)):
+    for d in _dirs(kind, context):
         if d and d.exists():
             names.update(p.stem for p in d.glob("*.md") if not p.stem.startswith("_"))
     return ", ".join(sorted(names))
 
 
-def list_skills_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
-    """List available skills (name — description — status) for the acting org:
-    the packaged core catalog plus the org's own overlay. Read only."""
+def _list_named_impl(kind: str, context: Dict[str, Any]) -> str:
     from src.services.skill_files import read_skills
     rows = []
-    # org overlay first so an org skill shadows a core one of the same name
-    for s in read_skills([_org_skills_dir(context), _packaged_skills_dir()]):
+    for s in read_skills(list(_dirs(kind, context))):
         tag = f" [{s['status']}]" if s.get("status") else ""
         rows.append(f"  - {s['slug']} ({s['source']}){tag}: {s['description']}")
-    return "Available skills:\n" + "\n".join(rows) if rows else "No skills available."
+    return f"Available {kind}:\n" + "\n".join(rows) if rows else f"No {kind} available."
+
+
+def load_skill_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """Load a skill's full instructions by name. Read only. The acting org's
+    overlay first, then the packaged catalog."""
+    return _load_named_impl("skills", "skill", tool_input, context)
+
+
+def list_skills_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """List available skills (name, source, status, description). Read only."""
+    return _list_named_impl("skills", context)
+
+
+def load_shape_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """Load a shape by name: the form an output to a person takes (map,
+    one-line, question, ...). Read only. See prompts/shapes/README.md."""
+    return _load_named_impl("shapes", "shape", tool_input, context)
+
+
+def list_shapes_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
+    """List available shapes (name, source, description). Read only."""
+    return _list_named_impl("shapes", context)
 
 
 def file_skill_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
@@ -620,6 +644,17 @@ LOAD_SKILL_SCHEMA = {
     },
     "required": ["name"],
 }
+
+LOAD_SHAPE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string",
+                 "description": "Shape name to load (from the Shapes catalog): the form the output takes."},
+    },
+    "required": ["name"],
+}
+
+LIST_SHAPES_SCHEMA = {"type": "object", "properties": {}}
 
 
 # ---------------------------------------------------------------------------

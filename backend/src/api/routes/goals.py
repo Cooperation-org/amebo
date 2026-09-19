@@ -346,6 +346,88 @@ async def get_goal(
     return _to_goal_response(goal)
 
 
+class MapItemOut(BaseModel):
+    key: str
+    line: str
+    detail: str = ""
+    link: str = ""
+    source: str = ""
+    subject: str
+    state: Optional[str] = None  # 'pinned' | 'buried' | None, for this viewer
+
+
+class RunOut(BaseModel):
+    at: str
+    line: str
+
+
+class GoalMapOut(BaseModel):
+    id: str
+    title: str
+    status: str
+    question: Optional[str] = None
+    description: Optional[str] = None
+    mapped_at: Optional[str] = None
+    items: List[MapItemOut]
+    buried: List[MapItemOut]
+    runs: List[RunOut]
+
+
+@router.get("/{goal_id}/map", response_model=GoalMapOut)
+async def goal_map(
+    goal_id: str,
+    client: dict = Depends(get_service_or_user),
+):
+    """The goal as a map (prompts/shapes/map.md): the latest 'map' event's
+    items, pinned first, buried folded away, plus one line per past run. A
+    pin or a burial is the viewer's own work_list_marks row, subject
+    'goal:<id>#<key>', so a buried line stays buried across runs."""
+    engine = _get_engine()
+    goal = _load_or_404(engine, goal_id, client["org_id"])
+    gid = str(goal["id"])
+    events = engine.events(gid) or []
+
+    latest_map = None
+    runs: List[RunOut] = []
+    question = None
+    for e in events:
+        if e.get("action") == "map":
+            latest_map = e
+        elif e.get("action") == "dispatch_summary":
+            first = (e.get("result_summary") or "").strip().splitlines()
+            runs.append(RunOut(at=str(e.get("created_at")), line=(first[0] if first else "")[:200]))
+        elif e.get("action") == "question_asked":
+            question = e.get("result_summary")
+    runs = runs[-8:][::-1]
+
+    from src.db.repositories.work_list_mark_repo import WorkListMarkRepo
+    from src.services.viewer_identity import viewer_person
+    person = viewer_person(client)
+    marks = WorkListMarkRepo().for_person(org_id=client["org_id"], person=person) if person else {}
+
+    items: List[MapItemOut] = []
+    buried: List[MapItemOut] = []
+    raw = ((latest_map or {}).get("metadata") or {}).get("items") or []
+    for it in raw:
+        subject = f"goal:{gid}#{it.get('key')}"
+        out = MapItemOut(
+            key=str(it.get("key") or ""), line=str(it.get("line") or ""),
+            detail=str(it.get("detail") or ""), link=str(it.get("link") or ""),
+            source=str(it.get("source") or ""), subject=subject,
+            state=marks.get(subject),
+        )
+        (buried if out.state == "buried" else items).append(out)
+    items.sort(key=lambda i: 0 if i.state == "pinned" else 1)
+
+    return GoalMapOut(
+        id=gid, title=goal["title"], status=goal["status"],
+        question=question if goal["status"] == "waiting_user" else None,
+        description=goal.get("description"),
+        mapped_at=str(latest_map.get("created_at")) if latest_map else None,
+        items=items, buried=buried, runs=runs,
+    )
+
+
 @router.get("/{goal_id}/events", response_model=List[GoalEventResponse])
 async def list_goal_events(
     goal_id: str,

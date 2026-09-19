@@ -119,6 +119,36 @@ def _default_notifier(channel: str, message: str) -> bool:
 _RETRYABLE_GUARDRAILS = {"max_tool_rounds", "wall_clock", "max_cost_usd"}
 
 
+_MAP_BLOCK_RE = re.compile(r"```map\s*(\[.*?\])\s*```", re.DOTALL)
+_MAP_FIELDS = ("key", "line", "detail", "link", "source")
+
+
+def parse_map_block(text: str) -> List[Dict[str, str]]:
+    """Items from the last ```map JSON block in text; [] when there is none or
+    it does not parse. Keeps only the shape's fields, as strings."""
+    if not text:
+        return []
+    found = _MAP_BLOCK_RE.findall(text)
+    if not found:
+        return []
+    try:
+        raw = json.loads(found[-1])
+    except ValueError:
+        return []
+    items: List[Dict[str, str]] = []
+    for i, it in enumerate(raw if isinstance(raw, list) else []):
+        if not isinstance(it, dict) or not str(it.get("line") or "").strip():
+            continue
+        item = {f: str(it.get(f) or "").strip() for f in _MAP_FIELDS}
+        item["key"] = item["key"] or f"item-{i + 1}"
+        items.append(item)
+    return items
+
+
+class _ReadOnlyDone(Exception):
+    """Control flow only: a read-only tool ran without the gate."""
+
+
 def _is_recurring(goal: Dict[str, Any]) -> bool:
     """
     True if the goal's trigger fires repeatedly (a cron schedule). Recurring
@@ -221,6 +251,7 @@ class GoalDispatcher:
             self._record_statements_used(goal_id, org_context.get("statements") or [])
             instance = self._load_instance(goal["org_id"])
             summary, tool_calls = self._pursue(goal, instance, org_context)
+            self._record_map(goal_id, summary)
             # Close the dispatch with a self-summary so the NEXT dispatch carries
             # over progress (arch §8.1, WP11). Best-effort — a bookkeeping failure
             # must never fail the dispatch itself.
@@ -316,12 +347,13 @@ class GoalDispatcher:
         # is met — the claw calling goal_done, or a person marking it done from
         # the list. Both land as 'completed', so if the goal already retired
         # during this dispatch, leave it retired instead of re-arming it.
+        # A one-shot goal is a person's goal (goals-intake: no trigger). A claw
+        # reading files for three minutes is not it being achieved, so it goes
+        # back to pending too; goal_done or the person retires it.
         if self._engine.get(goal_id).get("status") == "completed":
             pass
-        elif _is_recurring(goal):
-            self._engine.rearm(goal_id, summary=summary)
         else:
-            self._engine.complete(goal_id, summary=summary)
+            self._engine.rearm(goal_id, summary=summary)
         notification_sent = self._maybe_notify(goal, summary)
 
         return DispatchResult(
@@ -486,6 +518,9 @@ class GoalDispatcher:
             # the org's normal capabilities instead of an empty room.
             inst_tools = ((instance or {}).get("config") or {}).get("allowed_tools") or []
             guardrails.allowed_tools = set(inst_tools)
+        # Shapes and skills are knowledge, not actions: always loadable.
+        from src.services.prompt_layers import PROMPT_LAYER_TOOLS
+        guardrails.allowed_tools = set(guardrails.allowed_tools) | PROMPT_LAYER_TOOLS
         return self._run_agentic_loop(
             goal=goal,
             system_prompt=system_prompt,
@@ -520,6 +555,13 @@ class GoalDispatcher:
             parts.append("## Values\n" + "\n\n".join(org_context["values"]))
         if org_context["current"]:
             parts.append("## Current context\n" + "\n\n".join(org_context["current"]))
+
+        # The same rules and catalogs the live path gets. One engine, two
+        # triggers (docs/BOUNDARIES.md): a claw must not talk differently.
+        from src.services.prompt_layers import layers
+        layer_text = layers((instance or {}).get("org_id"))
+        if layer_text:
+            parts.append(layer_text)
 
         parts.append(
             "When you are confident the goal is achieved, respond with a "
@@ -768,6 +810,13 @@ class GoalDispatcher:
                     "org_context": tenancy_ctx,
                 }
                 try:
+                    if tool.is_read_only:
+                        # Reading is never gated. The gate classifies by action
+                        # type and default-denies, which held load_skill and
+                        # list_skills as "drafts waiting on you" (2026-09-19).
+                        result_text = tool.execute(tool_input, ctx) or ""
+                        is_error = result_text.startswith("Error:")
+                        raise _ReadOnlyDone
                     # Draft-approval gate: FREE (read-only/internal) tools run
                     # immediately; GATED outbound/destructive tools are held as
                     # a pending_action for human approval and do NOT execute now
@@ -792,6 +841,8 @@ class GoalDispatcher:
                     else:
                         result_text = gate_result.result or ""
                         is_error = result_text.startswith("Error:")
+                except _ReadOnlyDone:
+                    pass
                 except Exception as exc:
                     logger.exception("Tool %s raised", name)
                     result_text = f"Tool {name} raised: {exc}"
@@ -989,6 +1040,21 @@ class GoalDispatcher:
             except (ValueError, TypeError):
                 cfg = {}
         return cfg.get("goal_budget") or {}
+
+    def _record_map(self, goal_id: str, text: str) -> None:
+        """A ```map block in the final answer (prompts/shapes/map.md) becomes a
+        'map' event: the items a surface renders, pins and buries. Best-effort."""
+        items = parse_map_block(text)
+        if not items:
+            return
+        try:
+            self._goal_repo.append_event(
+                goal_id=goal_id, actor_type="claw", action="map",
+                result_summary=f"{len(items)} things",
+                metadata={"items": items},
+            )
+        except Exception:
+            logger.exception("Failed to record map for goal %s", goal_id)
 
     def _latest_question(self, goal_id: str) -> Optional[str]:
         """The most recent unanswered question text (WP12)."""
