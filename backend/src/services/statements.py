@@ -81,7 +81,19 @@ def _from_abra(pointer: str, org_id: int) -> Optional[str]:
     if not name:
         return None
     try:
-        hits = BindingRepo(org_id=org_id).search_content(name, limit=1) or []
+        # BindingRepo() with no org is the shared abra store, where a name
+        # written by `abra store <name>` lives as an ABOUT binding to content.
+        # (With an org_id it reads amebo's own local bindings, so a pointer to
+        # a name in abra never resolved before 2026-09-19.)
+        repo = BindingRepo()
+        for b in repo.search_bindings_by_name(name) or []:
+            ref = str(b.get("target_ref") or "")
+            if b.get("target_type") == "content" and ref.isdigit():
+                row = repo.get_content(int(ref)) or {}
+                content = (row.get("content") or "").strip()
+                if content:
+                    return content
+        hits = repo.search_content(name, limit=1) or []
     except Exception as exc:
         logger.warning("abra unreachable for statement %s: %s", pointer, exc)
         return None
