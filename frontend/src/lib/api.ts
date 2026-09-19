@@ -535,6 +535,11 @@ class ApiClient {
     return this.request(`/api/goals/${id}/map`);
   }
 
+  /** Answer one line of a goal's map; the line folds away. */
+  async answerGoalMap(id: string, key: string, text: string): Promise<GoalMap> {
+    return this.request(`/api/goals/${id}/map/answer`, { method: 'POST', body: JSON.stringify({ key, text }) });
+  }
+
   async unmarkWorkItem(subject: string): Promise<{ subject: string; state: string | null }> {
     return this.request(`/api/work-list/mark?subject=${encodeURIComponent(subject)}`, { method: 'DELETE' });
   }
@@ -740,6 +745,8 @@ export interface GoalMapItem {
   detail: string;
   link: string;
   source: string;
+  ask: boolean;
+  answer: string | null;
   subject: string;
   state: 'pinned' | 'buried' | null;
 }
@@ -753,6 +760,7 @@ export interface GoalMap {
   mapped_at?: string | null;
   items: GoalMapItem[];
   buried: GoalMapItem[];
+  answered: GoalMapItem[];
   runs: { at: string; line: string }[];
 }
 

@@ -121,6 +121,7 @@ _RETRYABLE_GUARDRAILS = {"max_tool_rounds", "wall_clock", "max_cost_usd"}
 
 _MAP_BLOCK_RE = re.compile(r"```map\s*(\[.*?\])\s*```", re.DOTALL)
 _MAP_FIELDS = ("key", "line", "detail", "link", "source")
+_MAP_FLAGS = ("ask",)
 
 
 def parse_map_block(text: str) -> List[Dict[str, str]]:
@@ -140,6 +141,8 @@ def parse_map_block(text: str) -> List[Dict[str, str]]:
         if not isinstance(it, dict) or not str(it.get("line") or "").strip():
             continue
         item = {f: str(it.get(f) or "").strip() for f in _MAP_FIELDS}
+        for f in _MAP_FLAGS:
+            item[f] = bool(it.get(f))
         item["key"] = item["key"] or f"item-{i + 1}"
         items.append(item)
     return items

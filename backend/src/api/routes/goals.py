@@ -352,8 +352,15 @@ class MapItemOut(BaseModel):
     detail: str = ""
     link: str = ""
     source: str = ""
+    ask: bool = False          # a question: the surface gives it an answer box
+    answer: Optional[str] = None  # what this viewer answered, if they did
     subject: str
     state: Optional[str] = None  # 'pinned' | 'buried' | None, for this viewer
+
+
+class MapAnswerIn(BaseModel):
+    key: str = Field(..., min_length=1, max_length=200)
+    text: str = Field(..., min_length=1, max_length=4000)
 
 
 class RunOut(BaseModel):
@@ -370,6 +377,7 @@ class GoalMapOut(BaseModel):
     mapped_at: Optional[str] = None
     items: List[MapItemOut]
     buried: List[MapItemOut]
+    answered: List[MapItemOut]
     runs: List[RunOut]
 
 
@@ -390,9 +398,15 @@ async def goal_map(
     latest_map = None
     runs: List[RunOut] = []
     question = None
+    answers: Dict[str, str] = {}
     for e in events:
         if e.get("action") == "map":
             latest_map = e
+            answers = {}  # a new map starts its questions afresh
+        elif e.get("action") == "map_answer":
+            md = e.get("metadata") or {}
+            if md.get("key"):
+                answers[str(md["key"])] = str(md.get("text") or "")
         elif e.get("action") == "dispatch_summary":
             first = (e.get("result_summary") or "").strip().splitlines()
             runs.append(RunOut(at=str(e.get("created_at")), line=(first[0] if first else "")[:200]))
@@ -407,16 +421,23 @@ async def goal_map(
 
     items: List[MapItemOut] = []
     buried: List[MapItemOut] = []
+    answered: List[MapItemOut] = []
     raw = ((latest_map or {}).get("metadata") or {}).get("items") or []
     for it in raw:
-        subject = f"goal:{gid}#{it.get('key')}"
+        key = str(it.get("key") or "")
+        subject = f"goal:{gid}#{key}"
         out = MapItemOut(
-            key=str(it.get("key") or ""), line=str(it.get("line") or ""),
+            key=key, line=str(it.get("line") or ""),
             detail=str(it.get("detail") or ""), link=str(it.get("link") or ""),
-            source=str(it.get("source") or ""), subject=subject,
-            state=marks.get(subject),
+            source=str(it.get("source") or ""), ask=bool(it.get("ask")),
+            answer=answers.get(key), subject=subject, state=marks.get(subject),
         )
-        (buried if out.state == "buried" else items).append(out)
+        if out.answer is not None:
+            answered.append(out)
+        elif out.state == "buried":
+            buried.append(out)
+        else:
+            items.append(out)
     items.sort(key=lambda i: 0 if i.state == "pinned" else 1)
 
     return GoalMapOut(
@@ -424,8 +445,33 @@ async def goal_map(
         question=question if goal["status"] == "waiting_user" else None,
         description=goal.get("description"),
         mapped_at=str(latest_map.get("created_at")) if latest_map else None,
-        items=items, buried=buried, runs=runs,
+        items=items, buried=buried, answered=answered, runs=runs,
     )
+
+
+@router.post("/{goal_id}/map/answer", response_model=GoalMapOut)
+async def goal_map_answer(
+    goal_id: str,
+    body: MapAnswerIn,
+    client: dict = Depends(get_service_or_user),
+):
+    """Answer one line of the map. The answer is a goal event the next dispatch
+    carries over, and the line folds away for everyone."""
+    engine = _get_engine()
+    goal = _load_or_404(engine, goal_id, client["org_id"])
+    from src.services.viewer_identity import viewer_person
+    person = viewer_person(client) or "service"
+    keys = {str(i.get("key")) for e in (engine.events(str(goal["id"])) or [])
+            if e.get("action") == "map"
+            for i in ((e.get("metadata") or {}).get("items") or [])}
+    if body.key not in keys:
+        raise HTTPException(status_code=404, detail="No such line on this map")
+    GoalRepo().append_event(
+        goal_id=str(goal["id"]), actor_type="user", action="map_answer",
+        result_summary=f"{person}: {body.text.strip()}",
+        metadata={"key": body.key, "text": body.text.strip(), "person": person},
+    )
+    return await goal_map(goal_id, client)
 
 
 @router.get("/{goal_id}/events", response_model=List[GoalEventResponse])
