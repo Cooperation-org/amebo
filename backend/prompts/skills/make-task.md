@@ -17,6 +17,9 @@ Any time you're creating a task/ticket/story (Taiga/marten) — a direct "make a
 Write it so a person OR an agent can open it cold and act without asking a single question. The rule that matters: **actionable links go at the very top, as full clickable URLs.** Everything else supports that.
 
 Structure the description in this order:
+0. **THE PERSON SAID** — their stated constraints, verbatim, one line each,
+   before anything else ("CSS only", "dev is the deployed branch"). Never
+   deviated from without asking. Omit the heading only when there are none.
 1. **DO NEXT** — the concrete next actions, each with the full URL/path it needs (source issue/PR/email/thread, any draft file, the exact command). It's the first thing the reader sees; no scrolling to find what to click.
 2. **CONTEXT / DOCS** — links to background: project MAIN.md, working docs, live endpoints, sample data. Linked or embedded — never "ask me."
 3. **GOAL** — one or two lines on why, so priority is clear.

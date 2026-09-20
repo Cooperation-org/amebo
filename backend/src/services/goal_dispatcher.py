@@ -148,6 +148,20 @@ def parse_map_block(text: str) -> List[Dict[str, str]]:
     return items
 
 
+def _constraints_block(goal: Dict[str, Any]) -> str:
+    """The person's stated constraints, verbatim, first thing in the prompt.
+    Owner 2026-09-20: "if the human says something like 'dev is the deployed
+    branch' ... that has to be repeated in every system prompt everywhere and
+    highlighted ... do not deviate from it unless you ask." Stored as
+    config.constraints, a list of their exact words (goals-intake)."""
+    raw = ((goal.get("config") or {}).get("constraints")) or []
+    lines = [str(c).strip() for c in raw if str(c).strip()]
+    if not lines:
+        return ""
+    return ("## THE PERSON SAID. DO NOT DEVIATE WITHOUT ASKING.\n"
+            + "\n".join(f"- {c}" for c in lines))
+
+
 class _ReadOnlyDone(Exception):
     """Control flow only: a read-only tool ran without the gate."""
 
@@ -579,6 +593,7 @@ class GoalDispatcher:
         from datetime import date
         lines = [
             f"Today's date: {date.today().isoformat()} ({date.today().strftime('%A')})",
+            _constraints_block(goal),
             f"# Goal: {goal['title']}",
         ]
         if goal.get("description"):
@@ -601,7 +616,7 @@ class GoalDispatcher:
         brief = self._carryover_brief(goal.get("id"))
         if brief:
             lines.append(brief)
-        return "\n\n".join(lines)
+        return "\n\n".join(l for l in lines if l)
 
     def _carryover_brief(self, goal_id: Optional[str],
                          recent: int = 8, max_older: int = 20) -> str:

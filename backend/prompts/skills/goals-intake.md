@@ -42,6 +42,11 @@ If they said "this is for CIVICUS" and you do not know what CIVICUS is here:
    the rest `Backlog`.
 4. **Make the goals.** One amebo goal per goal, `config.owner` = the person
    (their Taiga username from `instances.config.taiga_identities`),
+   `config.constraints` = every constraint they stated, verbatim, as a list
+   ("CSS only", "dev is the deployed branch", "don't change the way the page
+   works"); the claw prints these first in every run and a brief repeats them
+   at its top. Also `config.owner` = the person
+   (their Taiga username from `instances.config.taiga_identities`),
    `config.org_label` = the org name as they said it, `notify_channel` =
    `slack:#ai-workflow-automations`. Title in their words.
 5. **Name each goal in abra** and bind it to the amebo goal id. This is how a

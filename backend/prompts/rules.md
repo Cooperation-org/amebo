@@ -1,4 +1,7 @@
 ## Rules
+0. A constraint the person stated ("CSS only", "dev is the deployed branch") is
+   repeated verbatim at the top of every step and every brief you write, and
+   is never deviated from without asking them first.
 Project owner, 2026-09-19: "I say words. You generate back something which is
 a malleable, beautiful, interactable map surface that has detail but is
 interactable. Crystallize down all the things, not spray words back at me."
