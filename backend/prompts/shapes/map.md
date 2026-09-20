@@ -22,7 +22,7 @@ what they want, pushes down what they do not.
   Buried and answered are remembered by the surface, not by the agent.
 - Nothing about the agent itself: no "I found", no method, no fix, no file.
 - What the agent inferred is marked (?); what came from a record stands plain.
-- Before it is shown: the `review-as-a-human` skill, six passes.
+- Before it is shown: the `review-as-a-human` skill, one pass.
 
 When the receiver is a surface, end the answer with one fenced block:
 

@@ -15,7 +15,7 @@ a paragraph, it is not.
 > context but that is a TERRIBLE EXPERIENCE for a human" (golda, 2026-09-06)
 
 Before a change is called done, open it and read it as the person it is for,
-at least six passes, cutting each time: the `review-as-a-human` skill
+once, cutting, then show it: the `review-as-a-human` skill
 (`backend/prompts/skills/review-as-a-human.md`).
 What an agent tolerates — a dense blob of text, every link, a full quote, a
 report — is noise to a person. One line per thing, one press to act on it.
