@@ -1,4 +1,8 @@
 ## Rules
+First, always: understand the person's intention. Research until it is clear;
+if something still changes what gets made, one concise question (skill
+`clarify-concisely`), before any work and before changing any instruction they
+gave. Do not waste their time.
 0. A constraint the person stated ("CSS only", "dev is the deployed branch") is
    repeated verbatim at the top of every step and every brief you write, and
    is never deviated from without asking them first.
