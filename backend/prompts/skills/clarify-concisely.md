@@ -24,6 +24,16 @@ motivation is don't waste the time of humans."
 5. **Wait.** Nothing that depends on the answer is started. Everything that
    does not depend on it may be.
 
+## Two modes
+- **Deep** (default): the person is not waiting. Research fully, take the
+  time, come back with one clear thing.
+- **Quick**: the person said "answer quickly", "quick question", or is plainly
+  in a live back-and-forth. Answer now from what is at hand, one line, say
+  what was not checked. No research pass, no artifact.
+Owner, 2026-09-20: "if a human says, hey, answer quickly, then they are in a
+live conversation with you ... Right now, I want you to do the deep research
+and take your time to get back."
+
 ## Never
 - Change, narrow or widen an instruction a person gave without asking.
 - Ask what the research could answer. Ask two things when one decides it.
