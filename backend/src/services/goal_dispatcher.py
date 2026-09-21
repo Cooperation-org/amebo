@@ -115,8 +115,8 @@ def _default_notifier(channel: str, message: str) -> bool:
 
 # Guardrail kinds that bound a single dispatch's resources rather than
 # flagging misbehavior. Tripping one re-arms the goal for a later dispatch;
-# everything else (not_allowed, write_once, unknown_tool) fails the goal.
-_RETRYABLE_GUARDRAILS = {"max_tool_rounds", "wall_clock", "max_cost_usd"}
+# everything else (not_allowed, unknown_tool) fails the goal.
+_RETRYABLE_GUARDRAILS = {"max_tool_rounds", "wall_clock", "max_cost_usd", "max_writes"}
 
 
 _MAP_BLOCK_RE = re.compile(r"```map\s*(\[.*?\])\s*```", re.DOTALL)
@@ -297,7 +297,7 @@ class GoalDispatcher:
                 logger.exception("Failed to record guardrail event")
             # Resource caps (rounds / cost / wall clock) bound ONE dispatch,
             # not the goal: re-arm to pending so the next dispatch resumes
-            # from the carryover. Policy trips (not_allowed, write_once, …)
+            # from the carryover. Policy trips (not_allowed, unknown_tool, …)
             # mean the claw tried something it must not — those stay fatal.
             if exc.which in _RETRYABLE_GUARDRAILS:
                 try:

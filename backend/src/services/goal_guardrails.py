@@ -30,9 +30,21 @@ DEFAULT_PRICING_USD_PER_MTOK: Dict[str, Dict[str, float]] = {
     "claude-opus-4-8":   {"input": 15.00, "output": 75.00},
     # Claude Haiku 4 family (lightweight default for the claw)
     "claude-haiku-4-5-20251001":{"input": 1.00, "output": 5.00},
+    # MiniMax M3 — what AMEBO_LLM_PROVIDER=minimax actually serves. Direct-API
+    # quotes ranged $0.23-$0.30 in / $0.96-$1.26 out per Mtok (2026-09);
+    # the high end is used so the guardrail never under-counts.
+    "MiniMax-M3":        {"input": 0.30, "output": 1.26},
     # Fallback used when the model is unknown
     "__default__":              {"input": 3.00, "output": 15.00},
 }
+
+# Cached input is not billed at the full input rate. Anthropic charges 0.1x
+# for a cache read and 1.25x for writing the cache; MiniMax discounts cache
+# reads similarly. Counting both at 1.0x (as this did until 2026-09-21)
+# overstated a cached claw round by roughly an order of magnitude, which is
+# what tripped max_cost_usd at round 0 on every research goal.
+CACHE_READ_MULTIPLIER = 0.1
+CACHE_WRITE_MULTIPLIER = 1.25
 
 
 class GuardrailTripped(RuntimeError):
@@ -65,7 +77,7 @@ class GuardrailContext:
     wall_clock_seconds: int   = 5 * 60
     allowed_tools:      Set[str] = field(default_factory=set)
     write_tools:        Set[str] = field(default_factory=set)  # names that count as "write"
-    allow_multiple_writes: bool = False
+    max_writes:         int   = 25
     slack_require_mention: bool = True
 
     # ---- Runtime state (managed by the dispatcher) --------------------
@@ -95,13 +107,22 @@ class GuardrailContext:
         ])
         write_tools = write_tools & allowed_tools  # never enforce writes that aren't allowed
 
+        # A goal that populates data makes many writes by nature. Outbound and
+        # destructive actions are already held by the draft-approval gate, so
+        # this cap only bounds writes into our own systems; one was never the
+        # right number. `allow_multiple_writes: false` still pins it to one.
+        if config.get("allow_multiple_writes") is False:
+            max_writes = 1
+        else:
+            max_writes = int(config.get("max_writes", 25))
+
         return cls(
             max_tool_rounds=int(config.get("max_tool_rounds", 5)),
             max_cost_usd=float(config.get("max_cost_usd", 0.50)),
             wall_clock_seconds=int(config.get("wall_clock_seconds", 300)),
             allowed_tools=allowed_tools,
             write_tools=write_tools,
-            allow_multiple_writes=bool(config.get("allow_multiple_writes", False)),
+            max_writes=max_writes,
             slack_require_mention=bool(config.get("slack_require_mention", True)),
         )
 
@@ -146,7 +167,11 @@ class GuardrailContext:
         cache_read   = int(getattr(usage, "cache_read_input_tokens", 0) or 0)
 
         cost = (
-            (in_tok + cache_create + cache_read) * rates["input"]
+            (
+                in_tok
+                + cache_create * CACHE_WRITE_MULTIPLIER
+                + cache_read * CACHE_READ_MULTIPLIER
+            ) * rates["input"]
             + out_tok * rates["output"]
         ) / 1_000_000
 
@@ -194,13 +219,15 @@ class GuardrailContext:
         # any tool the registry says is not read-only.
         is_write = (not is_read_only) or (tool_name in self.write_tools)
         if is_write:
-            if self.write_tools_used >= 1 and not self.allow_multiple_writes:
+            if self.write_tools_used >= self.max_writes:
                 raise GuardrailTripped(
-                    "write_once",
-                    f"write tool {tool_name!r} called after one write already "
-                    "succeeded; goal does not allow multiple writes.",
+                    "max_writes",
+                    f"write tool {tool_name!r} refused: this goal's write "
+                    f"budget of {self.max_writes} is used up. Raise "
+                    "config.max_writes to let it write more.",
                     tool_name=tool_name,
                     write_tools_used=self.write_tools_used,
+                    max_writes=self.max_writes,
                 )
             self.write_tools_used += 1
 
@@ -224,6 +251,6 @@ class GuardrailContext:
                 "max_tool_rounds": self.max_tool_rounds,
                 "max_cost_usd": self.max_cost_usd,
                 "wall_clock_seconds": self.wall_clock_seconds,
-                "allow_multiple_writes": self.allow_multiple_writes,
+                "max_writes": self.max_writes,
             },
         }
