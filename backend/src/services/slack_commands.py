@@ -5,6 +5,7 @@ No Bolt framework - just raw SDK
 
 import logging
 import os
+import re
 import asyncio
 from slack_sdk.web.async_client import AsyncWebClient
 from slack_sdk.socket_mode.aiohttp import SocketModeClient
@@ -18,6 +19,58 @@ from psycopg2 import extras
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+# --- Saying nothing ---------------------------------------------------------
+# An @-mention is not automatically a question. When a person is telling the
+# bot something, talking past it, or thanking it, the right reply is no message
+# at all. Two answers from the model mean "do not post":
+#   the empty string, or SILENCE  -> nothing is sent
+#   only emoji shortcodes         -> added as reactions to the message that
+#                                    triggered us, never posted as text
+SILENCE = "(silence)"
+_EMOJI_ONLY = re.compile(r"^(?::[a-z0-9_+\-]+:[\s]*)+$", re.IGNORECASE)
+_EMOJI_NAME = re.compile(r":([a-z0-9_+\-]+):", re.IGNORECASE)
+
+
+def _delivery(answer):
+    """How to deliver a model answer on Slack.
+
+    Returns ("nothing", None), ("react", [emoji names]) or ("post", text).
+    """
+    text = (answer or "").strip()
+    if not text or text.lower() == SILENCE:
+        return "nothing", None
+    if _EMOJI_ONLY.match(text):
+        return "react", _EMOJI_NAME.findall(text)[:3]
+    return "post", text
+
+
+async def _deliver(web_client, answer, channel, thread_ts, trigger_ts):
+    """Deliver an answer, or stay silent. True if anything was sent.
+
+    A reaction goes on `trigger_ts`, the message that mentioned us, so it reads
+    as a response to that person rather than as another message in the channel.
+    A reaction that cannot be added (missing scope, already there) is dropped:
+    silence is the better failure than an unwanted message.
+    """
+    kind, payload = _delivery(answer)
+    if kind == "nothing":
+        return False
+    if kind == "react":
+        for name in payload:
+            try:
+                await web_client.reactions_add(
+                    channel=channel, timestamp=trigger_ts, name=name
+                )
+            except Exception as e:
+                logger.info(f"reaction :{name}: not added: {e}")
+        return False
+    await web_client.chat_postMessage(
+        channel=channel, thread_ts=thread_ts, text=payload
+    )
+    return True
+
 
 
 def _resolve_org_and_instance(workspace_id: str):
@@ -337,22 +390,18 @@ async def process_events(client: SocketModeClient, req: SocketModeRequest):
                     },
                 )
 
-                response_text = f"*Q:* {question}\n\n{result['answer']}"
+                response_text = result['answer']
 
-                # Compact source footer
-                sources = result.get('sources', [])
-                if sources:
+                # Compact source footer, only on a message we are actually sending
+                kind, _ = _delivery(response_text)
+                if kind == "post":
+                    sources = result.get('sources', [])
                     source_parts = [f"#{s.get('channel','')}" for s in sources[:3] if s.get('channel')]
                     if source_parts:
                         response_text += f"\n\n_Sources: {' · '.join(source_parts)}_"
 
-                confidence = result.get('confidence', 50)
-                response_text += f"\n_Confidence: {confidence}%_"
-
-                await web_client.chat_postMessage(
-                    channel=channel_id,
-                    thread_ts=thread_ts,
-                    text=response_text
+                await _deliver(
+                    web_client, response_text, channel_id, thread_ts, event["ts"]
                 )
 
                 # Log usage for analytics
@@ -413,29 +462,25 @@ async def handle_app_mention(team_id, channel, text, user, ts, thread_ts=None):
             },
         )
 
-        response_text = f"*Q:* {question}\n\n{result['answer']}"
+        response_text = result['answer']
 
-        # Compact source footer
-        sources = result.get('sources', [])
-        if sources:
+        # Compact source footer, only on a message we are actually sending
+        kind, _ = _delivery(response_text)
+        if kind == "post":
+            sources = result.get('sources', [])
             source_parts = [f"#{s.get('channel','')}" for s in sources[:3] if s.get('channel')]
             if source_parts:
                 response_text += f"\n\n_Sources: {' · '.join(source_parts)}_"
 
-        confidence = result.get('confidence', 50)
-        response_text += f"\n_Confidence: {confidence}% | rearchitect v2_"
-
-        # Send response in thread
-        await web_client.chat_postMessage(
-            channel=channel,
-            thread_ts=thread_root,
-            text=response_text
-        )
+        sent = await _deliver(web_client, response_text, channel, thread_root, ts)
 
         # Log usage for analytics
         _log_slack_query_usage(team_id, question)
 
-        logger.info(f"Answered app mention from {user} in {channel}")
+        logger.info(
+            f"App mention from {user} in {channel}: "
+            f"{'answered' if sent else 'no message sent'}"
+        )
 
     except Exception as e:
         logger.error(f"Error handling app mention: {e}", exc_info=True)
