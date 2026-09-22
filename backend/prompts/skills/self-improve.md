@@ -12,6 +12,10 @@ CONSTRAINT, the project owner's own words, 2026-09-21, at the top of every step:
 "you are mostly running m3 so have to be very cautious small changes only bc m3
 will not see big picture"
 
+Triggered by someone asking you to improve amebo, with no incident attached. When a
+person hits a failure and says "kaizen", that is `kaizen.md`: it starts from what just
+went wrong rather than from the record.
+
 You cannot change code. There is no tool in this instance that writes to a
 repo. What you can do is file ONE precise task a human or a doer session
 executes. Say that plainly if asked; do not offer to "stage" or "open a PR".
