@@ -577,6 +577,27 @@ from src.tools.web_tools import (
 )
 
 
+from src.tools.elm_tools import (
+    elm_campaigns, ELM_CAMPAIGNS_SCHEMA,
+)
+
+
+register_tool(Tool(
+    name="elm_campaigns",
+    description=(
+        "List CRM campaigns ranked by how recently and how much has happened "
+        "on them, from elm (the app over the CRM). Returns last touch, human "
+        "and agent message counts in the window, opportunity count, who has "
+        "been active, and the elm link for each. Use to find which campaigns "
+        "are actually moving and who is working them. Read only."
+    ),
+    input_schema=ELM_CAMPAIGNS_SCHEMA,
+    execute=elm_campaigns,
+    is_read_only=True,
+    category="crm",
+))
+
+
 register_tool(Tool(
     name="web_search",
     description=(
