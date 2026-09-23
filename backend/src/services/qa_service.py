@@ -11,7 +11,7 @@ from typing import List, Dict, Optional, Tuple, Union
 from anthropic import Anthropic
 
 from src.services.query_service import QueryService
-from src.services.llm_client import get_llm_client, resolve_model
+from src.services.llm_client import get_llm_client, resolve_model, first_text
 
 logger = logging.getLogger(__name__)
 
@@ -709,7 +709,7 @@ Answer the question based on this context. Be comprehensive and include all rele
                 ]
             )
 
-            answer_text = response.content[0].text
+            answer_text = first_text(response)
 
             # Extract confidence percentage and explanation (and remove from answer)
             confidence, confidence_explanation = self._extract_confidence(answer_text)

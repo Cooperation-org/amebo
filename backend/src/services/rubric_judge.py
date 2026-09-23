@@ -113,11 +113,11 @@ def judge(items: Sequence[Item], *, rubric: Rubric, org_id: Any,
         if client is None:
             return items
         try:
-            from src.services.llm_client import resolve_model
+            from src.services.llm_client import resolve_model, first_text
             resp = client.messages.create(
                 model=resolve_model(model), max_tokens=1024, system=_SYSTEM,
                 messages=[{"role": "user", "content": _prompt(rubric, viewer, judged)}])
-            raw = resp.content[0].text if resp.content else ""
+            raw = first_text(resp)
             verdict = _parse(raw)
         except Exception as exc:  # noqa: BLE001 - the hard order stands
             logger.warning("rubric_judge: call failed, hard order kept: %s", exc)

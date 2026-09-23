@@ -262,7 +262,7 @@ class ConversationManager:
 
     def _generate_summary(self, conversation_text: str) -> Optional[str]:
         """Use Claude to summarize old conversation turns."""
-        from src.services.llm_client import get_llm_client, resolve_model
+        from src.services.llm_client import get_llm_client, resolve_model, first_text
         client = get_llm_client()
         if client is None:
             return conversation_text[:SUMMARY_MAX_TOKENS * CHARS_PER_TOKEN]
@@ -281,7 +281,7 @@ class ConversationManager:
                     )
                 }]
             )
-            return response.content[0].text
+            return first_text(response)
         except Exception as e:
             logger.warning(f"Summary generation failed: {e}")
             return conversation_text[:SUMMARY_MAX_TOKENS * CHARS_PER_TOKEN]

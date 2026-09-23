@@ -534,14 +534,14 @@ class AnthropicScorer:
             return self._fallback(candidates, "[no LLM API key — order preserved]")
         prompt = self._build_prompt(candidates, rubric)
         try:
-            from src.services.llm_client import resolve_model
+            from src.services.llm_client import resolve_model, first_text
             resp = self.client.messages.create(
                 model=resolve_model(self.model),
                 max_tokens=1024,
                 system=_SCORER_SYSTEM,
                 messages=[{"role": "user", "content": prompt}],
             )
-            raw = resp.content[0].text if resp.content else ""
+            raw = first_text(resp)
         except Exception as e:
             logger.warning("[opportunity-claw] scorer call failed, fallback: %s", e)
             return self._fallback(candidates, "[scorer error — order preserved]")

@@ -155,14 +155,14 @@ class IntentionsService:
             return self._mock_proposal(text, scope, name)
 
         try:
-            from src.services.llm_client import resolve_model
+            from src.services.llm_client import resolve_model, first_text
             resp = self.client.messages.create(
                 model=resolve_model("claude-sonnet-4-6"),
                 max_tokens=1024,
                 system=_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": user_message}],
             )
-            raw = resp.content[0].text if resp.content else ""
+            raw = first_text(resp)
         except Exception as e:
             logger.warning("Anthropic call failed, falling back to mock: %s", e)
             return self._mock_proposal(text, scope, name)

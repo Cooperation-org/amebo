@@ -30,6 +30,12 @@ DEFAULT_PRICING_USD_PER_MTOK: Dict[str, Dict[str, float]] = {
     "claude-opus-4-8":   {"input": 15.00, "output": 75.00},
     # Claude Haiku 4 family (lightweight default for the claw)
     "claude-haiku-4-5-20251001":{"input": 1.00, "output": 5.00},
+    # kimi-k3 — what AMEBO_LLM_PROVIDER=kimi actually serves. Moonshot's
+    # published direct-API rate (2026-09): $3.00 in / $15.00 out per Mtok,
+    # cache-hit input $0.30 (exactly the 0.1x CACHE_READ_MULTIPLIER below).
+    # K3 cannot disable thinking; reasoning tokens are counted in output_tokens
+    # and billed at the output rate, so no separate line is needed.
+    "kimi-k3":           {"input": 3.00, "output": 15.00},
     # MiniMax M3 — what AMEBO_LLM_PROVIDER=minimax actually serves. Direct-API
     # quotes ranged $0.23-$0.30 in / $0.96-$1.26 out per Mtok (2026-09);
     # the high end is used so the guardrail never under-counts.
