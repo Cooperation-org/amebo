@@ -300,6 +300,13 @@ class GoalDispatcher:
             # from the carryover. Policy trips (not_allowed, unknown_tool, …)
             # mean the claw tried something it must not — those stay fatal.
             if exc.which in _RETRYABLE_GUARDRAILS:
+                # A spent cost budget means the model in use is expensive
+                # enough to burn a goal's whole allowance. Re-arming on the
+                # same model just spends it again next dispatch, so drop to
+                # the cheaper provider for the trip window first.
+                if exc.which == "max_cost_usd":
+                    from src.services.llm_client import trip_configured_provider
+                    trip_configured_provider(f"max_cost_usd on goal {goal_id}: {exc.reason}")
                 try:
                     self._goal_repo.append_event(
                         goal_id=goal_id, actor_type="claw",

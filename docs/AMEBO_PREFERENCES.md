@@ -56,6 +56,10 @@ Amebo needs to switch between **models and API keys**, for cost and for access r
 - Be able to switch keys *and* switch models, including using cheaper ones (Plan, Minimax) — and **spin off subagents on the cheaper models** for work that doesn't need the top model.
 - Soon we'll run a model on **our own hardware** — so self-hosted will be another target to route to.
 
+**Built so far** (`backend/src/services/llm_client.py`): `AMEBO_LLM_PROVIDER` selects one provider for all conversation/QA/goal calls — `kimi` (kimi-k3, the default), `minimax` (MiniMax-M3) or `anthropic`. Under kimi/minimax any requested `claude-*` id resolves to that provider's model.
+
+Automatic downgrade: when the selected provider fails (connection, timeout, 429, 5xx, 401, 403) or a goal spends its `max_cost_usd`, calls drop to `AMEBO_LLM_FALLBACK_PROVIDER` (minimax) for `AMEBO_LLM_TRIP_HOURS` (24). The failing call itself is retried on the fallback so the request in flight still answers. A 400/404/422 is a malformed request on our side and never trips. The trip is one `bot_config` row, so every process sees it and a restart does not hand back the expensive model; `python scripts/llm_provider.py` shows it and `reset` clears it. This does switch a live thread's model when the provider is down — a lost prompt cache beats a failed request.
+
 **But don't switch mid-thread.** Conversation threads benefit from server-side (prompt) caching, so when there's a live conversation/thread going, prefer to keep it on the same model/key. Switch at natural boundaries, not mid-conversation.
 
 ## 7. Per-user, per-session credential management
