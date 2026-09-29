@@ -22,6 +22,8 @@
 #         amebo -y     auto mode: run commands without asking (destructive ones still ask)
 #         amebo --mode=code          opt-in code mode: file editing, runs in this directory
 #         amebo --permissions=ask|edit|auto   what runs without asking (default: ask)
+#         amebo --model=kimi|minimax|anthropic|<model id>   e.g. --model=claude-opus-5-5
+#   In a session: /mode, /permissions, /model switch these. /model lists which keys are set.
 set -euo pipefail
 
 BACKEND="/opt/shared/repos/amebo/backend"

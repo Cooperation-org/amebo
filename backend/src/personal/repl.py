@@ -25,6 +25,7 @@ Run (as the owner uid):
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import sys
@@ -74,6 +75,13 @@ _PERMISSIONS = ("ask", "edit", "auto")
 # Tool rounds allowed within a single turn before we force an answer.
 _MAX_TOOL_ROUNDS = int(os.getenv("AMEBO_CLI_MAX_TOOL_ROUNDS", "16"))
 _MAX_TOKENS = int(os.getenv("AMEBO_CLI_MAX_TOKENS", "4000"))
+# A coding task (read, edit, test, fix, repeat) takes many more rounds.
+_CODE_MAX_TOOL_ROUNDS = int(os.getenv("AMEBO_CLI_CODE_MAX_TOOL_ROUNDS", "60"))
+# Code mode writes whole files through tool calls; 4000 cuts them off.
+_CODE_MAX_TOKENS = int(os.getenv("AMEBO_CLI_CODE_MAX_TOKENS", "16000"))
+# Code mode keeps each turn's tool calls in the session history (see run_repl).
+# Past this estimated size it drops back to the stored, compacted history.
+_CODE_HISTORY_MAX_TOKENS = int(os.getenv("AMEBO_CLI_CODE_HISTORY_TOKENS", "80000"))
 
 _TTY = sys.stdout.isatty()
 _DIM = "\033[2m" if _TTY else ""
@@ -172,6 +180,58 @@ def _terminal_confirm_edit(path: str, diff: str) -> bool:
     return ans in ("y", "yes")
 
 
+def _providers() -> Dict[str, str]:
+    """provider -> the env var holding its API key."""
+    from src.services.llm_client import _COMPATIBLE_PROVIDERS
+    keys = {"anthropic": "ANTHROPIC_API_KEY"}
+    keys.update({p: spec[0] for p, spec in _COMPATIBLE_PROVIDERS.items()})
+    return keys
+
+
+def _pick_llm(spec: str):
+    """Switch this process to `spec`: a provider name (kimi, minimax,
+    anthropic) or a model id (claude-*, kimi-*, MiniMax-*). Returns
+    (client, model, provider), or an error string.
+
+    An explicit choice is honored as-is: no day-long fallback trip (that
+    protects the shared service's budget), so the model shown is the model
+    that answers, and a failure shows as an error."""
+    from src.services.llm_client import _COMPATIBLE_PROVIDERS, _build_client, _model_for
+    providers = _providers()
+    spec = (spec or "").strip()
+    low = spec.lower()
+    requested = None
+    if low in providers:
+        provider = low
+    elif low.startswith("claude-"):
+        provider, requested = "anthropic", spec
+    else:
+        provider = next((p for p in _COMPATIBLE_PROVIDERS if low.startswith(p + "-")), None)
+        if provider is None:
+            return (f"unknown model '{spec}' — a provider ({', '.join(providers)}) "
+                    "or a model id (claude-…, kimi-…, MiniMax-…)")
+        os.environ[_COMPATIBLE_PROVIDERS[provider][3]] = spec  # e.g. KIMI_MODEL
+    if not os.getenv(providers[provider]):
+        return f"{providers[provider]} is not set — export it, then /model {spec}"
+    client = _build_client(provider)
+    if client is None:
+        return f"could not start a {provider} client"
+    model = _model_for(provider, requested or os.getenv("AMEBO_CLI_MODEL")
+                       or os.getenv("AMEBO_QA_MODEL", "claude-sonnet-4-6"))
+    return client, model, provider
+
+
+def _error_line(exc: Exception, provider: str) -> str:
+    """One line for a failed call: provider, HTTP status, the API's own message."""
+    body = getattr(exc, "body", None)
+    msg = None
+    if isinstance(body, dict):
+        err = body.get("error")
+        msg = err.get("message") if isinstance(err, dict) else None
+    code = getattr(exc, "status_code", None)
+    return f"{provider}{f' {code}' if code else ''}: {msg or exc}"
+
+
 def _flag(argv: List[str], name: str) -> Optional[str]:
     """Value of --name=X or --name X, else None."""
     for i, a in enumerate(argv):
@@ -267,7 +327,10 @@ def _result_summary(res: str) -> str:
 
 
 def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
-              out, status, trace: List[Tuple[str, str]]) -> str:
+              out, status, trace: List[Tuple[str, str]],
+              max_tokens: int = _MAX_TOKENS,
+              work_out: Optional[List[Dict]] = None,
+              max_rounds: int = _MAX_TOOL_ROUNDS) -> str:
     """One user turn: call the model, run tool rounds, return the final text.
     `messages` is the full history+question from ConversationManager.build_messages;
     tool-round scaffolding stays local and is NOT persisted (only the final answer
@@ -275,15 +338,16 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
     printed as one line; its output goes to `trace` (for /tools), not the screen."""
     from src.tools.registry import get_tool, trust_gate
 
-    work = list(messages)
-    for _round in range(_MAX_TOOL_ROUNDS + 1):
+    work = list(messages) if work_out is None else work_out
+    work[:] = list(messages)
+    for _round in range(max_rounds + 1):
         system_blocks, cached = _cache_prefix(system_prompt, work)
-        kwargs = dict(model=model, max_tokens=_MAX_TOKENS,
+        kwargs = dict(model=model, max_tokens=max_tokens,
                       system=system_blocks, messages=cached)
         if tools:
             kwargs["tools"] = tools
         # Last round: force an answer instead of another tool call.
-        if _round == _MAX_TOOL_ROUNDS and tools:
+        if _round == max_rounds and tools:
             kwargs["tool_choice"] = {"type": "none"}
         status.start("thinking")
         try:
@@ -320,7 +384,11 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
             out(f"  {_DIM}· {line} ⎿ {summary}{_RESET}")
             results.append({"type": "tool_result", "tool_use_id": b.id, "content": res})
         work.append({"role": "user", "content": results})
-    return "(no answer)"
+    # Some providers ignore tool_choice "none". Stop anyway, and close the
+    # turn with an assistant message so "continue" can pick it back up.
+    stopped = f"(stopped after {max_rounds} rounds of tool calls — say continue to keep going)"
+    work.append({"role": "assistant", "content": [{"type": "text", "text": stopped}]})
+    return stopped
 
 
 def _resume_session(uid: int) -> Optional[str]:
@@ -402,16 +470,27 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
     work_dir = os.getenv("AMEBO_CLI_CWD") or os.getcwd()
     code_note = _CODE_NOTE.format(cwd=work_dir)
 
-    client = get_llm_client()
-    if client is None:
-        out("No LLM client — the configured provider's API key is not set "
-            "(ANTHROPIC_API_KEY for anthropic, MINIMAX_API_KEY for minimax).")
-        return 1
-    # Model: CLI override > standard QA model > default. resolve_model maps it
-    # onto whatever the active provider actually serves.
-    model = resolve_model(
-        os.getenv("AMEBO_CLI_MODEL") or os.getenv("AMEBO_QA_MODEL", "claude-sonnet-4-6")
-    )
+    start_model = _flag(argv, "model")
+    if start_model:
+        picked = _pick_llm(start_model)
+        if isinstance(picked, str):
+            out(picked)
+            return 2
+        client, model, _ = picked
+    else:
+        client = get_llm_client()
+        if client is None:
+            out("No LLM client — the configured provider's API key is not set "
+                "(ANTHROPIC_API_KEY for anthropic, MINIMAX_API_KEY for minimax).")
+            return 1
+        # Model: CLI override > standard QA model > default. resolve_model maps it
+        # onto whatever the active provider actually serves.
+        model = resolve_model(
+            os.getenv("AMEBO_CLI_MODEL") or os.getenv("AMEBO_QA_MODEL", "claude-sonnet-4-6")
+        )
+    from src.services.llm_client import get_provider
+    llm = {"client": client, "model": model,
+           "provider": picked[2] if start_model else get_provider()}
 
     # Persistent thread → history is stored verbatim and replayed byte-identically
     # each turn, which is what makes the prefix cache hit. `-c` resumes the last
@@ -435,8 +514,11 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
     mode = {"mode": start_mode, "perms": perms}
     tctx = {"org_context": ctx, "org_id": org_id}
 
+    code_history: List[Dict] = []
+
     def set_mode(m: str):
         mode["mode"] = m
+        code_history.clear()
         tctx["cwd"] = work_dir if m == "code" else None
 
     set_mode(start_mode)
@@ -494,6 +576,8 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
                 "(sudo, rm -rf, force-push, service stop still ask); amebo -y starts in it\n"
                 "  /mode     default | code — code adds file editing, runs in the start "
                 "directory (amebo --mode=code)\n"
+                "  /model    show or switch: a provider (kimi, minimax, anthropic) or a "
+                "model id, e.g. /model claude-opus-5-5 (amebo --model=…)\n"
                 "  /permissions  ask | edit | auto — what runs without asking "
                 "(amebo --permissions=edit)\n"
                 "  exit      quit")
@@ -515,6 +599,20 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
             out(f"  mode {mode['mode']}"
                 + (f" — file editing on, commands run in {work_dir}"
                    if mode["mode"] == "code" else ""))
+            continue
+        if user == "/model" or user.startswith("/model "):
+            arg = user[len("/model"):].strip()
+            if arg:
+                picked = _pick_llm(arg)
+                if isinstance(picked, str):
+                    out(f"  {picked}")
+                    continue
+                llm["client"], llm["model"], llm["provider"] = picked
+            out(f"  model {llm['model']} ({llm['provider']})")
+            if not arg:
+                out("  " + " · ".join(
+                    f"{p} {'key set' if os.getenv(k) else 'no key (' + k + ')'}"
+                    for p, k in _providers().items()))
             continue
         if user == "/permissions" or user.startswith("/permissions "):
             arg = user[len("/permissions"):].strip()
@@ -545,22 +643,39 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
         # the model needs instead.
         system_prompt, messages = mgr.build_messages(new_question=user, knowledge_context="")
         system_prompt = system_prompt + _SHELL_NOTE
-        if mode["mode"] == "code":
+        coding = mode["mode"] == "code"
+        if coding:
             system_prompt += code_note
+            # Code mode replays this session's turns WITH their tool calls.
+            # The stored history is question/answer only, and a model shown
+            # answers like "Changed app.py" with no tool call behind them
+            # starts claiming changes it never made.
+            if code_history:
+                messages = code_history + [messages[-1]]
         last_trace = []
+        work: List[Dict] = []
         try:
-            answer = _run_turn(client, model, system_prompt, messages,
+            answer = _run_turn(llm["client"], llm["model"], system_prompt, messages,
                                tools_for(mode["mode"]), tctx,
-                               principal, out, status, last_trace)
+                               principal, out, status, last_trace,
+                               max_tokens=_CODE_MAX_TOKENS if coding else _MAX_TOKENS,
+                               work_out=work,
+                               max_rounds=_CODE_MAX_TOOL_ROUNDS if coding else _MAX_TOOL_ROUNDS)
         except KeyboardInterrupt:
             status.stop()
             out(f"\n  {_DIM}interrupted{_RESET}")
             continue
         except Exception as exc:  # keep the session alive; show the cause
             status.stop()
-            out(f"\n  error: {exc}")
+            out(f"\n  error: {_error_line(exc, llm['provider'])}")
             continue
         out(f"\n{_BOLD}amebo ›{_RESET} {answer}")
+        if coding:
+            if work and work[-1]["role"] == "assistant" and work[-1]["content"] and \
+                    len(json.dumps(work)) // 4 < _CODE_HISTORY_MAX_TOKENS:
+                code_history[:] = work
+            else:
+                code_history.clear()
         # Persist only the clean question/answer pair (not tool scaffolding) and
         # compact if over threshold.
         mgr.add_exchange(user, answer)
