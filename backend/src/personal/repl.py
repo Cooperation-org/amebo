@@ -52,6 +52,25 @@ _PERSONAL_TOOLS = [
     "abra_search", "lookup_contact", "web_search", "web_research",
 ]
 
+# Modes: `default` is the general assistant, unchanged. `code` is opt-in
+# (--mode=code or /mode code): adds file tools and a coding note, and runs
+# commands in the directory amebo was started from.
+_MODES = ("default", "code")
+_CODE_TOOLS = ["read_file", "edit_file", "write_file"]
+_CODE_NOTE = (
+    "\n\nCODE MODE. The working directory is {cwd}; shell commands and relative "
+    "paths start there. Read a file before changing it. Change files with "
+    "edit_file (exact string replace) or write_file (new or whole files), not "
+    "with shell redirects or sed -i. After a change, run the relevant tests if "
+    "the project has them."
+)
+
+# Permissions: what runs without asking.
+#   ask   reads run; file edits and other commands ask (the default)
+#   edit  reads and file edits run; other commands ask
+#   auto  everything runs except _ALWAYS_ASK commands
+_PERMISSIONS = ("ask", "edit", "auto")
+
 # Tool rounds allowed within a single turn before we force an answer.
 _MAX_TOOL_ROUNDS = int(os.getenv("AMEBO_CLI_MAX_TOOL_ROUNDS", "16"))
 _MAX_TOKENS = int(os.getenv("AMEBO_CLI_MAX_TOKENS", "4000"))
@@ -93,6 +112,19 @@ class _Status:
     def set(self, label: str):
         self._label = label
 
+    def pause(self) -> Optional[str]:
+        """Stop the spinner so a prompt can be seen; returns the label to
+        resume with (None if it was not spinning)."""
+        if not self._thread:
+            return None
+        label = self._label
+        self.stop()
+        return label
+
+    def resume(self, label: Optional[str]):
+        if label is not None:
+            self.start(label)
+
     def stop(self):
         if not self._thread:
             return
@@ -130,6 +162,24 @@ def _auto_confirm(command: str) -> bool:
     if any(p in norm for p in _ALWAYS_ASK):
         return _terminal_confirm(command)
     return True
+
+
+def _terminal_confirm_edit(path: str, diff: str) -> bool:
+    try:
+        ans = input(f"\n{_indent(diff, 2)}\n  {_BOLD}apply to {path}?{_RESET} [y/N] ").strip().lower()
+    except EOFError:
+        return False
+    return ans in ("y", "yes")
+
+
+def _flag(argv: List[str], name: str) -> Optional[str]:
+    """Value of --name=X or --name X, else None."""
+    for i, a in enumerate(argv):
+        if a.startswith(f"--{name}="):
+            return a.split("=", 1)[1]
+        if a == f"--{name}" and i + 1 < len(argv):
+            return argv[i + 1]
+    return None
 
 
 def _terminal_confirm(command: str) -> bool:
@@ -306,6 +356,14 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
     argv = sys.argv[1:] if argv is None else argv
     resume = any(a in ("-c", "--continue") for a in argv)
     auto = any(a in ("-y", "--yes") for a in argv) or os.getenv("AMEBO_CLI_AUTO") == "1"
+    start_mode = _flag(argv, "mode") or "default"
+    perms = _flag(argv, "permissions") or ("auto" if auto else "ask")
+    if start_mode not in _MODES:
+        out(f"unknown mode '{start_mode}' — one of: {', '.join(_MODES)}")
+        return 2
+    if perms not in _PERMISSIONS:
+        out(f"unknown permissions '{perms}' — one of: {', '.join(_PERMISSIONS)}")
+        return 2
 
     # Provider/model are config, decoupled from this mode. Override for THIS
     # process only; the Slack service keeps whatever it was started with.
@@ -314,6 +372,8 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
 
     from src.tools.shell_tool import register_shell_tool_if_personal
     registered = register_shell_tool_if_personal()
+    from src.tools.file_tools import register_file_tools_if_personal
+    register_file_tools_if_personal()
     from src.tools.registry import get_tool, _tool_to_schema
     from src.services.org_context import OrgContext
     from src.services.trust import Principal
@@ -334,7 +394,13 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
     # auth, so the principal is SERVICE-trust — the owner on their own box.
     principal = Principal(transport="cli", person_id=person_id, is_service=True)
 
-    tools = [_tool_to_schema(get_tool(n)) for n in _PERSONAL_TOOLS if get_tool(n)]
+    def tools_for(m: str) -> List[Dict]:
+        names = _PERSONAL_TOOLS + (_CODE_TOOLS if m == "code" else [])
+        return [_tool_to_schema(get_tool(n)) for n in names if get_tool(n)]
+
+    # The directory amebo was started from (the launcher cds into the backend).
+    work_dir = os.getenv("AMEBO_CLI_CWD") or os.getcwd()
+    code_note = _CODE_NOTE.format(cwd=work_dir)
 
     client = get_llm_client()
     if client is None:
@@ -366,16 +432,42 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
     interactive = reader is sys.stdin and sys.stdin.isatty()
     if interactive:
         _setup_readline()
-    out(f"{_DIM}amebo · {model} · shell {'on' if registered else 'off'}"
-        f"{' · resumed' if resumed else ''}{' · auto' if auto else ''} · /help{_RESET}")
+    mode = {"mode": start_mode, "perms": perms}
+    tctx = {"org_context": ctx, "org_id": org_id}
 
-    mode = {"auto": auto}
+    def set_mode(m: str):
+        mode["mode"] = m
+        tctx["cwd"] = work_dir if m == "code" else None
+
+    set_mode(start_mode)
+    out(f"{_DIM}amebo · {model} · shell {'on' if registered else 'off'}"
+        f"{' · resumed' if resumed else ''}"
+        f"{' · code' if mode['mode'] == 'code' else ''}"
+        f"{'' if perms == 'ask' else ' · ' + perms} · /help{_RESET}")
+
+    status = _Status()
 
     def confirm(command: str) -> bool:
-        return _auto_confirm(command) if mode["auto"] else _terminal_confirm(command)
+        # The spinner redraws its line every 0.1s; stop it or it wipes the
+        # prompt and what the person types.
+        label = status.pause()
+        try:
+            return (_auto_confirm(command) if mode["perms"] == "auto"
+                    else _terminal_confirm(command))
+        finally:
+            status.resume(label)
 
-    tctx = {"org_context": ctx, "org_id": org_id, "confirm": confirm}
-    status = _Status()
+    def confirm_edit(path: str, diff: str) -> bool:
+        if mode["perms"] in ("edit", "auto"):
+            return True
+        label = status.pause()
+        try:
+            return _terminal_confirm_edit(path, diff)
+        finally:
+            status.resume(label)
+
+    tctx["confirm"] = confirm
+    tctx["confirm_edit"] = confirm_edit
     last_trace: List[Tuple[str, str]] = []
     while True:
         try:
@@ -400,13 +492,42 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
                 "  Ctrl-C    stop the current turn\n"
                 "  /auto     toggle auto mode: commands run without asking "
                 "(sudo, rm -rf, force-push, service stop still ask); amebo -y starts in it\n"
+                "  /mode     default | code — code adds file editing, runs in the start "
+                "directory (amebo --mode=code)\n"
+                "  /permissions  ask | edit | auto — what runs without asking "
+                "(amebo --permissions=edit)\n"
                 "  exit      quit")
             continue
         if user in ("/auto", "/config"):
-            mode["auto"] = not mode["auto"]
-            out(f"  auto {'on' if mode['auto'] else 'off'}"
+            mode["perms"] = "ask" if mode["perms"] == "auto" else "auto"
+            on = mode["perms"] == "auto"
+            out(f"  auto {'on' if on else 'off'}"
                 + (" — commands run without asking; sudo, rm -rf, force-push, "
-                   "service stop still ask" if mode["auto"] else " — every write asks"))
+                   "service stop still ask" if on else " — every write asks"))
+            continue
+        if user == "/mode" or user.startswith("/mode "):
+            arg = user[len("/mode"):].strip()
+            if arg in _MODES:
+                set_mode(arg)
+            elif arg:
+                out(f"  unknown mode '{arg}' — one of: {', '.join(_MODES)}")
+                continue
+            out(f"  mode {mode['mode']}"
+                + (f" — file editing on, commands run in {work_dir}"
+                   if mode["mode"] == "code" else ""))
+            continue
+        if user == "/permissions" or user.startswith("/permissions "):
+            arg = user[len("/permissions"):].strip()
+            if arg in _PERMISSIONS:
+                mode["perms"] = arg
+            elif arg:
+                out(f"  unknown permissions '{arg}' — one of: {', '.join(_PERMISSIONS)}")
+                continue
+            out(f"  permissions {mode['perms']} — " + {
+                "ask": "file edits and commands ask",
+                "edit": "file edits run; commands ask",
+                "auto": "everything runs; sudo, rm -rf, force-push, service stop still ask",
+            }[mode["perms"]])
             continue
         if user == "/session":
             out(f"  {session}")
@@ -424,9 +545,12 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
         # the model needs instead.
         system_prompt, messages = mgr.build_messages(new_question=user, knowledge_context="")
         system_prompt = system_prompt + _SHELL_NOTE
+        if mode["mode"] == "code":
+            system_prompt += code_note
         last_trace = []
         try:
-            answer = _run_turn(client, model, system_prompt, messages, tools, tctx,
+            answer = _run_turn(client, model, system_prompt, messages,
+                               tools_for(mode["mode"]), tctx,
                                principal, out, status, last_trace)
         except KeyboardInterrupt:
             status.stop()

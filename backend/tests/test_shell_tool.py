@@ -11,6 +11,7 @@ class TestReadonlyClassification:
     @pytest.mark.parametrize("cmd", [
         "ls -la", "cat foo.txt", "git status", "git log --oneline -5",
         "rg TODO src", "pwd", "git diff HEAD~1", "git -C /some/repo log --oneline", "git -c x=y status",
+        "ls /opt 2>/dev/null | head -5", "grep -r x . 2>&1 | head", "cat a >/dev/null",
     ])
     def test_readonly(self, cmd):
         assert _is_readonly(cmd) is True
@@ -19,6 +20,7 @@ class TestReadonlyClassification:
         "rm -rf /tmp/x", "git push", "git commit -m x", "echo hi > f",
         "cat a | tee b", "ls; rm x", "python foo.py", "mv a b",
         "git status && rm x",     # metachar hides a write
+        "cat a 2>/dev/nullx", "cat a > /dev/null2", "cat a 2>err.log",
     ])
     def test_not_readonly(self, cmd):
         assert _is_readonly(cmd) is False

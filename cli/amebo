@@ -20,9 +20,12 @@
 # Usage:  amebo        new session
 #         amebo -c     resume your last session
 #         amebo -y     auto mode: run commands without asking (destructive ones still ask)
+#         amebo --mode=code          opt-in code mode: file editing, runs in this directory
+#         amebo --permissions=ask|edit|auto   what runs without asking (default: ask)
 set -euo pipefail
 
 BACKEND="/opt/shared/repos/amebo/backend"
+export AMEBO_CLI_CWD="$PWD"   # code mode works where you started amebo
 cd "$BACKEND"
 
 # .env (DB creds, API keys) is loaded by the app via python-dotenv from this

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import shlex
 import subprocess
 from typing import Any, Dict
@@ -118,8 +119,13 @@ def _simple_is_readonly(toks) -> bool:
     return True
 
 
+# Redirects that only discard or merge output — they write nothing.
+_HARMLESS_REDIRECT = re.compile(r"(?<!\S)(?:[12]?>\s*/dev/null|2>&1)(?!\S)")
+
+
 def _is_readonly(command: str) -> bool:
     """True only if every simple command on the line is unambiguously a read."""
+    command = _HARMLESS_REDIRECT.sub(" ", command)
     if any(c in _UNSAFE_CHARS for c in command):
         return False  # redirect / subshell / backtick could hide a write
     segs = _segments(command)
@@ -147,6 +153,7 @@ def shell_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
         result = subprocess.run(
             ["bash", "-lc", command],
             capture_output=True, text=True, timeout=SHELL_TIMEOUT_S,
+            cwd=(context or {}).get("cwd") or None,
         )
     except subprocess.TimeoutExpired:
         return f"Error: command timed out after {SHELL_TIMEOUT_S}s."
@@ -178,13 +185,11 @@ SHELL_SCHEMA = {
 }
 
 
-def register_shell_tool_if_personal() -> bool:
-    """Register `shell` — ONLY in a verified personal session. Returns True if it
-    was registered. Guards (I10, Fable B): AMEBO_PERSONAL_MODE=1, the process is
-    running as the declared owner uid (AMEBO_PERSONAL_UID), and NOT the amebo
-    service uid (AMEBO_SERVICE_UID). Call this at personal-process startup only —
-    the hosted service never calls it, so it never has shell.
-    """
+def is_verified_personal() -> bool:
+    """True only in a verified personal session (I10, Fable B):
+    AMEBO_PERSONAL_MODE=1, the process is running as the declared owner uid
+    (AMEBO_PERSONAL_UID), and NOT the amebo service uid (AMEBO_SERVICE_UID).
+    Every personal-only tool registers behind this check."""
     if os.getenv("AMEBO_PERSONAL_MODE") != "1":
         return False
     owner = os.getenv("AMEBO_PERSONAL_UID", "")
@@ -198,6 +203,18 @@ def register_shell_tool_if_personal() -> bool:
     svc = os.getenv("AMEBO_SERVICE_UID", "")
     if svc.isdigit() and os.getuid() == int(svc):
         logger.error("personal shell: running as the service uid; hard refuse")
+        return False
+    return True
+
+
+def register_shell_tool_if_personal() -> bool:
+    """Register `shell` — ONLY in a verified personal session. Returns True if it
+    was registered. Guards (I10, Fable B): AMEBO_PERSONAL_MODE=1, the process is
+    running as the declared owner uid (AMEBO_PERSONAL_UID), and NOT the amebo
+    service uid (AMEBO_SERVICE_UID). Call this at personal-process startup only —
+    the hosted service never calls it, so it never has shell.
+    """
+    if not is_verified_personal():
         return False
 
     from src.tools.registry import register_tool, Tool
