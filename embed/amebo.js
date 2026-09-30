@@ -411,6 +411,10 @@
 
   class AmeboAsk extends HTMLElement {
     connectedCallback() {
+      // Once per element: a dashboard grid that reorders cards connects them
+      // again, and mounting again refetched and wiped what was being edited.
+      if (this.__mounted) return;
+      this.__mounted = true;
       ensureStyles();
       const base = upBase(this);
       if (!base) return showError(this, 'missing data-up');
@@ -466,6 +470,8 @@
 
   class AmeboGoal extends HTMLElement {
     async connectedCallback() {
+      if (this.__mounted) return;
+      this.__mounted = true;
       ensureStyles();
       const base = upBase(this);
       const id = this.dataset.path || this.getAttribute('goal-id');
@@ -539,6 +545,8 @@
 
   class AmeboDigest extends HTMLElement {
     async connectedCallback() {
+      if (this.__mounted) return;
+      this.__mounted = true;
       ensureStyles();
       const base = upBase(this);
       if (!base) return showError(this, 'missing data-up');
@@ -615,6 +623,8 @@
 
   class AmeboClaws extends HTMLElement {
     async connectedCallback() {
+      if (this.__mounted) return;
+      this.__mounted = true;
       ensureStyles();
       const base = upBase(this);
       if (!base) return showError(this, 'missing data-up');
@@ -813,6 +823,8 @@
 
   class AmeboGoals extends HTMLElement {
     async connectedCallback() {
+      if (this.__mounted) return;
+      this.__mounted = true;
       ensureStyles();
       const base = upBase(this);
       if (!base) return showError(this, 'missing data-up');
@@ -997,6 +1009,8 @@
 
   class AmeboSkills extends HTMLElement {
     async connectedCallback() {
+      if (this.__mounted) return;
+      this.__mounted = true;
       ensureStyles();
       const base = upBase(this);
       if (!base) return showError(this, 'missing data-up');
@@ -1058,6 +1072,8 @@
 
   class AmeboCreateClaw extends HTMLElement {
     connectedCallback() {
+      if (this.__mounted) return;
+      this.__mounted = true;
       ensureStyles();
       this._base = upBase(this);
       if (!this._base) return showError(this, 'missing data-up');
