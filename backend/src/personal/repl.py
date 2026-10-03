@@ -53,7 +53,6 @@ _SHELL_NOTE = (
     "Team knowledge is in abra_search (search, about, read) and the projects "
     "repo /opt/shared/projects: list_projects and read_main_md for Active/, "
     "and the shell (grep, cat) for the rest, e.g. Internal/ strategy docs. "
-    "search_knowledge_base and lookup_contact hold nothing for this team. "
     "For copy (taglines, pitches, messages) start from the team's own words "
     "in those sources, say where each came from, and mark lines you wrote. "
     "Name a source only if a tool call in this session returned it."
