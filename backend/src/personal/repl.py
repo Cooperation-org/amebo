@@ -880,7 +880,7 @@ def _valid_utf8(s: str) -> str:
 _MD_BOLD = re.compile(r"\*\*(.+?)\*\*|(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])")
 
 
-_NO_REPLY = re.compile(r"^\s*(`?\(?silence\)?`?|(:[a-z0-9_+\-]+:\s*)+)\s*$", re.IGNORECASE)
+_NO_REPLY = re.compile(r"^\s*([`:]*\(?silence\)?[`:]*|(:[a-z0-9_+\-]+:\s*)+)\s*$", re.IGNORECASE)
 
 
 def _render(text: str) -> str:
