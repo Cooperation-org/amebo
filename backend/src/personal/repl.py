@@ -664,7 +664,9 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
         resumed = session is not None
     if not session and pick:
         session = _choose_session(uid, "", out)
-        resumed = session is not None
+        if session is None:  # cancelled, or nothing to resume
+            return 0
+        resumed = True
     session = session or f"cli-{uid}-{os.getpid()}"
     mgr = ConversationManager(
         source_type="cli", source_ref=session,
