@@ -401,14 +401,15 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
               work_out: Optional[List[Dict]] = None,
               max_rounds: int = _MAX_TOOL_ROUNDS,
               notes: Optional[List[str]] = None,
-              thinking: Optional[Dict] = None) -> str:
+              thinking: Optional[Dict] = None,
+              sources=None) -> str:
     """One user turn: call the model, run tool rounds, return the final text.
     `messages` is the full history+question from ConversationManager.build_messages;
     tool-round scaffolding stays local and is NOT persisted (only the final answer
     is), keeping the cross-turn prefix clean and byte-stable. Each tool call is
     printed as one line; its output goes to `trace` (for /tools), not the screen."""
     from src.tools.registry import get_tool, trust_gate
-    from src.services.source_check import mark_unopened
+    from src.services.source_check import source_label
 
     work = list(messages) if work_out is None else work_out
     work[:] = list(messages)
@@ -434,8 +435,7 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
         if resp.stop_reason != "tool_use":
             if resp.stop_reason == "max_tokens" and notes is not None:
                 notes.append("(cut off at the length limit — say continue for the rest)")
-            text = "".join(b.text for b in resp.content or [] if b.type == "text").strip()
-            return mark_unopened(text, _tool_outputs(work))
+            return "".join(b.text for b in resp.content or [] if b.type == "text").strip()
 
         results = []
         for b in resp.content:
@@ -473,6 +473,8 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
             summary = _one_line(_result_summary(res), room // 3)
             line = _one_line(label, room - len(summary) - 3)
             out(f"  {_DIM}· {line} ⎿ {summary}{_RESET}")
+            if sources is not None:
+                res = sources.add(source_label(b.name, dict(b.input)), res)
             results.append({"type": "tool_result", "tool_use_id": b.id, "content": res})
         work.append({"role": "user", "content": results})
     # Some providers ignore tool_choice "none". Stop anyway, and close the
@@ -480,13 +482,6 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
     stopped = f"(stopped after {max_rounds} rounds of tool calls — say continue to keep going)"
     work.append({"role": "assistant", "content": [{"type": "text", "text": stopped}]})
     return stopped
-
-
-def _tool_outputs(work: List[Dict]) -> List[str]:
-    """Every tool result in this turn's messages, as text."""
-    return [str(c.get("content", "")) for m in work if m["role"] == "user"
-            and isinstance(m["content"], list)
-            for c in m["content"] if isinstance(c, dict) and c.get("type") == "tool_result"]
 
 
 def _resume_session(uid: int) -> Optional[str]:
@@ -610,6 +605,7 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
     from src.services.org_context import OrgContext
     from src.services.trust import Principal
     from src.services.conversation_manager import ConversationManager
+    from src.services.source_check import Sources, CITE_NOTE, finish, next_tag_number
     from src.services.llm_client import get_llm_client, resolve_model
 
     if not registered:
@@ -874,15 +870,26 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
         last_trace = []
         work: List[Dict] = []
         notes: List[str] = []
+        sources = Sources(start=next_tag_number(messages),
+                          known=" ".join(mgr.opened_sites()) + " " + user)
+
+        def run(msgs):
+            return _run_turn(llm["client"], llm["model"], system_prompt + CITE_NOTE, msgs,
+                             tools_for(mode["mode"]), tctx,
+                             principal, out, status, last_trace,
+                             max_tokens=_CODE_MAX_TOKENS if coding else _MAX_TOKENS,
+                             work_out=work,
+                             max_rounds=_CODE_MAX_TOOL_ROUNDS if coding else _MAX_TOOL_ROUNDS,
+                             notes=notes,
+                             thinking=_thinking_for(llm["provider"]),
+                             sources=sources)
+
         try:
-            answer = _run_turn(llm["client"], llm["model"], system_prompt, messages,
-                               tools_for(mode["mode"]), tctx,
-                               principal, out, status, last_trace,
-                               max_tokens=_CODE_MAX_TOKENS if coding else _MAX_TOKENS,
-                               work_out=work,
-                               max_rounds=_CODE_MAX_TOOL_ROUNDS if coding else _MAX_TOOL_ROUNDS,
-                               notes=notes,
-                               thinking=_thinking_for(llm["provider"]))
+            answer = run(messages)
+            # Code checks citations and claims; a failing answer goes back to
+            # the model, and never reaches the screen as it was.
+            answer = finish(answer, sources,
+                            lambda fix: run(work + [{"role": "user", "content": fix}]))
         except KeyboardInterrupt:
             status.stop()
             out(f"\n  {_DIM}interrupted{_RESET}")
@@ -913,7 +920,7 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
         # that can take a while: show it, and let Ctrl-C skip it.
         status.start("saving")
         try:
-            mgr.add_exchange(user, answer)
+            mgr.add_exchange(user, answer, metadata={"opened": sources.opened()})
         except KeyboardInterrupt:
             out(f"\n  {_DIM}interrupted while saving — this exchange may not be in history{_RESET}")
         except Exception as exc:  # the answer is shown; don't lose the session

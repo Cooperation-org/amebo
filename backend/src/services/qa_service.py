@@ -12,6 +12,9 @@ from anthropic import Anthropic
 
 from src.services.query_service import QueryService
 from src.services.llm_client import get_llm_client, resolve_model, first_text
+from src.services.source_check import (
+    Sources, CITE_NOTE, finish, next_tag_number, source_label,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -838,6 +841,7 @@ Answer the question based on this context. Be comprehensive and include all rele
             logger.info(f"Available tools: {[t['name'] for t in tools]}")
 
             # Apply prompt caching
+            system_prompt += CITE_NOTE
             system_blocks, cached_messages = apply_cache_control(system_prompt, conv_messages)
 
             # --- Agentic loop (Claude Code pattern) ---
@@ -855,6 +859,14 @@ Answer the question based on this context. Be comprehensive and include all rele
             tool_round = 0
             logger.info(f"[qa] model={qa_model} tools={[t['name'] for t in tools]}")
 
+            sources = Sources(start=next_tag_number(cached_messages),
+                              known=" ".join(mgr.opened_sites()) + " " + question)
+
+            def _fix(request: str) -> str:
+                cached_messages.append({"role": "assistant", "content": last_answer[0] or "(no answer)"})
+                cached_messages.append({"role": "user", "content": request})
+                return _loop()
+
             create_kwargs = dict(
                 model=qa_model,
                 max_tokens=2000,
@@ -863,134 +875,137 @@ Answer the question based on this context. Be comprehensive and include all rele
             )
             if tools:  # omit the param entirely when read-only (no tools offered)
                 create_kwargs["tools"] = tools
-            response = self.client.messages.create(**create_kwargs)
-            logger.info(f"[qa] round 0 stop_reason={response.stop_reason}")
+            last_answer = [""]
 
-            while response.stop_reason == "tool_use" and tool_round < MAX_TOOL_ROUNDS:
-                tool_round += 1
+            def _loop():
+                nonlocal tool_round
+                response = self.client.messages.create(**create_kwargs)
+                logger.info(f"[qa] round 0 stop_reason={response.stop_reason}")
 
-                # Collect all tool_use blocks from this response
-                tool_results = []
+                while response.stop_reason == "tool_use" and tool_round < MAX_TOOL_ROUNDS:
+                    tool_round += 1
+
+                    # Collect all tool_use blocks from this response
+                    tool_results = []
+                    for block in response.content:
+                        if block.type == "tool_use":
+                            logger.info(f"Tool call [{tool_round}]: {block.name}({block.input})")
+                            result = execute_tool(
+                                block.name, block.input,
+                                workspace_id=self.workspace_id,
+                                org_id=self.org_id,
+                                org_context=self.org_context,
+                                principal=self.principal,
+                                # Owner (admin) directing live -> gated tools execute
+                                # now instead of drafting. Non-admin stays gated.
+                                auto_execute=self.full_tools,
+                                conversation=conversation,
+                            )
+                            logger.info(f"Tool result [{tool_round}]: {len(result)} chars")
+                            tool_results.append({
+                                "type": "tool_result",
+                                "tool_use_id": block.id,
+                                "content": sources.add(source_label(block.name, block.input), result),
+                            })
+
+                    # Budget awareness: without this the model spends every round
+                    # researching and trips the cap still mid-plan, and the user gets
+                    # its "I'll go check..." narration as the answer (seen live
+                    # 2026-07-21). Same fix the claw loop already carries.
+                    remaining = MAX_TOOL_ROUNDS - tool_round
+                    tool_results.append({
+                        "type": "text",
+                        "text": (
+                            f"[budget] {remaining} tool round(s) left, then you must "
+                            "answer. Prefer answering with what you already have over "
+                            "one more lookup. If you run out, say what you did not check."
+                        ),
+                    })
+
+                    # Append assistant response + tool results to messages
+                    cached_messages.append({
+                        "role": "assistant",
+                        "content": _serialize_blocks(response.content)
+                    })
+                    cached_messages.append({
+                        "role": "user",
+                        "content": tool_results
+                    })
+
+                    # Call Claude again with full history including tool results
+                    response = self.client.messages.create(
+                        model=qa_model,
+                        max_tokens=2000,
+                        system=system_blocks,
+                        messages=cached_messages,
+                        tools=tools
+                    )
+                    logger.info(f"[qa] round {tool_round} stop_reason={response.stop_reason}")
+
+                # Budget exhausted with the model still asking for tools. Do NOT run
+                # them — spend the reserved step on an answer instead. Every tool_use
+                # block must still be answered by a tool_result block for the request
+                # to be valid, so the pending calls get an explicit "not executed"
+                # result, and tool_choice=none makes another tool call structurally
+                # impossible rather than merely discouraged.
+                if response.stop_reason == "tool_use":
+                    pending = [b for b in response.content if b.type == "tool_use"]
+                    logger.warning(
+                        "[qa] budget exhausted at round %s/%s with %s pending tool call(s): %s "
+                        "— forcing a tool-free final answer",
+                        tool_round, MAX_TOOL_ROUNDS, len(pending), [b.name for b in pending],
+                    )
+                    closing = [{
+                        "type": "tool_result",
+                        "tool_use_id": b.id,
+                        "content": "Not executed: the tool-round budget for this turn is spent.",
+                    } for b in pending]
+                    closing.append({
+                        "type": "text",
+                        "text": (
+                            "[budget] No tool rounds left. Answer now with what you already "
+                            "have. Be explicit about what you could not check, so the person "
+                            "can ask a narrower follow-up."
+                        ),
+                    })
+                    cached_messages.append({
+                        "role": "assistant",
+                        "content": _serialize_blocks(response.content)
+                    })
+                    cached_messages.append({"role": "user", "content": closing})
+                    response = self.client.messages.create(
+                        model=qa_model,
+                        max_tokens=2000,
+                        system=system_blocks,
+                        messages=cached_messages,
+                        tools=tools,
+                        tool_choice={"type": "none"},
+                    )
+                    logger.info(f"[qa] final tool-free call stop_reason={response.stop_reason}")
+
+                # Extract final text response
+                answer_text = ""
                 for block in response.content:
-                    if block.type == "tool_use":
-                        logger.info(f"Tool call [{tool_round}]: {block.name}({block.input})")
-                        result = execute_tool(
-                            block.name, block.input,
-                            workspace_id=self.workspace_id,
-                            org_id=self.org_id,
-                            org_context=self.org_context,
-                            principal=self.principal,
-                            # Owner (admin) directing live -> gated tools execute
-                            # now instead of drafting. Non-admin stays gated.
-                            auto_execute=self.full_tools,
-                            conversation=conversation,
-                        )
-                        logger.info(f"Tool result [{tool_round}]: {len(result)} chars")
-                        tool_results.append({
-                            "type": "tool_result",
-                            "tool_use_id": block.id,
-                            "content": result
-                        })
+                    if hasattr(block, 'text'):
+                        answer_text += block.text
 
-                # Budget awareness: without this the model spends every round
-                # researching and trips the cap still mid-plan, and the user gets
-                # its "I'll go check..." narration as the answer (seen live
-                # 2026-07-21). Same fix the claw loop already carries.
-                remaining = MAX_TOOL_ROUNDS - tool_round
-                tool_results.append({
-                    "type": "text",
-                    "text": (
-                        f"[budget] {remaining} tool round(s) left, then you must "
-                        "answer. Prefer answering with what you already have over "
-                        "one more lookup. If you run out, say what you did not check."
-                    ),
-                })
+                if not answer_text:
+                    # Log WHY we gave up so it's debuggable — not a silent canned reply.
+                    block_types = [getattr(b, 'type', '?') for b in response.content]
+                    logger.warning(
+                        "[qa] empty answer: stop_reason=%s rounds=%s/%s blocks=%s",
+                        response.stop_reason, tool_round, MAX_TOOL_ROUNDS, block_types,
+                    )
+                    # Reaching here means even the reserved tool-free call produced no
+                    # text, so this is a model/provider failure, not a spent budget.
+                    answer_text = "I wasn't able to generate an answer. Try rephrasing your question."
 
-                # Append assistant response + tool results to messages
-                cached_messages.append({
-                    "role": "assistant",
-                    "content": _serialize_blocks(response.content)
-                })
-                cached_messages.append({
-                    "role": "user",
-                    "content": tool_results
-                })
+                last_answer[0] = answer_text
+                return answer_text
 
-                # Call Claude again with full history including tool results
-                response = self.client.messages.create(
-                    model=qa_model,
-                    max_tokens=2000,
-                    system=system_blocks,
-                    messages=cached_messages,
-                    tools=tools
-                )
-                logger.info(f"[qa] round {tool_round} stop_reason={response.stop_reason}")
-
-            # Budget exhausted with the model still asking for tools. Do NOT run
-            # them — spend the reserved step on an answer instead. Every tool_use
-            # block must still be answered by a tool_result block for the request
-            # to be valid, so the pending calls get an explicit "not executed"
-            # result, and tool_choice=none makes another tool call structurally
-            # impossible rather than merely discouraged.
-            if response.stop_reason == "tool_use":
-                pending = [b for b in response.content if b.type == "tool_use"]
-                logger.warning(
-                    "[qa] budget exhausted at round %s/%s with %s pending tool call(s): %s "
-                    "— forcing a tool-free final answer",
-                    tool_round, MAX_TOOL_ROUNDS, len(pending), [b.name for b in pending],
-                )
-                closing = [{
-                    "type": "tool_result",
-                    "tool_use_id": b.id,
-                    "content": "Not executed: the tool-round budget for this turn is spent.",
-                } for b in pending]
-                closing.append({
-                    "type": "text",
-                    "text": (
-                        "[budget] No tool rounds left. Answer now with what you already "
-                        "have. Be explicit about what you could not check, so the person "
-                        "can ask a narrower follow-up."
-                    ),
-                })
-                cached_messages.append({
-                    "role": "assistant",
-                    "content": _serialize_blocks(response.content)
-                })
-                cached_messages.append({"role": "user", "content": closing})
-                response = self.client.messages.create(
-                    model=qa_model,
-                    max_tokens=2000,
-                    system=system_blocks,
-                    messages=cached_messages,
-                    tools=tools,
-                    tool_choice={"type": "none"},
-                )
-                logger.info(f"[qa] final tool-free call stop_reason={response.stop_reason}")
-
-            # Extract final text response
-            answer_text = ""
-            for block in response.content:
-                if hasattr(block, 'text'):
-                    answer_text += block.text
-
-            if not answer_text:
-                # Log WHY we gave up so it's debuggable — not a silent canned reply.
-                block_types = [getattr(b, 'type', '?') for b in response.content]
-                logger.warning(
-                    "[qa] empty answer: stop_reason=%s rounds=%s/%s blocks=%s",
-                    response.stop_reason, tool_round, MAX_TOOL_ROUNDS, block_types,
-                )
-                # Reaching here means even the reserved tool-free call produced no
-                # text, so this is a model/provider failure, not a spent budget.
-                answer_text = "I wasn't able to generate an answer. Try rephrasing your question."
-
-            # Sites named in the answer that no tool returned get listed under it.
-            from src.services.source_check import mark_unopened
-            answer_text = mark_unopened(answer_text, [
-                c.get("content", "") for m in cached_messages
-                if m.get("role") == "user" and isinstance(m.get("content"), list)
-                for c in m["content"]
-                if isinstance(c, dict) and c.get("type") == "tool_result"])
+            # Code checks the answer's citations and claims; a failing answer
+            # goes back to the model (tools allowed) and is never sent as it was.
+            answer_text = finish(_loop(), sources, _fix)
 
             # Clean up for Slack formatting
             answer_text = re.sub(r':?\w*:?\s*\*?\*?Confidence:\s*\d+%\s*\*?\*?\s*[-–]\s*.+?(?:\n|$)',
@@ -1000,7 +1015,8 @@ Answer the question based on this context. Be comprehensive and include all rele
             answer_text = re.sub(r'\n{3,}', '\n\n', answer_text).strip()
 
             # Store the exchange
-            mgr.add_exchange(question, answer_text, author_info=author_info)
+            mgr.add_exchange(question, answer_text, author_info=author_info,
+                             metadata={"opened": sources.opened()})
 
             confidence, confidence_explanation = self._extract_confidence(answer_text)
             thread_info = mgr.get_thread_info()

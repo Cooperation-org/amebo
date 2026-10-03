@@ -215,6 +215,15 @@ class ConversationManager:
 
         self._maybe_compact()
 
+    def opened_sites(self) -> List[str]:
+        """Websites tools returned earlier in this thread (turn metadata "opened")."""
+        out: List[str] = []
+        for t in self._thread_repo.get_turns(self.thread_id):
+            for d in (t.get("metadata") or {}).get("opened") or []:
+                if d not in out:
+                    out.append(d)
+        return out
+
     def _maybe_compact(self):
         """Compact old turns if the history sent to the model exceeds threshold.
 
