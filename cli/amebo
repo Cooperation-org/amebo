@@ -38,5 +38,8 @@ cd "$BACKEND"
 export AMEBO_PERSONAL_MODE=1
 export AMEBO_PERSONAL_UID="$(id -u)"
 export AMEBO_CLI_PROVIDER="${AMEBO_CLI_PROVIDER:-minimax}"
+# The embedding model (knowledge-base search) prints a Hub warning, a progress
+# bar and a load report to the terminal on first use. Keep the transcript clean.
+export HF_HUB_DISABLE_PROGRESS_BARS=1 HF_HUB_VERBOSITY=error TRANSFORMERS_VERBOSITY=error
 
 exec ./venv/bin/python -m src.personal.repl "$@"
