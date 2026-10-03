@@ -393,17 +393,19 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
 
 
 def _resume_session(uid: int) -> Optional[str]:
-    """source_ref of this user's most recent CLI session, if any."""
+    """source_ref of this user's most recent CLI session that has turns, if any.
+    Empty sessions are skipped: every start creates one, so `amebo` then
+    `exit` would otherwise make `amebo -c` resume nothing."""
     from src.db.repositories.thread_repo import ThreadRepo
-    row = ThreadRepo().latest_by_ref_prefix("cli", f"cli-{uid}-")
-    return row["source_ref"] if row else None
+    rows = ThreadRepo().list_by_ref_prefix("cli", f"cli-{uid}-", limit=1)
+    return rows[0]["source_ref"] if rows else None
 
 
-def _ago(ts) -> str:
-    if not ts:
+def _ago(s) -> str:
+    """Seconds ago -> '5m ago'."""
+    if s is None:
         return ""
-    import datetime
-    s = int((datetime.datetime.now(ts.tzinfo) - ts).total_seconds())
+    s = int(s)
     for unit, n in (("d", 86400), ("h", 3600), ("m", 60)):
         if s >= n:
             return f"{s // n}{unit} ago"
@@ -421,7 +423,7 @@ def _choose_session(uid: int, arg: str, out, ask=input) -> Optional[str]:
     if not arg:
         room = _width() - 24
         for i, r in enumerate(rows, 1):
-            out(f"  {i:>2}  {_ago(r['last_active_at']):>8}  "
+            out(f"  {i:>2}  {_ago(r['age_seconds']):>8}  "
                 f"{_one_line(r['first_question'] or '(no question)', room)}")
         try:
             arg = ask("  resume which? [number, Enter to cancel] ").strip()
@@ -617,7 +619,7 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
             continue
         if not line and reader is not sys.stdin:
             break
-        user = line.strip()
+        user = _valid_utf8(line).strip()
         if user in ("exit", "quit", "/exit", "/quit"):
             break
         if not user:
@@ -752,6 +754,16 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
         except Exception as exc:  # the answer is shown; don't lose the session
             out(f"\n  {_DIM}not saved to history: {exc}{_RESET}")
     return 0
+
+
+def _valid_utf8(s: str) -> str:
+    """Bytes that are not UTF-8 (a stray Latin-1 paste, a binary byte) reach
+    Python as lone surrogates, which no API or database accepts. Turn them
+    into U+FFFD so the rest of the line still goes through."""
+    try:
+        return s.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
+    except UnicodeEncodeError:
+        return s.encode("utf-8", "replace").decode("utf-8")
 
 
 def _indent(s: str, n: int = 4) -> str:

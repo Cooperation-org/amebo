@@ -178,35 +178,19 @@ class ThreadRepo:
         finally:
             DatabaseConnection.return_connection(conn)
 
-    def latest_by_ref_prefix(self, source_type: str, prefix: str) -> Optional[Dict]:
-        """Most recently active thread whose source_ref starts with prefix
-        (e.g. a user's last CLI session). Returns {id, source_ref, last_active_at} or None."""
-        conn = DatabaseConnection.get_connection()
-        try:
-            with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
-                cur.execute(
-                    """
-                    SELECT id, source_ref, last_active_at FROM threads
-                    WHERE source_type = %s AND source_ref LIKE %s
-                    ORDER BY last_active_at DESC NULLS LAST LIMIT 1
-                    """,
-                    (source_type, prefix + '%'),
-                )
-                row = cur.fetchone()
-                return dict(row) if row else None
-        finally:
-            DatabaseConnection.return_connection(conn)
-
     def list_by_ref_prefix(self, source_type: str, prefix: str, limit: int = 20) -> List[Dict]:
         """Threads whose source_ref starts with prefix, newest-active first, with
         their first user turn and turn count. Empty threads are left out.
-        Returns [{source_ref, last_active_at, first_question, turns}]."""
+        age_seconds is computed by the database: last_active_at is a naive
+        timestamp in the database's time zone, not this machine's.
+        Returns [{source_ref, last_active_at, age_seconds, first_question, turns}]."""
         conn = DatabaseConnection.get_connection()
         try:
             with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
                 cur.execute(
                     """
                     SELECT t.source_ref, t.last_active_at,
+                           EXTRACT(EPOCH FROM NOW() - t.last_active_at)::int AS age_seconds,
                            (SELECT content FROM thread_turns
                              WHERE thread_id = t.id AND role = 'user'
                              ORDER BY id LIMIT 1) AS first_question,
