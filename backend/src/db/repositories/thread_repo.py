@@ -3,6 +3,7 @@ Data access for conversation threads and turns.
 Source-agnostic: works for Slack, email, web, API.
 """
 
+import json
 import logging
 from typing import List, Dict, Optional
 from psycopg2 import extras
@@ -16,6 +17,25 @@ logger = logging.getLogger(__name__)
 # not 24 hours — a person comes back to a conversation days later and it has
 # to still be there.
 THREAD_RETENTION_DAYS = 30
+
+
+def _strip_nul(text: str) -> str:
+    # Postgres text and jsonb reject NUL; model or tool output can contain it.
+    return text.replace("\x00", "") if text else text
+
+
+def _no_nul(obj):
+    if isinstance(obj, str):
+        return _strip_nul(obj)
+    if isinstance(obj, dict):
+        return {_no_nul(k): _no_nul(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_no_nul(v) for v in obj]
+    return obj
+
+
+def _dumps_no_nul(obj) -> str:
+    return json.dumps(_no_nul(obj), default=str)
 
 
 class ThreadRepo:
@@ -79,8 +99,9 @@ class ThreadRepo:
                     INSERT INTO thread_turns (thread_id, role, content, metadata, token_estimate)
                     VALUES (%s, %s, %s, %s, %s)
                     RETURNING id
-                """, (thread_id, role, content,
-                      extras.Json(metadata or {}), token_estimate))
+                """, (thread_id, role, _strip_nul(content),
+                      extras.Json(metadata or {}, dumps=_dumps_no_nul),
+                      token_estimate))
                 turn_id = cur.fetchone()[0]
                 cur.execute(
                     "UPDATE threads SET last_active_at = NOW() WHERE id = %s",
