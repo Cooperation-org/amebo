@@ -586,6 +586,8 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
         out(f"unknown permissions '{perms}' — one of: {', '.join(_PERMISSIONS)}")
         return 2
 
+    _log_to_file()
+
     # Provider/model are config, decoupled from this mode. Override for THIS
     # process only; the Slack service keeps whatever it was started with.
     if os.getenv("AMEBO_CLI_PROVIDER"):
@@ -908,6 +910,22 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
         finally:
             status.stop()
     return 0
+
+
+def _log_to_file():
+    """Backend modules log (and some call logging.basicConfig at INFO on
+    import); in the terminal that printed tracebacks and every HTTP request
+    into the transcript. Root logging goes to ~/.cache/amebo/cli.log instead;
+    set before any of them import, so their basicConfig is a no-op."""
+    import logging
+    path = os.path.expanduser("~/.cache/amebo/cli.log")
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        handler: logging.Handler = logging.FileHandler(path)
+    except OSError:
+        handler = logging.NullHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logging.basicConfig(level=logging.WARNING, handlers=[handler], force=True)
 
 
 def _valid_utf8(s: str) -> str:
