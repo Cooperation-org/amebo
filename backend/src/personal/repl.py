@@ -50,8 +50,8 @@ _SHELL_NOTE = (
 
 # The personal session's tool set: shell + amebo's safe read tools.
 # Knowledge is abra_search (search / about / read). search_knowledge_base and
-# lookup_contact read the per-org local tables, which hold nothing for this
-# instance, so they always answered "no results".
+# lookup_contact read the per-org local tables (empty for whatscookin) and
+# still arrive via the instance's DEFAULT_TOOLS in tools_for.
 _PERSONAL_TOOLS = [
     "shell", "list_projects", "read_main_md", "abra_search",
     "web_search", "web_research", "http_fetch",
