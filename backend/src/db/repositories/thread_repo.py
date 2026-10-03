@@ -197,6 +197,32 @@ class ThreadRepo:
         finally:
             DatabaseConnection.return_connection(conn)
 
+    def list_by_ref_prefix(self, source_type: str, prefix: str, limit: int = 20) -> List[Dict]:
+        """Threads whose source_ref starts with prefix, newest-active first, with
+        their first user turn and turn count. Empty threads are left out.
+        Returns [{source_ref, last_active_at, first_question, turns}]."""
+        conn = DatabaseConnection.get_connection()
+        try:
+            with conn.cursor(cursor_factory=extras.RealDictCursor) as cur:
+                cur.execute(
+                    """
+                    SELECT t.source_ref, t.last_active_at,
+                           (SELECT content FROM thread_turns
+                             WHERE thread_id = t.id AND role = 'user'
+                             ORDER BY id LIMIT 1) AS first_question,
+                           (SELECT COUNT(*) FROM thread_turns
+                             WHERE thread_id = t.id) AS turns
+                    FROM threads t
+                    WHERE t.source_type = %s AND t.source_ref LIKE %s
+                      AND EXISTS (SELECT 1 FROM thread_turns WHERE thread_id = t.id)
+                    ORDER BY t.last_active_at DESC NULLS LAST LIMIT %s
+                    """,
+                    (source_type, prefix + '%', limit),
+                )
+                return [dict(r) for r in cur.fetchall()]
+        finally:
+            DatabaseConnection.return_connection(conn)
+
     def recent_for_org(self, org_id: int, limit: int = 5) -> List[Dict]:
         """
         Recent threads for an org, newest-active first.

@@ -19,9 +19,11 @@
 #
 # Usage:  amebo        new session
 #         amebo -c     resume your last session
+#         amebo -r     list past sessions, pick one to resume
 #         amebo -y     auto mode: run commands without asking (destructive ones still ask)
+#         amebo --skip-permissions   nothing asks, including sudo and rm -rf
 #         amebo --mode=code          opt-in code mode: file editing, runs in this directory
-#         amebo --permissions=ask|edit|auto   what runs without asking (default: ask)
+#         amebo --permissions=ask|edit|auto|skip   what runs without asking (default: ask)
 #         amebo --model=kimi|minimax|anthropic|<model id>   e.g. --model=claude-opus-5-5
 #   In a session: /mode, /permissions, /model switch these. /model lists which keys are set.
 set -euo pipefail

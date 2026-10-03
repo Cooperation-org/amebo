@@ -70,7 +70,8 @@ _CODE_NOTE = (
 #   ask   reads run; file edits and other commands ask (the default)
 #   edit  reads and file edits run; other commands ask
 #   auto  everything runs except _ALWAYS_ASK commands
-_PERMISSIONS = ("ask", "edit", "auto")
+#   skip  everything runs, nothing asks (amebo --skip-permissions)
+_PERMISSIONS = ("ask", "edit", "auto", "skip")
 
 # Tool rounds allowed within a single turn before we force an answer.
 _MAX_TOOL_ROUNDS = int(os.getenv("AMEBO_CLI_MAX_TOOL_ROUNDS", "16"))
@@ -398,6 +399,50 @@ def _resume_session(uid: int) -> Optional[str]:
     return row["source_ref"] if row else None
 
 
+def _ago(ts) -> str:
+    if not ts:
+        return ""
+    import datetime
+    s = int((datetime.datetime.now(ts.tzinfo) - ts).total_seconds())
+    for unit, n in (("d", 86400), ("h", 3600), ("m", 60)):
+        if s >= n:
+            return f"{s // n}{unit} ago"
+    return "just now"
+
+
+def _choose_session(uid: int, arg: str, out, ask=input) -> Optional[str]:
+    """List this user's past CLI sessions and return the chosen source_ref.
+    arg: a number from the list, or empty to show the list and ask."""
+    from src.db.repositories.thread_repo import ThreadRepo
+    rows = ThreadRepo().list_by_ref_prefix("cli", f"cli-{uid}-")
+    if not rows:
+        out("  no past sessions")
+        return None
+    if not arg:
+        room = _width() - 24
+        for i, r in enumerate(rows, 1):
+            out(f"  {i:>2}  {_ago(r['last_active_at']):>8}  "
+                f"{_one_line(r['first_question'] or '(no question)', room)}")
+        try:
+            arg = ask("  resume which? [number, Enter to cancel] ").strip()
+        except EOFError:
+            return None
+        if not arg:
+            return None
+    if not arg.isdigit() or not 1 <= int(arg) <= len(rows):
+        out(f"  pick a number 1-{len(rows)}")
+        return None
+    return rows[int(arg) - 1]["source_ref"]
+
+
+def _show_last_exchange(mgr, out):
+    """After a resume, show where the conversation left off."""
+    from src.db.repositories.thread_repo import ThreadRepo
+    for t in ThreadRepo().get_turns(mgr.thread_id)[-2:]:
+        who = "you ›" if t["role"] == "user" else "amebo ›"
+        out(f"{_DIM}{who} {t['content']}{_RESET}")
+
+
 def _setup_readline():
     try:
         import readline  # noqa: F401  (line editing + history for input())
@@ -423,9 +468,11 @@ def _save_history(readline, path):
 def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     resume = any(a in ("-c", "--continue") for a in argv)
+    pick = any(a in ("-r", "--resume") for a in argv)
     auto = any(a in ("-y", "--yes") for a in argv) or os.getenv("AMEBO_CLI_AUTO") == "1"
+    skip = "--skip-permissions" in argv
     start_mode = _flag(argv, "mode") or "default"
-    perms = _flag(argv, "permissions") or ("auto" if auto else "ask")
+    perms = _flag(argv, "permissions") or ("skip" if skip else "auto" if auto else "ask")
     if start_mode not in _MODES:
         out(f"unknown mode '{start_mode}' — one of: {', '.join(_MODES)}")
         return 2
@@ -501,6 +548,9 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
     if not session and resume:
         session = _resume_session(uid)
         resumed = session is not None
+    if not session and pick:
+        session = _choose_session(uid, "", out)
+        resumed = session is not None
     session = session or f"cli-{uid}-{os.getpid()}"
     mgr = ConversationManager(
         source_type="cli", source_ref=session,
@@ -527,6 +577,9 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
         f"{' · code' if mode['mode'] == 'code' else ''}"
         f"{'' if perms == 'ask' else ' · ' + perms} · /help{_RESET}")
 
+    if resumed:
+        _show_last_exchange(mgr, out)
+
     status = _Status()
 
     def confirm(command: str) -> bool:
@@ -534,13 +587,15 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
         # prompt and what the person types.
         label = status.pause()
         try:
+            if mode["perms"] == "skip":
+                return True
             return (_auto_confirm(command) if mode["perms"] == "auto"
                     else _terminal_confirm(command))
         finally:
             status.resume(label)
 
     def confirm_edit(path: str, diff: str) -> bool:
-        if mode["perms"] in ("edit", "auto"):
+        if mode["perms"] in ("edit", "auto", "skip"):
             return True
         label = status.pause()
         try:
@@ -569,8 +624,9 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
             continue
         if user in ("/help", "?"):
             out("  /tools    full output of the last turn's tool calls\n"
-                "  /session  this session's name (resume: amebo -c, or "
-                "AMEBO_CLI_SESSION=<name> amebo)\n"
+                "  /resume   list past sessions and switch to one (amebo -r; "
+                "amebo -c resumes the last)\n"
+                "  /session  this session's name\n"
                 "  Ctrl-C    stop the current turn\n"
                 "  /auto     toggle auto mode: commands run without asking "
                 "(sudo, rm -rf, force-push, service stop still ask); amebo -y starts in it\n"
@@ -578,8 +634,8 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
                 "directory (amebo --mode=code)\n"
                 "  /model    show or switch: a provider (kimi, minimax, anthropic) or a "
                 "model id, e.g. /model claude-opus-5-5 (amebo --model=…)\n"
-                "  /permissions  ask | edit | auto — what runs without asking "
-                "(amebo --permissions=edit)\n"
+                "  /permissions  ask | edit | auto | skip — what runs without asking "
+                "(amebo --permissions=edit; skip: nothing asks, amebo --skip-permissions)\n"
                 "  exit      quit")
             continue
         if user in ("/auto", "/config"):
@@ -625,7 +681,20 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
                 "ask": "file edits and commands ask",
                 "edit": "file edits run; commands ask",
                 "auto": "everything runs; sudo, rm -rf, force-push, service stop still ask",
+                "skip": "everything runs, nothing asks",
             }[mode["perms"]])
+            continue
+        if user == "/resume" or user.startswith("/resume "):
+            picked_ref = _choose_session(uid, user[len("/resume"):].strip(), out)
+            if picked_ref:
+                session = picked_ref
+                mgr = ConversationManager(
+                    source_type="cli", source_ref=session,
+                    instance_slug=os.getenv("AMEBO_CLI_INSTANCE", "whatscookin"),
+                )
+                code_history.clear()
+                last_trace = []
+                _show_last_exchange(mgr, out)
             continue
         if user == "/session":
             out(f"  {session}")
@@ -678,7 +747,10 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
                 code_history.clear()
         # Persist only the clean question/answer pair (not tool scaffolding) and
         # compact if over threshold.
-        mgr.add_exchange(user, answer)
+        try:
+            mgr.add_exchange(user, answer)
+        except Exception as exc:  # the answer is shown; don't lose the session
+            out(f"\n  {_DIM}not saved to history: {exc}{_RESET}")
     return 0
 
 
