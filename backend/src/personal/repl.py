@@ -345,7 +345,8 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
               out, status, trace: List[Tuple[str, str]],
               max_tokens: int = _MAX_TOKENS,
               work_out: Optional[List[Dict]] = None,
-              max_rounds: int = _MAX_TOOL_ROUNDS) -> str:
+              max_rounds: int = _MAX_TOOL_ROUNDS,
+              notes: Optional[List[str]] = None) -> str:
     """One user turn: call the model, run tool rounds, return the final text.
     `messages` is the full history+question from ConversationManager.build_messages;
     tool-round scaffolding stays local and is NOT persisted (only the final answer
@@ -372,6 +373,8 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
 
         work.append({"role": "assistant", "content": _serialize_blocks(resp.content)})
         if resp.stop_reason != "tool_use":
+            if resp.stop_reason == "max_tokens" and notes is not None:
+                notes.append("(cut off at the length limit — say continue for the rest)")
             return "".join(b.text for b in resp.content if b.type == "text").strip()
 
         results = []
@@ -398,6 +401,10 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
                     status.start(label)
                     try:
                         res = tool.execute(b.input, ctx) or ""
+                    except Exception as exc:
+                        # A broken tool is the model's to work around, not
+                        # the end of the turn (and not a provider error).
+                        res = f"Error: {b.name} failed: {type(exc).__name__}: {exc}"
                     finally:
                         status.stop()
             trace.append((label, str(res)))
@@ -464,7 +471,19 @@ def _show_last_exchange(mgr, out):
     from src.db.repositories.thread_repo import ThreadRepo
     for t in ThreadRepo().get_turns(mgr.thread_id)[-2:]:
         who = "you ›" if t["role"] == "user" else "amebo ›"
-        out(f"{_DIM}{who} {t['content']}{_RESET}")
+        out(f"{_DIM}{who} {_clip_lines(t['content'])}{_RESET}")
+
+
+def _clip_lines(text: str, lines: int = 8) -> str:
+    """The first few lines and the end of a long turn, so a resumed pasted
+    document or long answer does not fill the screen."""
+    rows = []
+    for ln in str(text).splitlines():
+        rows += [ln[i:i + _width()] for i in range(0, max(len(ln), 1), _width())]
+    if len(rows) <= lines:
+        return str(text)
+    keep = lines - 2
+    return "\n".join(rows[:keep] + [f"  … {len(rows) - keep - 1} more lines …", rows[-1]])
 
 
 def _setup_readline():
@@ -592,7 +611,10 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
     if interactive:
         _setup_readline()
     mode = {"mode": start_mode, "perms": perms}
-    tctx = {"org_context": ctx, "org_id": org_id}
+    from src.services.goal_dispatcher import primary_workspace_id
+    # workspace_id scopes Slack history search to this org's workspace.
+    tctx = {"org_context": ctx, "org_id": org_id,
+            "workspace_id": primary_workspace_id(org_id)}
 
     code_history: List[Dict] = []
 
@@ -769,13 +791,15 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
             messages = code_history + [messages[-1]]
         last_trace = []
         work: List[Dict] = []
+        notes: List[str] = []
         try:
             answer = _run_turn(llm["client"], llm["model"], system_prompt, messages,
                                tools_for(mode["mode"]), tctx,
                                principal, out, status, last_trace,
                                max_tokens=_CODE_MAX_TOKENS if coding else _MAX_TOKENS,
                                work_out=work,
-                               max_rounds=_CODE_MAX_TOOL_ROUNDS if coding else _MAX_TOOL_ROUNDS)
+                               max_rounds=_CODE_MAX_TOOL_ROUNDS if coding else _MAX_TOOL_ROUNDS,
+                               notes=notes)
         except KeyboardInterrupt:
             status.stop()
             out(f"\n  {_DIM}interrupted{_RESET}")
@@ -785,6 +809,8 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
             out(f"\n  error: {_error_line(exc, llm['provider'])}")
             continue
         out(f"\n{_BOLD}amebo ›{_RESET} {answer}")
+        for note in notes:
+            out(f"  {_DIM}{note}{_RESET}")
         if work and work[-1]["role"] == "assistant" and work[-1]["content"] and \
                 len(json.dumps(work)) // 4 < _CODE_HISTORY_MAX_TOKENS:
             code_history[:] = work
@@ -792,10 +818,17 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
             code_history.clear()
         # Persist only the clean question/answer pair (not tool scaffolding) and
         # compact if over threshold.
+        # Past the threshold this also summarizes older turns, a model call
+        # that can take a while: show it, and let Ctrl-C skip it.
+        status.start("saving")
         try:
             mgr.add_exchange(user, answer)
+        except KeyboardInterrupt:
+            out(f"\n  {_DIM}interrupted while saving — this exchange may not be in history{_RESET}")
         except Exception as exc:  # the answer is shown; don't lose the session
             out(f"\n  {_DIM}not saved to history: {exc}{_RESET}")
+        finally:
+            status.stop()
     return 0
 
 

@@ -392,26 +392,7 @@ class GoalDispatcher:
     # ------------------------------------------------------------- Context
 
     def _load_primary_workspace_id(self, org_id: int) -> Optional[str]:
-        """
-        Return the org's primary Slack workspace_id (or the first one
-        linked) so tools that need workspace isolation (semantic search,
-        slack ingestion) can be scoped.
-        """
-        from src.db.connection import DatabaseConnection
-        conn = DatabaseConnection.get_connection()
-        try:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "SELECT workspace_id FROM org_workspaces "
-                    "WHERE org_id = %s "
-                    "ORDER BY is_primary DESC, added_at ASC "
-                    "LIMIT 1",
-                    (org_id,),
-                )
-                row = cur.fetchone()
-                return row[0] if row else None
-        finally:
-            DatabaseConnection.return_connection(conn)
+        return primary_workspace_id(org_id)
 
     def _load_instance(self, org_id: int) -> Optional[Dict[str, Any]]:
         """First instance for this org, if any. Returns None when missing."""
@@ -1106,3 +1087,26 @@ class GoalDispatcher:
         if md and self._dispatch_count(goal["id"]) >= md:
             return f"dispatch budget exhausted ({md})"
         return None
+
+
+def primary_workspace_id(org_id: int) -> Optional[str]:
+    """
+    Return the org's primary Slack workspace_id (or the first one
+    linked) so tools that need workspace isolation (semantic search,
+    slack ingestion) can be scoped.
+    """
+    from src.db.connection import DatabaseConnection
+    conn = DatabaseConnection.get_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT workspace_id FROM org_workspaces "
+                "WHERE org_id = %s "
+                "ORDER BY is_primary DESC, added_at ASC "
+                "LIMIT 1",
+                (org_id,),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
+    finally:
+        DatabaseConnection.return_connection(conn)
