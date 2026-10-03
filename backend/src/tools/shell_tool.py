@@ -41,12 +41,18 @@ _READONLY_CMDS = {
     "uptime", "free", "ps", "cut", "sort", "uniq", "diff", "tr", "nl",
     "column", "jq", "awk", "basename", "dirname", "realpath", "readlink",
     "md5sum", "sha256sum", "true", "test", "[", "cd", "less", "more",
-    "ss", "journalctl", "abra", "systemctl", "sed", "curl",
+    "ss", "journalctl", "abra", "systemctl", "sed", "curl", "odoo-cli",
+    "mcp-taiga",
 }
 # Commands from the list that are read-only ONLY with these first arguments.
 _SUBCMD_READONLY = {
     "systemctl": {"status", "is-active", "is-enabled", "list-units", "show", "cat"},
     "abra": {"search", "about", "read", "who", "names", "related", "refs", "when"},
+    "odoo-cli": {"status", "user-list", "contact-list", "contact-search",
+                 "contact-export", "module-list", "agenda", "comms",
+                 "campaign-list", "campaign-show", "contact-list-tag"},
+    "mcp-taiga": {"list", "show", "projects", "members", "statuses", "users",
+                  "earnings"},
 }
 # sed/curl: read-only unless they write.
 _WRITE_FLAGS = {
