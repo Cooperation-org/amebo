@@ -441,11 +441,15 @@ def _ago(s) -> str:
     return "just now"
 
 
-def _choose_session(uid: int, arg: str, out, ask=input) -> Optional[str]:
+def _choose_session(uid: int, arg: str, out, ask=input,
+                    current: Optional[str] = None) -> Optional[str]:
     """List this user's past CLI sessions and return the chosen source_ref.
     arg: a number from the list, or empty to show the list and ask."""
     from src.db.repositories.thread_repo import ThreadRepo
-    rows = ThreadRepo().list_by_ref_prefix("cli", f"cli-{uid}-")
+    # The session you are in is not one to resume; leaving it in made
+    # `/resume 1` a silent no-op once it had a turn (it is the newest).
+    rows = [r for r in ThreadRepo().list_by_ref_prefix("cli", f"cli-{uid}-")
+            if r["source_ref"] != current]
     if not rows:
         out("  no past sessions")
         return None
@@ -753,7 +757,8 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
             }[mode["perms"]])
             continue
         if user == "/resume" or user.startswith("/resume "):
-            picked_ref = _choose_session(uid, user[len("/resume"):].strip(), out)
+            picked_ref = _choose_session(uid, user[len("/resume"):].strip(), out,
+                                         current=session)
             if picked_ref:
                 session = picked_ref
                 mgr = ConversationManager(
