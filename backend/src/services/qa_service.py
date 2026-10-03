@@ -984,6 +984,14 @@ Answer the question based on this context. Be comprehensive and include all rele
                 # text, so this is a model/provider failure, not a spent budget.
                 answer_text = "I wasn't able to generate an answer. Try rephrasing your question."
 
+            # Sites named in the answer that no tool returned get listed under it.
+            from src.services.source_check import mark_unopened
+            answer_text = mark_unopened(answer_text, [
+                c.get("content", "") for m in cached_messages
+                if m.get("role") == "user" and isinstance(m.get("content"), list)
+                for c in m["content"]
+                if isinstance(c, dict) and c.get("type") == "tool_result"])
+
             # Clean up for Slack formatting
             answer_text = re.sub(r':?\w*:?\s*\*?\*?Confidence:\s*\d+%\s*\*?\*?\s*[-–]\s*.+?(?:\n|$)',
                                  '', answer_text, flags=re.IGNORECASE | re.MULTILINE).strip()

@@ -408,6 +408,7 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
     is), keeping the cross-turn prefix clean and byte-stable. Each tool call is
     printed as one line; its output goes to `trace` (for /tools), not the screen."""
     from src.tools.registry import get_tool, trust_gate
+    from src.services.source_check import mark_unopened
 
     work = list(messages) if work_out is None else work_out
     work[:] = list(messages)
@@ -433,7 +434,8 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
         if resp.stop_reason != "tool_use":
             if resp.stop_reason == "max_tokens" and notes is not None:
                 notes.append("(cut off at the length limit — say continue for the rest)")
-            return "".join(b.text for b in resp.content or [] if b.type == "text").strip()
+            text = "".join(b.text for b in resp.content or [] if b.type == "text").strip()
+            return mark_unopened(text, _tool_outputs(work))
 
         results = []
         for b in resp.content:
@@ -478,6 +480,13 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
     stopped = f"(stopped after {max_rounds} rounds of tool calls — say continue to keep going)"
     work.append({"role": "assistant", "content": [{"type": "text", "text": stopped}]})
     return stopped
+
+
+def _tool_outputs(work: List[Dict]) -> List[str]:
+    """Every tool result in this turn's messages, as text."""
+    return [str(c.get("content", "")) for m in work if m["role"] == "user"
+            and isinstance(m["content"], list)
+            for c in m["content"] if isinstance(c, dict) and c.get("type") == "tool_result"]
 
 
 def _resume_session(uid: int) -> Optional[str]:
