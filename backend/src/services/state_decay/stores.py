@@ -313,7 +313,8 @@ class AbraWorkingMemoryPolicy:
                 params.append(cutoff)
                 cur.execute(
                     f"""
-                    SELECT DISTINCT c.id, c.catcode, c.note_date, c.created_at
+                    SELECT DISTINCT c.id, c.catcode, c.note_date, c.created_at,
+                           COALESCE(c.note_date::timestamptz, c.created_at) AS aged_at
                     FROM content c
                     JOIN bindings b
                       ON b.target_type = 'content'
@@ -321,7 +322,7 @@ class AbraWorkingMemoryPolicy:
                     WHERE b.scope = %s
                       {catcode_clause}
                       AND COALESCE(c.note_date::timestamptz, c.created_at) < %s
-                    ORDER BY COALESCE(c.note_date::timestamptz, c.created_at) ASC
+                    ORDER BY aged_at ASC
                     """,
                     params,
                 )
