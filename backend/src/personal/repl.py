@@ -56,6 +56,9 @@ _SHELL_NOTE = (
     "For copy (taglines, pitches, messages) start from the team's own words "
     "in those sources, say where each came from, and mark lines you wrote. "
     "Name a source only if a tool call in this session returned it."
+    "\n\nWrite tools (Taiga, CRM, MAIN.md and the rest) show the person a "
+    "run? [y/N] prompt in the terminal before they execute. Call them "
+    "directly; do not draft and ask for approval in text first."
 )
 
 # The personal session's tool set: shell + amebo's safe read tools.
@@ -384,11 +387,12 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
         finally:
             status.stop()
 
-        work.append({"role": "assistant", "content": _serialize_blocks(resp.content)})
+        # MiniMax can return content=None (no blocks at all).
+        work.append({"role": "assistant", "content": _serialize_blocks(resp.content or [])})
         if resp.stop_reason != "tool_use":
             if resp.stop_reason == "max_tokens" and notes is not None:
                 notes.append("(cut off at the length limit — say continue for the rest)")
-            return "".join(b.text for b in resp.content if b.type == "text").strip()
+            return "".join(b.text for b in resp.content or [] if b.type == "text").strip()
 
         results = []
         for b in resp.content:
@@ -805,6 +809,11 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
         # is question/answer only; a model shown answers with no tool call
         # behind them claims edits it never made, and names sources it never
         # read ("which doc said that?").
+        # Today's date rides on this question only: the system prefix stays
+        # cacheable, and without it the model guessed dates ("due today
+        # (2026-09-19)" two weeks late).
+        messages[-1] = {**messages[-1], "content":
+                        f"[{time.strftime('%Y-%m-%d %A')}] {messages[-1]['content']}"}
         if code_history:
             messages = code_history + [messages[-1]]
         last_trace = []
@@ -829,6 +838,11 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
         out(f"\n{_BOLD}amebo ›{_RESET} {_render(answer)}")
         for note in notes:
             out(f"  {_DIM}{note}{_RESET}")
+        if not answer:
+            # An empty assistant turn in the history makes MiniMax return no
+            # content on every later call, so the session would be stuck.
+            out(f"  {_DIM}(no answer came back — not saved; ask again){_RESET}")
+            continue
         if work and work[-1]["role"] == "assistant" and work[-1]["content"] and \
                 len(json.dumps(work)) // 4 < _CODE_HISTORY_MAX_TOKENS:
             code_history[:] = work
