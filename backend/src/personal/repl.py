@@ -55,7 +55,10 @@ _SHELL_NOTE = (
     "and the shell (grep, cat) for the rest, e.g. Internal/ strategy docs. "
     "For copy (taglines, pitches, messages) start from the team's own words "
     "in those sources, say where each came from, and mark lines you wrote. "
-    "Name a source only if a tool call in this session returned it."
+    "Name a source only if a tool call in this session returned it. "
+    "When asked to run, check or look something up, call the tool first: "
+    "never state a command's output, exit status, or a record's contents "
+    "unless a tool call in this turn returned it."
     "\n\nWrite tools (Taiga, CRM, MAIN.md and the rest) show the person a "
     "run? [y/N] prompt in the terminal before they execute. Call them "
     "directly; do not draft and ask for approval in text first."
@@ -323,12 +326,16 @@ def _cache_prefix(
     return system_blocks, out_msgs
 
 
-def _serialize_blocks(content) -> List[Dict]:
+def _serialize_blocks(content, keep_thinking: bool = False) -> List[Dict]:
     """SDK content blocks -> plain dicts, so the next request re-serializes them
-    identically (raw SDK blocks can hit a re-serialization bug and shift bytes)."""
+    identically (raw SDK blocks can hit a re-serialization bug and shift bytes).
+    With thinking on, the thinking blocks are sent back with the tool round."""
     out = []
     for b in content:
-        if b.type == "text":
+        if b.type == "thinking" and keep_thinking:
+            out.append({"type": "thinking", "thinking": b.thinking,
+                        "signature": getattr(b, "signature", "") or ""})
+        elif b.type == "text":
             out.append({"type": "text", "text": b.text})
         elif b.type == "tool_use":
             out.append({"type": "tool_use", "id": b.id, "name": b.name, "input": b.input})
@@ -376,12 +383,25 @@ def _cli_read(name: str, inp: Dict) -> bool:
     return bool(reads and words and words[0] in reads)
 
 
+# MiniMax-M3 with thinking off answered "passwordless sudo works" without
+# running anything in 7 of 10 tries on the full CLI prompt; with thinking on it
+# called the tool 10 of 10. 0 turns it off.
+_THINKING_TOKENS = int(os.getenv("AMEBO_CLI_THINKING_TOKENS", "1500"))
+
+
+def _thinking_for(provider: str) -> Optional[Dict]:
+    if provider == "minimax" and _THINKING_TOKENS > 0:
+        return {"type": "enabled", "budget_tokens": _THINKING_TOKENS}
+    return None
+
+
 def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
               out, status, trace: List[Tuple[str, str]],
               max_tokens: int = _MAX_TOKENS,
               work_out: Optional[List[Dict]] = None,
               max_rounds: int = _MAX_TOOL_ROUNDS,
-              notes: Optional[List[str]] = None) -> str:
+              notes: Optional[List[str]] = None,
+              thinking: Optional[Dict] = None) -> str:
     """One user turn: call the model, run tool rounds, return the final text.
     `messages` is the full history+question from ConversationManager.build_messages;
     tool-round scaffolding stays local and is NOT persisted (only the final answer
@@ -397,6 +417,8 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
                       system=system_blocks, messages=cached)
         if tools:
             kwargs["tools"] = tools
+        if thinking:
+            kwargs["thinking"] = thinking
         # Last round: force an answer instead of another tool call.
         if _round == max_rounds and tools:
             kwargs["tool_choice"] = {"type": "none"}
@@ -846,7 +868,8 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
                                max_tokens=_CODE_MAX_TOKENS if coding else _MAX_TOKENS,
                                work_out=work,
                                max_rounds=_CODE_MAX_TOOL_ROUNDS if coding else _MAX_TOOL_ROUNDS,
-                               notes=notes)
+                               notes=notes,
+                               thinking=_thinking_for(llm["provider"]))
         except KeyboardInterrupt:
             status.stop()
             out(f"\n  {_DIM}interrupted{_RESET}")
