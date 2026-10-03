@@ -9,16 +9,20 @@ Safety constraints (all enforced before any network call):
   rules.
 - Response size capped (default 256 KB) to avoid memory exhaustion.
 - Response time capped (default 10 s).
-- Only text-like content types returned to the model.
+- Only text-like content types returned to the model; HTML is reduced to
+  its visible text.
 
 The model never sees raw bytes — only decoded text, truncated as needed.
 """
 
 from __future__ import annotations
 
+import html
 import ipaddress
 import logging
+import re
 import socket
+from html.parser import HTMLParser
 from typing import Tuple
 from urllib.parse import urlparse
 
@@ -70,6 +74,62 @@ def _resolve_and_check(host: str) -> Tuple[bool, str]:
         if not _is_public_ip(addr):
             return False, f"refusing to fetch from non-public address {addr}"
     return True, "ok"
+
+
+_SKIP_TAGS = {"script", "style", "noscript", "svg", "template", "head", "iframe"}
+_BLOCK_TAGS = {
+    "p", "div", "br", "li", "ul", "ol", "tr", "td", "th", "table", "section",
+    "article", "header", "footer", "nav", "aside", "main", "h1", "h2", "h3",
+    "h4", "h5", "h6", "blockquote", "pre", "dt", "dd", "figcaption", "title",
+}
+
+
+class _TextExtractor(HTMLParser):
+    """Visible text of an HTML page: drops scripts, styles and markup, keeps
+    the title and line breaks at block elements."""
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts: list = []
+        self.title = ""
+        self._skip = 0
+        self._in_title = False
+
+    def handle_starttag(self, tag, attrs):
+        if tag == "title":
+            self._in_title = True
+        elif tag in _SKIP_TAGS:
+            self._skip += 1
+        if tag in _BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag):
+        if tag == "title":
+            self._in_title = False
+        elif tag in _SKIP_TAGS and self._skip:
+            self._skip -= 1
+        if tag in _BLOCK_TAGS:
+            self.parts.append("\n")
+
+    def handle_data(self, data):
+        if self._in_title:
+            self.title += data
+        elif not self._skip:
+            self.parts.append(data)
+
+
+def _html_to_text(markup: str) -> str:
+    parser = _TextExtractor()
+    try:
+        parser.feed(markup)
+        parser.close()
+    except Exception:  # malformed markup: keep what was parsed
+        pass
+    lines = (re.sub(r"[ \t\u00a0]+", " ", ln).strip()
+             for ln in "".join(parser.parts).splitlines())
+    body = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    title = html.unescape(" ".join(parser.title.split()))
+    return (f"Title: {title}\n\n" if title else "") + body
 
 
 def _content_is_text(content_type: str) -> bool:
@@ -144,9 +204,13 @@ def http_fetch(tool_input: dict, context: dict) -> str:
                 text = raw[:max_bytes].decode("utf-8", errors="replace")
 
             truncated = len(raw) >= max_bytes
+            # The model reads page text, not markup: raw HTML is mostly scripts
+            # and styles, and the model then claims facts it never saw.
+            if "html" in content_type.lower():
+                text = _html_to_text(text)
             header = f"URL: {resp.url}\nStatus: {resp.status_code}\n"
             if truncated:
-                header += f"[truncated to {max_bytes} bytes]\n"
+                header += f"[page truncated at {max_bytes} bytes before text extraction]\n"
             return header + "\n" + text
 
     except requests.exceptions.TooManyRedirects:
