@@ -54,6 +54,13 @@ class TestShellExec:
         finally:
             shell_tool.SHELL_TIMEOUT_S = 60
 
+    def test_secrets_not_passed_to_commands(self, monkeypatch):
+        monkeypatch.setenv("YDC_API_KEY", "sk-should-not-leak")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pw-should-not-leak")
+        monkeypatch.setenv("AMEBO_HARMLESS_SETTING", "visible")
+        out = shell_impl({"command": "env"}, {})
+        assert "should-not-leak" not in out and "visible" in out
+
     def test_output_truncated(self):
         out = shell_impl({"command": "seq 1 100000"}, {"confirm": lambda c: True})
         assert "truncated" in out

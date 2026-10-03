@@ -134,6 +134,16 @@ def _is_readonly(command: str) -> bool:
     return all(_simple_is_readonly(toks) for toks in segs)
 
 
+# Env var names that hold credentials. This process has the backend .env loaded
+# (DB passwords, Slack/LLM/search keys); a child command must not inherit them,
+# or `env` hands them to the model and the terminal.
+_SECRET_ENV = re.compile(r"KEY|TOKEN|SECRET|PASSW|CRED|DATABASE_URL|DSN", re.I)
+
+
+def _child_env() -> Dict[str, str]:
+    return {k: v for k, v in os.environ.items() if not _SECRET_ENV.search(k)}
+
+
 def shell_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
     command = (tool_input.get("command") or "").strip()
     if not command:
@@ -154,6 +164,7 @@ def shell_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
             ["bash", "-lc", command],
             capture_output=True, text=True, timeout=SHELL_TIMEOUT_S,
             cwd=(context or {}).get("cwd") or None,
+            env=_child_env(),
         )
     except subprocess.TimeoutExpired:
         return f"Error: command timed out after {SHELL_TIMEOUT_S}s."
