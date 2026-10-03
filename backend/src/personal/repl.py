@@ -44,18 +44,32 @@ _SHELL_NOTE = (
     "Think a lot, work a lot, speak little — concise and concrete, like a "
     "capable colleague. When a task needs commands, just use the shell tool. "
     "Do not narrate what you are about to do; only the final answer is shown. "
-    "Answer in plain text for a terminal: short lines, no headings, no tables. "
+    "Answer in plain text for a terminal: short lines, no headings, no tables, "
+    "no asterisks or other markdown. "
     "No closing offers or follow-up questions."
+    "\n\nThis session is mostly a founder thinking out loud: go-to-market, "
+    "positioning, messaging, who to reach and what to say. Answer the strategy "
+    "question; do not steer toward building or coding unless asked. "
+    "Team knowledge is in abra_search (search, about, read) and the projects "
+    "repo /opt/shared/projects: list_projects and read_main_md for Active/, "
+    "and the shell (grep, cat) for the rest, e.g. Internal/ strategy docs. "
+    "search_knowledge_base and lookup_contact hold nothing for this team. "
+    "For copy (taglines, pitches, messages) start from the team's own words "
+    "in those sources, say where each came from, and mark lines you wrote. "
+    "Name a source only if a tool call in this session returned it."
 )
 
 # The personal session's tool set: shell + amebo's safe read tools.
-# Knowledge is abra_search (search / about / read). search_knowledge_base and
-# lookup_contact read the per-org local tables (empty for whatscookin) and
-# still arrive via the instance's DEFAULT_TOOLS in tools_for.
+# Knowledge is abra_search (search / about / read).
 _PERSONAL_TOOLS = [
     "shell", "list_projects", "read_main_md", "abra_search",
     "web_search", "web_research", "http_fetch",
 ]
+# Instance tools the CLI does not offer. search_knowledge_base and
+# lookup_contact read the per-org local tables, empty for this instance, so the
+# model answered "abra has nothing on X" when abra had it. ask_user and
+# goal_done only work inside a goal run; here they always return an error.
+_NOT_IN_CLI = {"search_knowledge_base", "lookup_contact", "ask_user", "goal_done"}
 
 # Modes: `default` is the general assistant, unchanged. `code` is opt-in
 # (--mode=code or /mode code): adds file tools and a coding note, and runs
@@ -563,7 +577,7 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
         schemas = [_tool_to_schema(get_tool(n)) for n in names if get_tool(n)]
         have = {t["name"] for t in schemas}
         schemas += [t for t in get_tools_for_instance(mgr._instance, admin=True)
-                    if t["name"] not in have]
+                    if t["name"] not in have and t["name"] not in _NOT_IN_CLI]
         return schemas
 
     # The directory amebo was started from (the launcher cds into the backend).
@@ -813,7 +827,7 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
             status.stop()
             out(f"\n  error: {_error_line(exc, llm['provider'])}")
             continue
-        out(f"\n{_BOLD}amebo ›{_RESET} {answer}")
+        out(f"\n{_BOLD}amebo ›{_RESET} {_render(answer)}")
         for note in notes:
             out(f"  {_DIM}{note}{_RESET}")
         if work and work[-1]["role"] == "assistant" and work[-1]["content"] and \
@@ -845,6 +859,15 @@ def _valid_utf8(s: str) -> str:
         return s.encode("utf-8", "surrogateescape").decode("utf-8", "replace")
     except UnicodeEncodeError:
         return s.encode("utf-8", "replace").decode("utf-8")
+
+
+_MD_BOLD = re.compile(r"\*\*(.+?)\*\*|(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])")
+
+
+def _render(text: str) -> str:
+    """Markdown/Slack bold (**x**, *x*) as terminal bold, without the
+    asterisks. The identity prompt is written for Slack."""
+    return _MD_BOLD.sub(lambda m: f"{_BOLD}{m.group(1) or m.group(2)}{_RESET}", text)
 
 
 def _indent(s: str, n: int = 4) -> str:
