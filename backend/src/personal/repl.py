@@ -83,7 +83,9 @@ _CODE_NOTE = (
     "paths start there. Read a file before changing it. Change files with "
     "edit_file (exact string replace) or write_file (new or whole files), not "
     "with shell redirects or sed -i. After a change, run the relevant tests if "
-    "the project has them."
+    "the project has them. Install packages only into the project's own "
+    "virtualenv, never with --user or --break-system-packages; if a tool is "
+    "missing and there is no venv, say so instead."
 )
 
 # Permissions: what runs without asking.
