@@ -860,7 +860,7 @@ Answer the question based on this context. Be comprehensive and include all rele
             logger.info(f"[qa] model={qa_model} tools={[t['name'] for t in tools]}")
 
             sources = Sources(start=next_tag_number(cached_messages),
-                              known=" ".join(mgr.opened_sites()) + " " + question)
+                              known=" ".join(mgr.opened_sites()), said=question)
 
             def _fix(request: str) -> str:
                 cached_messages.append({"role": "assistant", "content": last_answer[0] or "(no answer)"})

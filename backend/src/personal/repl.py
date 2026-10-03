@@ -871,7 +871,7 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
         work: List[Dict] = []
         notes: List[str] = []
         sources = Sources(start=next_tag_number(messages),
-                          known=" ".join(mgr.opened_sites()) + " " + user)
+                          known=" ".join(mgr.opened_sites()), said=user)
 
         def run(msgs):
             return _run_turn(llm["client"], llm["model"], system_prompt + CITE_NOTE, msgs,

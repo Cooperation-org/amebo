@@ -13,7 +13,7 @@ def test_cited_tag_must_exist():
 
 
 def test_site_must_be_opened_or_written_by_person():
-    s = Sources(known="earlier.com my question about senja.io")
+    s = Sources(known="earlier.com", said="my question about senja.io")
     assert s.problems("senja.io and earlier.com") == []
     assert s.problems("boast.io") == ["boast.io was not opened"]
 
@@ -44,3 +44,12 @@ def test_failed_fetch_is_not_a_source():
     s.add("x", "Error: request timed out after 10s.")
     assert s.items == []
     assert s.problems("trustpilot.com charges $99") == ["trustpilot.com was not opened"]
+
+
+def test_quote_must_come_from_a_tool_or_the_person():
+    s = Sources(said='what does "deep tech for humans" mean')
+    s.add("https://linkedtrust.us", "Title: LinkedTrust: Deep Tech, Human Trust")
+    assert s.problems('Tagline: "Deep tech, human trust." [S1]') == []
+    assert s.problems('you wrote "deep tech for humans"') == []
+    assert s.problems('Tagline: "Build a reputation that follows you."') == [
+        'quotes "Build a reputation that follows you." but no tool returned it']

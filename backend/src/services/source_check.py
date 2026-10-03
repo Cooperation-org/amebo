@@ -12,6 +12,7 @@ A failing answer is sent back to the model to fix (it may use tools); if it
 still fails, the failing sentences are removed. Nothing unchecked is shown.
 """
 
+import logging
 import re
 from typing import Iterable, List, Optional, Tuple
 
@@ -25,6 +26,8 @@ CITE_NOTE = (
 )
 
 MAX_FIXES = 2
+
+logger = logging.getLogger(__name__)
 
 # Web domains only: "MAIN.md", "app.py", "Node.js" are files or names, not sites.
 _FILE_EXTS = {
@@ -40,6 +43,8 @@ _DOMAIN = re.compile(
 _TAG = re.compile(r"\[S(\d+)\]")
 # A tool result that is an error or a blocked page is not a source.
 _FAILED = re.compile(r"^(?:Error|Refused|Unknown tool)\b|^URL: \S+\nStatus: [45]\d\d\b")
+# Quoted text must be word for word from a tool result or the person.
+_QUOTE = re.compile(r'["\u201c]([^"\u201c\u201d\n]{12,300})["\u201d]')
 _CHECK_WORDS = re.compile(
     r"\b(verified|I checked|checked against|confirmed (?:on|in|by|with|against)|"
     r"according to|I read|I fetched|I looked at|I looked up|I searched)\b",
@@ -60,6 +65,10 @@ def domains(text: str) -> List[str]:
     return seen
 
 
+def _norm(text: str) -> str:
+    return " ".join(re.sub(r"[^\w\s]", " ", text.lower()).split())
+
+
 def source_label(name: str, inp) -> str:
     """Short name for a source: the URL for a fetched page, else tool + argument."""
     inp = inp or {}
@@ -78,11 +87,12 @@ def next_tag_number(messages: Iterable[dict]) -> int:
 class Sources:
     """The tool results of one answer, numbered."""
 
-    def __init__(self, start: int = 1, known: str = ""):
-        # known: text whose websites count as opened — earlier opened sites in
-        # the thread and the person's own message.
+    def __init__(self, start: int = 1, known: str = "", said: str = ""):
+        # known: websites opened earlier in the thread. said: the person's own
+        # message — sites and words in it are theirs, not claims to check.
         self._next = start
-        self._known = known.lower()
+        self._known = (known + " " + said).lower()
+        self._said = said
         self.items: List[Tuple[int, str, str]] = []   # (n, label, content)
 
     def add(self, label: str, content: str) -> str:
@@ -107,6 +117,9 @@ class Sources:
         out = [f"[S{n}] does not exist" for n in sorted({int(x) for x in _TAG.findall(answer)})
                if int(n) not in have]
         out += [f"{d} was not opened" for d in domains(answer) if d not in returned]
+        texts = _norm(" ".join(c for _, _, c in self.items) + " " + self._said)
+        out += [f'quotes "{q[:40]}" but no tool returned it'
+                for q in _QUOTE.findall(answer) if _norm(q) not in texts]
         if not self.items:
             out += [f'says "{w}" but no tool ran'
                     for w in dict.fromkeys(m.group(0) for m in _CHECK_WORDS.finditer(answer))]
@@ -141,7 +154,9 @@ def finish(answer: str, sources: Sources, retry) -> str:
         bad = sources.problems(answer)
         if not bad:
             break
+        logger.info("source check: sent back (%s)", "; ".join(bad))
         answer = retry(sources.fix_request(bad)) or ""
     if sources.problems(answer):
+        logger.info("source check: still failing, removing sentences")
         answer = sources.strip(answer) or "I could not check an answer to that."
     return sources.footer(answer)
