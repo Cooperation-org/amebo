@@ -26,6 +26,7 @@ Run (as the owner uid):
 from __future__ import annotations
 
 import json
+import re
 import os
 import shutil
 import sys
@@ -73,7 +74,7 @@ _CODE_NOTE = (
 #   ask   reads run; file edits and other commands ask (the default)
 #   edit  reads and file edits run; other commands ask
 #   auto  everything runs except _ALWAYS_ASK commands
-#   skip  everything runs, nothing asks (amebo --skip-permissions)
+#   skip  everything runs; only sudo/su asks (amebo --skip-permissions)
 _PERMISSIONS = ("ask", "edit", "auto", "skip")
 
 # Tool rounds allowed within a single turn before we force an answer.
@@ -83,7 +84,7 @@ _MAX_TOKENS = int(os.getenv("AMEBO_CLI_MAX_TOKENS", "4000"))
 _CODE_MAX_TOOL_ROUNDS = int(os.getenv("AMEBO_CLI_CODE_MAX_TOOL_ROUNDS", "60"))
 # Code mode writes whole files through tool calls; 4000 cuts them off.
 _CODE_MAX_TOKENS = int(os.getenv("AMEBO_CLI_CODE_MAX_TOKENS", "16000"))
-# Code mode keeps each turn's tool calls in the session history (see run_repl).
+# Each turn's tool calls stay in the session history (see run_repl).
 # Past this estimated size it drops back to the stored, compacted history.
 _CODE_HISTORY_MAX_TOKENS = int(os.getenv("AMEBO_CLI_CODE_HISTORY_TOKENS", "80000"))
 
@@ -167,6 +168,16 @@ _ALWAYS_ASK = (
     "systemctl restart", "systemctl disable", "kill -9", "pkill", "killall",
     "chmod -r", "chown -r", "> /etc/", "> /dev/",
 )
+
+
+# Skip mode still asks before a command becomes root.
+_ELEVATE = re.compile(r"(^|[\s;&|(`$])(sudo|su|doas|pkexec)(\s|$)")
+
+
+def _skip_confirm(command: str) -> bool:
+    if _ELEVATE.search(command):
+        return _terminal_confirm(command)
+    return True
 
 
 def _auto_confirm(command: str) -> bool:
@@ -607,7 +618,7 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
         label = status.pause()
         try:
             if mode["perms"] == "skip":
-                return True
+                return _skip_confirm(command)
             return (_auto_confirm(command) if mode["perms"] == "auto"
                     else _terminal_confirm(command))
         finally:
@@ -670,7 +681,7 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
                 "  /model    show or switch: a provider (kimi, minimax, anthropic) or a "
                 "model id, e.g. /model claude-opus-5-5 (amebo --model=…)\n"
                 "  /permissions  ask | edit | auto | skip — what runs without asking "
-                "(amebo --permissions=edit; skip: nothing asks, amebo --skip-permissions)\n"
+                "(amebo --permissions=edit; skip: only sudo asks, amebo --skip-permissions)\n"
                 "  exit      quit")
             continue
         if user in ("/auto", "/config"):
@@ -716,7 +727,7 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
                 "ask": "file edits and commands ask",
                 "edit": "file edits run; commands ask",
                 "auto": "everything runs; sudo, rm -rf, force-push, service stop still ask",
-                "skip": "everything runs, nothing asks",
+                "skip": "everything runs; sudo still asks",
             }[mode["perms"]])
             continue
         if user == "/resume" or user.startswith("/resume "):
@@ -750,12 +761,12 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
         coding = mode["mode"] == "code"
         if coding:
             system_prompt += code_note
-            # Code mode replays this session's turns WITH their tool calls.
-            # The stored history is question/answer only, and a model shown
-            # answers like "Changed app.py" with no tool call behind them
-            # starts claiming changes it never made.
-            if code_history:
-                messages = code_history + [messages[-1]]
+        # Replay this session's turns WITH their tool calls. The stored history
+        # is question/answer only; a model shown answers with no tool call
+        # behind them claims edits it never made, and names sources it never
+        # read ("which doc said that?").
+        if code_history:
+            messages = code_history + [messages[-1]]
         last_trace = []
         work: List[Dict] = []
         try:
@@ -774,12 +785,11 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
             out(f"\n  error: {_error_line(exc, llm['provider'])}")
             continue
         out(f"\n{_BOLD}amebo ›{_RESET} {answer}")
-        if coding:
-            if work and work[-1]["role"] == "assistant" and work[-1]["content"] and \
-                    len(json.dumps(work)) // 4 < _CODE_HISTORY_MAX_TOKENS:
-                code_history[:] = work
-            else:
-                code_history.clear()
+        if work and work[-1]["role"] == "assistant" and work[-1]["content"] and \
+                len(json.dumps(work)) // 4 < _CODE_HISTORY_MAX_TOKENS:
+            code_history[:] = work
+        else:
+            code_history.clear()
         # Persist only the clean question/answer pair (not tool scaffolding) and
         # compact if over threshold.
         try:

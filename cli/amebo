@@ -21,7 +21,7 @@
 #         amebo -c     resume your last session
 #         amebo -r     list past sessions, pick one to resume
 #         amebo -y     auto mode: run commands without asking (destructive ones still ask)
-#         amebo --skip-permissions   nothing asks, including sudo and rm -rf
+#         amebo --skip-permissions   everything runs without asking, except sudo
 #         amebo --mode=code          opt-in code mode: file editing, runs in this directory
 #         amebo --permissions=ask|edit|auto|skip   what runs without asking (default: ask)
 #         amebo --model=kimi|minimax|anthropic|<model id>   e.g. --model=claude-opus-5-5
