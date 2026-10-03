@@ -30,11 +30,21 @@ MAX_CONTEXT_TOKENS = 150_000     # Stay under 200K model limit
 COMPACTION_THRESHOLD = 80_000    # Compact when thread history exceeds this
 COMPACTION_KEEP_TOKENS = 20_000  # Keep last ~20K tokens of turns after compaction
 SUMMARY_MAX_TOKENS = 2_000       # Cap summary size
+SUMMARY_TURN_CHARS = 24_000      # Longest single turn the summarizer sees whole
 
 
 def estimate_tokens(text: str) -> int:
     """Rough token estimate. Good enough for budget tracking."""
     return len(text) // CHARS_PER_TOKEN
+
+
+def _clip(text: str, limit: int = SUMMARY_TURN_CHARS) -> str:
+    """A turn as the summarizer sees it: whole, or head and tail when very long
+    (a pasted document often ends with the part that matters)."""
+    if len(text) <= limit:
+        return text
+    half = limit // 2
+    return f"{text[:half]}\n[... {len(text) - 2 * half} characters omitted ...]\n{text[-half:]}"
 
 
 class ConversationManager:
@@ -206,12 +216,20 @@ class ConversationManager:
         self._maybe_compact()
 
     def _maybe_compact(self):
-        """Compact old turns if total tokens exceed threshold."""
-        turns = self._thread_repo.get_turns(self.thread_id)
+        """Compact old turns if the history sent to the model exceeds threshold.
+
+        Counts only what build_messages sends: the summary plus the turns after
+        it. Counting every stored turn kept the total over the threshold forever
+        after the first compaction, so each later exchange re-summarized."""
+        thread = self._thread_repo.get_thread(self.thread_id)
+        summary = (thread or {}).get('summary') or ''
+        turns = self._thread_repo.get_turns(
+            self.thread_id,
+            after_turn_id=(thread or {}).get('summary_through_turn_id'))
         if not turns:
             return
 
-        total_tokens = sum(
+        total_tokens = estimate_tokens(summary) + sum(
             t.get('token_estimate') or estimate_tokens(t['content'])
             for t in turns
         )
@@ -220,11 +238,11 @@ class ConversationManager:
             return
 
         logger.info(f"Thread {self.thread_id}: {total_tokens} est. tokens, compacting")
-        self._compact(turns)
+        self._compact(turns, summary)
 
-    def _compact(self, turns: List[Dict]):
+    def _compact(self, turns: List[Dict], summary: str = ""):
         """
-        Summarize old turns, keep recent ones.
+        Summarize old turns (folded into the existing summary), keep recent ones.
         Mirrors Claude Code's conversation compaction strategy.
         """
         if len(turns) < 4:
@@ -241,19 +259,26 @@ class ConversationManager:
                 break
 
         keep_from_idx = min(keep_from_idx, len(turns) - 2)
+        # The kept turns follow the summary pair (user, assistant), so they
+        # must start with a user turn; an assistant turn there makes two
+        # assistant messages in a row, and models then ignore the summary.
+        while 0 < keep_from_idx < len(turns) and turns[keep_from_idx]['role'] != 'user':
+            keep_from_idx -= 1
         if keep_from_idx <= 0:
             return
 
         old_turns = turns[:keep_from_idx]
         old_text = "\n".join(
-            f"{t['role'].upper()}: {t['content'][:500]}"
+            f"{t['role'].upper()}: {_clip(t['content'])}"
             for t in old_turns
         )
-
-        summary = self._generate_summary(old_text)
         if summary:
+            old_text = f"SUMMARY OF THE CONVERSATION BEFORE THIS:\n{summary}\n\n{old_text}"
+
+        new_summary = self._generate_summary(old_text)
+        if new_summary:
             self._thread_repo.update_summary(
-                self.thread_id, summary, old_turns[-1]['id']
+                self.thread_id, new_summary, old_turns[-1]['id']
             )
             logger.info(
                 f"Thread {self.thread_id}: compacted {len(old_turns)} turns "
@@ -276,7 +301,10 @@ class ConversationManager:
                     "content": (
                         "Summarize this conversation concisely. Preserve: key facts, "
                         "decisions made, questions answered, unresolved topics. "
-                        "No pleasantries or meta-commentary.\n\n"
+                        "Keep every name, number and figure the user stated, with "
+                        "who or what it came from. Very long messages are shown "
+                        "with their middle omitted; that is not an unfinished "
+                        "answer. No pleasantries or meta-commentary.\n\n"
                         f"{conversation_text}"
                     )
                 }]
