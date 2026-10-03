@@ -357,6 +357,23 @@ def _result_summary(res: str) -> str:
     return f"{n} lines"
 
 
+# mcp_taiga and odoo_cli pass any subcommand through, so they are write-class
+# and ask. These subcommands only read; they run without asking.
+_CLI_READ_SUBCOMMANDS = {
+    "mcp_taiga": {"list", "show", "projects", "members", "statuses", "users",
+                  "earnings"},
+    "odoo_cli": {"status", "user-list", "contact-list", "contact-search",
+                 "contact-export", "module-list", "agenda", "comms",
+                 "campaign-list", "campaign-show", "contact-list-tag"},
+}
+
+
+def _cli_read(name: str, inp: Dict) -> bool:
+    reads = _CLI_READ_SUBCOMMANDS.get(name)
+    words = str(inp.get("command") or "").split()
+    return bool(reads and words and words[0] in reads)
+
+
 def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
               out, status, trace: List[Tuple[str, str]],
               max_tokens: int = _MAX_TOKENS,
@@ -406,7 +423,8 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
                 denial = trust_gate(tool, principal)
                 ctx = tctx
                 if not denial and tool.effective_access_class != "read" \
-                        and tool.category != "personal" and b.name not in _CODE_TOOLS:
+                        and tool.category != "personal" and b.name not in _CODE_TOOLS \
+                        and not _cli_read(b.name, dict(b.input)):
                     confirm_action = tctx.get("confirm_action")
                     if not (callable(confirm_action) and confirm_action(label)):
                         denial = "Refused: the person declined this action."

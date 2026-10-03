@@ -537,8 +537,11 @@ register_tool(Tool(
     name="odoo_cli",
     description=(
         "General CRM (Odoo) CLI access (can write, so gated). Search contacts, "
-        "check follow-ups, manage tags. Commands: search contacts <query>, "
-        "search leads <query>, show contact <id>, list tags. For a plain read "
+        "check follow-ups, manage tags. Commands (command, then args): "
+        "contact-search <query>, contact-list [query], comms <name>, "
+        "agenda [week|all], campaign-list, campaign-show <name>, "
+        "contact-list-tag <tag>, contact-tag <name> <tag>, "
+        "contact-untag <name> <tag>, note <name> <text>. For a plain read "
         "prefer odoo_search."
     ),
     input_schema={
@@ -694,7 +697,10 @@ register_tool(Tool(
         "General Taiga CLI access (can write, so gated). List tasks, check "
         "status, find assigned work. For a plain read prefer taiga_list; to "
         "create a task use taiga_create_task (which routes through approval). "
-        "Use this for other Taiga commands."
+        "Use this for other Taiga commands. Subcommands (command, then args): "
+        "list PROJECT [--status S] [--assign U] [--tag T]; show PROJECT REF; "
+        "projects; members PROJECT; statuses PROJECT; users; comment; move; "
+        "update. There is no 'story' or 'tasks' subcommand."
     ),
     input_schema={
         "type": "object",
