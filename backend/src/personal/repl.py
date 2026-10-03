@@ -835,7 +835,10 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
             status.stop()
             out(f"\n  error: {_error_line(exc, llm['provider'])}")
             continue
-        out(f"\n{_BOLD}amebo ›{_RESET} {_render(answer)}")
+        # The shared rules let a Slack answer be "(silence)" or emoji only
+        # (sent as nothing / a reaction). Here that would print as text.
+        if not _NO_REPLY.match(answer):
+            out(f"\n{_BOLD}amebo ›{_RESET} {_render(answer)}")
         for note in notes:
             out(f"  {_DIM}{note}{_RESET}")
         if not answer:
@@ -875,6 +878,9 @@ def _valid_utf8(s: str) -> str:
 
 
 _MD_BOLD = re.compile(r"\*\*(.+?)\*\*|(?<![\w*])\*(?=\S)([^*\n]+?)(?<=\S)\*(?![\w*])")
+
+
+_NO_REPLY = re.compile(r"^\s*(`?\(?silence\)?`?|(:[a-z0-9_+\-]+:\s*)+)\s*$", re.IGNORECASE)
 
 
 def _render(text: str) -> str:
