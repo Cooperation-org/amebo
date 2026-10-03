@@ -370,12 +370,20 @@ def _run_turn(client, model, system_prompt, messages, tools, tctx, principal,
                 res = f"Unknown tool: {b.name}"
             else:
                 denial = trust_gate(tool, principal)
+                ctx = tctx
+                if not denial and tool.effective_access_class != "read" \
+                        and tool.category != "personal" and b.name not in _CODE_TOOLS:
+                    confirm_action = tctx.get("confirm_action")
+                    if not (callable(confirm_action) and confirm_action(label)):
+                        denial = "Refused: the person declined this action."
+                    else:
+                        ctx = {**tctx, "auto_execute": True}
                 if denial:
                     res = denial
                 else:
                     status.start(label)
                     try:
-                        res = tool.execute(b.input, tctx) or ""
+                        res = tool.execute(b.input, ctx) or ""
                     finally:
                         status.stop()
             trace.append((label, str(res)))
@@ -491,7 +499,7 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
     registered = register_shell_tool_if_personal()
     from src.tools.file_tools import register_file_tools_if_personal
     register_file_tools_if_personal()
-    from src.tools.registry import get_tool, _tool_to_schema
+    from src.tools.registry import get_tool, _tool_to_schema, get_tools_for_instance
     from src.services.org_context import OrgContext
     from src.services.trust import Principal
     from src.services.conversation_manager import ConversationManager
@@ -512,8 +520,14 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
     principal = Principal(transport="cli", person_id=person_id, is_service=True)
 
     def tools_for(m: str) -> List[Dict]:
+        # The CLI gets everything the instance offers in Slack (allowed_tools +
+        # admin_tools), plus the personal tools. Writes confirm per /permissions.
         names = _PERSONAL_TOOLS + (_CODE_TOOLS if m == "code" else [])
-        return [_tool_to_schema(get_tool(n)) for n in names if get_tool(n)]
+        schemas = [_tool_to_schema(get_tool(n)) for n in names if get_tool(n)]
+        have = {t["name"] for t in schemas}
+        schemas += [t for t in get_tools_for_instance(mgr._instance, admin=True)
+                    if t["name"] not in have]
+        return schemas
 
     # The directory amebo was started from (the launcher cds into the backend).
     work_dir = os.getenv("AMEBO_CLI_CWD") or os.getcwd()
@@ -607,6 +621,22 @@ def run_repl(in_stream=None, out=print, argv: Optional[List[str]] = None) -> int
 
     tctx["confirm"] = confirm
     tctx["confirm_edit"] = confirm_edit
+
+    def confirm_action(label: str) -> bool:
+        # Write tools from the instance (Taiga, CRM, MAIN.md, ...). The person
+        # is here, so a confirmed write runs now instead of drafting for approval.
+        if mode["perms"] in ("auto", "skip"):
+            return True
+        label_was = status.pause()
+        try:
+            ans = input(f"\n  {_BOLD}{label}{_RESET}\n  run? [y/N] ").strip().lower()
+        except EOFError:
+            return False
+        finally:
+            status.resume(label_was)
+        return ans in ("y", "yes")
+
+    tctx["confirm_action"] = confirm_action
     last_trace: List[Tuple[str, str]] = []
     while True:
         try:
