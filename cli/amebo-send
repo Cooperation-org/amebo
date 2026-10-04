@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# amebo-send — hand finished work to a person in one call:
+# attach files to a Taiga story, then post one Slack line in
+# #ai-workflow-automations @-mentioning them, with the Chiku story link.
+#
+# Usage: amebo-send <board-slug> <story-ref> <slack-user-id> "<one line>" [file-or-url ...]
+#   e.g. amebo-send admin-marketing-accounting 107 UXXXXXXXX "Flyers ready" a.pdf b.pdf
+#
+# Slack identities live in abra; look the person's id up there.
+# Channel override: AMEBO_SEND_CHANNEL (default #ai-workflow-automations).
+set -euo pipefail
+if [ $# -lt 4 ]; then sed -n 6,7p "$0" | sed 's/^# //'; exit 2; fi
+board="$1"; ref="$2"; who="$3"; line="$4"; shift 4
+channel="${AMEBO_SEND_CHANNEL:-#ai-workflow-automations}"
+link="https://marten.linkedtrust.us/p/${board}/board?story=${ref}"
+
+failed=0
+for f in "$@"; do
+  case "$f" in http*) path="$f" ;; *)
+    path="$(readlink -f "$f")"
+    [ -f "$path" ] || { echo "missing: $f" >&2; exit 1; } ;; esac
+  if mcp-taiga attach "$board" "$ref" "$path" >/dev/null 2>&1; then
+    echo "attached: $(basename "$path")"
+  else
+    echo "attach FAILED: $(basename "$path")" >&2; failed=1
+  fi
+done
+
+cd /opt/shared/repos/amebo/backend
+AMEBO_SEND_TEXT="<@${who}> ${line}
+${link}" AMEBO_SEND_TO="$channel" ./venv/bin/python -c '
+import os, sys
+from dotenv import load_dotenv
+load_dotenv()
+from src.services.slack_notify import post
+sys.exit(0 if post(os.environ["AMEBO_SEND_TO"], os.environ["AMEBO_SEND_TEXT"]) else 1)
+' && echo "slack: posted to $channel" || { echo "slack post FAILED" >&2; exit 1; }
+exit $failed
