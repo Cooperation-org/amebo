@@ -15,8 +15,8 @@ The page is the shared object; the conversation refines it.
 - **One look:** a mock of the at-a-glance view the owner asked for. Example data labelled as
   example, taken from a document they pointed to.
 - **Where it plugs in:** sign-in, components, other systems.
-- **Numbered open questions:** the owner's calls, each with the options and the standard one
-  first. Numbers let them answer "Q2: milestones".
+- **Two to five options or questions, never more.** Sixteen things is not reviewable. Numbered,
+  so they can answer "2: milestones". Lead with the user stories, not the model.
 
 ## How
 - Read the code and the requirements doc first. "In the code now" means read in the code.
