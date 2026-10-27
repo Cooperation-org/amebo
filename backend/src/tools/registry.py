@@ -1302,3 +1302,60 @@ register_tool(Tool(
     needs_confirmation=True,
     category="comms",
 ))
+
+from src.tools.project_money_tools import (  # noqa: E402
+    project_money_budget_impl, project_money_register_impl,
+    project_money_approve_impl, project_money_mark_paid_impl,
+    PROJECT_MONEY_BUDGET_SCHEMA, PROJECT_MONEY_REGISTER_SCHEMA, PROJECT_MONEY_IDS_SCHEMA,
+)
+
+register_tool(Tool(
+    name="project_money_budget",
+    description=(
+        "Project Money: a project's budget lines (agreed, approved, paid, left) and the "
+        "amounts not paid yet, with their ids. Use before registering or approving."
+    ),
+    input_schema=PROJECT_MONEY_BUDGET_SCHEMA,
+    execute=project_money_budget_impl,
+    is_read_only=True,
+    category="money",
+))
+
+register_tool(Tool(
+    name="project_money_register",
+    description=(
+        "Project Money: register money someone asked for in Slack, on a task, split "
+        "across the budget lines it draws on (e.g. $768 = $468 travel + $300 a person's "
+        "line). Registered is a request, not money, until an allocator approves. Read "
+        "the budget first so each part names a real line."
+    ),
+    input_schema=PROJECT_MONEY_REGISTER_SCHEMA,
+    execute=project_money_register_impl,
+    is_read_only=False,
+    category="money",
+))
+
+register_tool(Tool(
+    name="project_money_approve",
+    description=(
+        "Project Money: approve registered amounts AS THE PERSON WHO WROTE THIS SLACK "
+        "MESSAGE. Call only when that person's own message says to approve them. "
+        "Project Money refuses if they are not an allocator."
+    ),
+    input_schema=PROJECT_MONEY_IDS_SCHEMA,
+    execute=project_money_approve_impl,
+    is_read_only=False,
+    category="money",
+))
+
+register_tool(Tool(
+    name="project_money_mark_paid",
+    description=(
+        "Project Money: mark approved amounts paid AS THE PERSON WHO WROTE THIS SLACK "
+        "MESSAGE, when their message says they sent it."
+    ),
+    input_schema=PROJECT_MONEY_IDS_SCHEMA,
+    execute=project_money_mark_paid_impl,
+    is_read_only=False,
+    category="money",
+))

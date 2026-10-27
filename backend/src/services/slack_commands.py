@@ -387,6 +387,11 @@ async def process_events(client: SocketModeClient, req: SocketModeRequest):
                         "channel_type": "slack",
                         "channel_id": channel_id,
                         "thread_ref": thread_ts,
+                        # Who said this message, and which message: identity
+                        # from Slack itself, so a tool can record what a named
+                        # person said without trusting the model to name them.
+                        "user_id": user_id,
+                        "message_ts": event["ts"],
                     },
                 )
 
@@ -459,6 +464,8 @@ async def handle_app_mention(team_id, channel, text, user, ts, thread_ts=None):
                 "channel_type": "slack",
                 "channel_id": channel,
                 "thread_ref": thread_root,
+                "user_id": user,
+                "message_ts": ts,
             },
         )
 
