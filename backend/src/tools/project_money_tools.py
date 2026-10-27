@@ -147,7 +147,8 @@ def _budget_text(cfg, project) -> str:
                               "currency_id"]})
     if not lines:
         return "%s has no budget lines." % project["name"]
-    out = ["Budget lines of %s (id · line · agreed · approved · paid · left):" % project["name"]]
+    out = ["Budget lines of %s, project id %d (id · line · agreed · approved · paid · left):"
+           % (project["name"], project["id"])]
     for b in lines:
         cur = b["currency_id"][1] if b["currency_id"] else "USD"
         out.append("%d · %s%s · %s · %s · %s · %s" % (
