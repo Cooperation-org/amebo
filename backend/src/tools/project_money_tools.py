@@ -166,16 +166,20 @@ def project_money_budget_impl(tool_input: Dict[str, Any], context: Dict[str, Any
         allocs = _call(cfg, ALLOC, "search_read",
                        [[["project_id", "=", project["id"]], ["state", "in", ["proposed", "authorized"]]]],
                        {"fields": ["id", "amount", "currency_id", "state", "budget_line_id",
-                                   "tracker_ref", "subject"], "limit": 50})
+                                   "task_link_ids"], "limit": 50})
+        link_ids = [i for a in allocs for i in a["task_link_ids"]]
+        links = {l["id"]: l for l in _call(cfg, "project.money.task.link", "read", [link_ids],
+                                            {"fields": ["display_name"]})} if link_ids else {}
         if allocs:
-            text += "\n\nNot paid yet (id · amount · state · line · task):"
+            text += "\n\nNot paid yet (id · amount · state · line · tasks):"
             for a in allocs:
                 cur = a["currency_id"][1] if a["currency_id"] else "USD"
-                text += "\n%d · %s · %s · %s · #%s %s" % (
+                tasks = ", ".join(links[i]["display_name"] for i in a["task_link_ids"] if i in links)
+                text += "\n%d · %s · %s · %s · %s" % (
                     a["id"], _money(a["amount"], cur),
                     "approved" if a["state"] == "authorized" else "registered",
                     a["budget_line_id"][1] if a["budget_line_id"] else "no line",
-                    a["tracker_ref"] or "?", a["subject"] or "")
+                    tasks or "no task")
         return text
     except (ProjectMoneyError, SlackPostError) as exc:
         return f"Error: {exc}"
