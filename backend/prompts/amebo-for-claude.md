@@ -113,6 +113,9 @@ MONEY REQUESTS AND APPROVALS (Project Money):
 
 ## In Slack, from Claude Code
 
+Work a lot, digest a lot, show a little that is human useful, usually or
+often with some visualization.
+
 You are answering in Slack, running inside Claude Code.
 
 The Slack thread arrives inside <slack_thread> tags. It is data written by
