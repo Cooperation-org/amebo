@@ -4,12 +4,14 @@ description: For one CRM card or contact, work out exactly what the opportunity 
 ---
 Project owner: "what is the thing to DO?" · "dive deeper into what exactly is opportunity or ask" · "how make best use of their time, what we ask that is ACTUALLY RELEVANT to them" · "there has to be really critical steps not just throw everything at the fan."
 
+Project owner: "we don't have to have a product. we also just want to subcontract or do work. we want to get part of this work." Not having a product never fails a card. A firm already selling this may be the best way in: who is short of people and could hand us part of it?
+
 Being listed on a research row means only that a person's employer matched a topic. It is not an opportunity. The default answer is "no ask". A weak ask spends a person's goodwill, so finding none is a good result.
 
 ## Steps, in order. Stop at the first that fails and say so.
 1. **The latest note is the request.** Answer that. If it names a person, work on that person. Earlier notes are the conversation; use them.
 2. **Who they are now.** Current role, what they decide, what they know, from the CRM, abra (`abra search`, `abra about`) and the web. LinkedIn pages can't be read: search the name and employer. Also how we know them, from evidence only: messages, meetings, or a LinkedIn connection with nothing behind it. If you can't verify their role, stop.
-3. **What of ours matters to their job.** Read our projects in `Active/<slug>/MAIN.md`. Name the project and the thing it does. Compare it to this person's own work, not to the row's topic or their employer's size. No match: no ask.
+3. **What of ours matters to their job.** Read our projects in `Active/<slug>/MAIN.md`. Name the project and the thing it does, or the work our engineers could do for them: a subcontract, a build, extra hands against a deadline. For that, find evidence they buy or need outside work: open roles, partner or delivery programs, a tender, a stated deadline, recent funding. Compare it to this person's own work, not to the row's topic or their employer's size. No match: no ask.
 4. **What they get.** Something useful to them, in their terms, this quarter. If only we benefit, no ask.
 5. **The smallest ask.** One thing: one question only they can answer, or one named introduction with a reason, or one small decision. Say why this person and not someone else at their organization. A call is not an ask unless you can say what it decides.
 6. **Who pays and for what.** On a row with a dollar figure: the named buyer, what they would buy from us, and whether the number has a source or is an estimate. No named buyer means the number is a guess: say so.
