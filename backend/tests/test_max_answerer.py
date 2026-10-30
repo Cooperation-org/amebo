@@ -184,3 +184,16 @@ async def test_sleeps_when_it_had_no_rest():
     a._claims = [__import__("time").time() - k * H for k in range(24, 0, -1)]
     assert "asleep" in await a.handle("C1", "1.0", "1.0")
     a.web.reactions_add.assert_not_awaited()
+
+
+def test_card_prompt_marks_the_request():
+    notes = [{"author": "A", "date": "2026-10-30 10:00:00", "body": "what is the ask?"}]
+    p = ma.card_prompt({"id": 1, "name": "x"}, notes, notes[0])
+    assert p.endswith("Request, from A:\nwhat is the ask?")
+    assert "data" in p.splitlines()[0]
+
+
+def test_card_tools_only_read():
+    assert "Edit" not in ma.CARD_TOOLS and "Write" not in ma.CARD_TOOLS
+    assert not any(r.startswith(("Bash(amebo-odoo", "Bash(amebo-commit", "Bash(amebo-taiga", "Bash(amebo-abra-store")) for r in ma.CARD_ALLOWED)
+    assert "Bash(amebo-elm GET:*)" in ma.CARD_ALLOWED

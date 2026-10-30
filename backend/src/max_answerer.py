@@ -57,5 +57,18 @@ async def mention(request: Request):
     return JSONResponse(status_code=202, content={"accepted": True})
 
 
+@app.post("/card")
+async def card(request: Request):
+    lead_id = (await request.json()).get("lead_id")
+    if not isinstance(lead_id, int) or lead_id <= 0:
+        raise HTTPException(status_code=400, detail="lead_id required")
+
+    async def run():
+        logger.info("amebo-max card %s: %s", lead_id, await answerer.handle_card(lead_id))
+
+    asyncio.create_task(run())
+    return JSONResponse(status_code=202, content={"accepted": True})
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=int(os.environ["AMEBO_MAX_PORT"]))
