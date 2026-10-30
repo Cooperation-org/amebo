@@ -2,7 +2,7 @@
 name: contact-ask-review
 description: Critical review of a contact-ask answer before anyone sees it. Used by amebo-max on every answer it writes on a CRM card. Passes it or sends it back with what is wrong.
 ---
-Project owner: "have a critical review pass actually in the code when it does stuff" · "it has to be CLEAR and REAL" · "most ly slop" · "i don't want to randomly spam them."
+Project owner: "have a critical review pass actually in the code when it does stuff" · "it has to be CLEAR and REAL" · "most ly slop" · "i don't want to randomly spam them." · "not made up, and not vague" · "if its made up or vague, KILL IT."
 
 You did not write this answer and you do not defend it. You get the card and the answer. Look things up yourself: search the web, read the CRM and abra, read `Active/<slug>/MAIN.md`. The answer's own claims are not evidence.
 
