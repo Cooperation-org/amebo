@@ -1,0 +1,45 @@
+#!/usr/bin/env python3
+"""amebo-taiga — mcp-taiga as the amebo Taiga user, for amebo-max.
+
+Usage: amebo-taiga <verb> [args...]   verbs: see VERBS; same args as mcp-taiga.
+
+The Taiga login (TAIGA_URL, TAIGA_USERNAME, TAIGA_PASSWORD) is read here from
+backend/.env and handed only to mcp-taiga, so it never reaches the caller's
+environment. HOME is a fresh empty directory, so the caller's own
+~/.mcp-taiga.conf (a person's login) is never used.
+"""
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+ENV_FILE = Path(__file__).resolve().parent.parent / "backend" / ".env"
+KEYS = ("TAIGA_URL", "TAIGA_USERNAME", "TAIGA_PASSWORD")
+# No attach (reads local files), add-member, onboard, login.
+VERBS = {"projects", "members", "statuses", "users", "list", "show",
+         "create", "update", "move", "comment", "task"}
+
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] not in VERBS:
+        sys.exit(f"usage: amebo-taiga <{'|'.join(sorted(VERBS))}> [args...]")
+    creds = {}
+    for line in ENV_FILE.read_text().splitlines():
+        k, _, v = line.partition("=")
+        if k in KEYS:
+            creds[k] = v.strip().strip('"')
+    missing = [k for k in KEYS if not creds.get(k)]
+    if missing:
+        sys.exit(f"missing in backend/.env: {', '.join(missing)}")
+    tool = shutil.which("mcp-taiga")
+    if not tool:
+        sys.exit("mcp-taiga not on PATH")
+    with tempfile.TemporaryDirectory() as home:
+        env = {**os.environ, **creds, "HOME": home}
+        sys.exit(subprocess.run([tool, *sys.argv[1:]], env=env).returncode)
+
+
+if __name__ == "__main__":
+    main()

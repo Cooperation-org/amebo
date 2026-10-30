@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 CLAIM_REACTION = "raised_hand"
 
-# Read-only. Bash rules are command prefixes; Claude Code checks each part of a
+# Read-only except Taiga stories (amebo-taiga). Bash rules are command prefixes; Claude Code checks each part of a
 # compound command separately, so `abra search x; cat ~/.env` is denied.
 ABRA_READ = ("search", "about", "read", "who", "related", "names")
 ABRA_SCOPES = ("golda", "linkedtrust", "claude")
@@ -50,6 +50,9 @@ ALLOWED_TOOLS = [
     "Bash(odoo-cli contact-search:*)", "Bash(odoo-cli comms:*)",
     "Bash(odoo-cli campaign-list:*)", "Bash(odoo-cli campaign-show:*)",
     "Bash(amebo-slack-history:*)",
+    *[f"Bash(amebo-taiga {v}:*)" for v in (
+        "projects", "members", "statuses", "users", "list", "show",
+        "create", "update", "move", "comment", "task")],
     "WebSearch",
 ]
 # Read, Grep and Glob are not in the allowlist: under dontAsk they work only
@@ -92,6 +95,11 @@ Look things up before answering. Only these commands run, each on its own
   odoo-cli campaign-show "<campaign>"  one campaign and its opportunities
   amebo-slack-history [count]          earlier messages in this Slack channel;
                                        use it when the thread refers to them
+  amebo-taiga projects | list <project> [-s status] [-a user] | show <project> <ref>
+  amebo-taiga create <project> "<subject>" [-d "<description>"] [-a user] [--due YYYY-MM-DD]
+  amebo-taiga update|move|comment <project> <ref> ...   (Taiga, as the amebo user)
+Create or change Taiga stories when the person asks for it; reply with the
+story link.
 Also: Read, Grep and Glob on the projects repo (your working directory), and
 web search.
 
