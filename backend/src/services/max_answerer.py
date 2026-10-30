@@ -46,6 +46,7 @@ ALLOWED_TOOLS = [
     "Bash(abra who:*)", "Bash(abra related:*)", "Bash(abra names:*)",
     "Bash(odoo-cli contact-search:*)", "Bash(odoo-cli comms:*)",
     "Bash(odoo-cli campaign-list:*)", "Bash(odoo-cli campaign-show:*)",
+    "Bash(amebo-slack-history:*)",
     "WebSearch",
 ]
 # Read, Grep and Glob are not in the allowlist: under dontAsk they work only
@@ -86,6 +87,8 @@ Look things up before answering. Only these commands run, each on its own
   odoo-cli comms "<contact name>"      a contact's message history
   odoo-cli campaign-list               campaigns with opportunity counts
   odoo-cli campaign-show "<campaign>"  one campaign and its opportunities
+  amebo-slack-history [count]          earlier messages in this Slack channel;
+                                       use it when the thread refers to them
 Also: Read, Grep and Glob on the projects repo (your working directory), and
 web search.
 
@@ -196,7 +199,7 @@ class MaxAnswerer:
         session = thread_session_id(channel, thread_root)
         try:
             async with self._slots:
-                answer = await self._ask_claude(session, messages, names, bot_uid)
+                answer = await self._ask_claude(session, channel, messages, names, bot_uid)
         except Exception as e:
             logger.exception("amebo-max: claude failed for %s/%s", channel, ts)
             await self.web.chat_postMessage(
@@ -219,20 +222,22 @@ class MaxAnswerer:
                 names[uid] = uid
         return names
 
-    async def _ask_claude(self, session: str, messages, names, bot_uid) -> str:
+    async def _ask_claude(self, session: str, channel: str, messages, names, bot_uid) -> str:
         """Resume the thread's session with the newest message, or start it
         with the whole thread."""
         latest = format_thread(messages[-1:], names, bot_uid)
-        out = await self._run_claude(["--resume", session], latest)
+        out = await self._run_claude(["--resume", session], latest, channel)
         if out is None:
             whole = format_thread(messages, names, bot_uid)
-            out = await self._run_claude(["--session-id", session], whole)
+            out = await self._run_claude(["--session-id", session], whole, channel)
         if out is None:
             raise RuntimeError("claude did not start a session")
         return out
 
-    async def _run_claude(self, session_args: List[str], prompt: str) -> Optional[str]:
-        """Run one turn. None when --resume finds no session to resume."""
+    async def _run_claude(self, session_args: List[str], prompt: str,
+                          channel: str) -> Optional[str]:
+        """Run one turn. None when --resume finds no session to resume.
+        The channel is passed in the environment for amebo-slack-history."""
         args = [
             self.claude_bin, "-p", *session_args,
             "--setting-sources", "",
@@ -245,7 +250,7 @@ class MaxAnswerer:
             "--output-format", "json",
         ]
         proc = await asyncio.create_subprocess_exec(
-            *args, cwd=self.workdir, env=scrubbed_env(),
+            *args, cwd=self.workdir, env={**scrubbed_env(), "AMEBO_MAX_CHANNEL": channel},
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         try:

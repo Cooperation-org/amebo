@@ -137,3 +137,4 @@ async def test_new_thread_starts_session_with_whole_thread():
     first, second = a._run_claude.await_args_list
     assert first.args[0][0] == "--resume" and "context" not in first.args[1]
     assert second.args[0][0] == "--session-id" and "context" in second.args[1]
+    assert first.args[2] == "C1" and second.args[2] == "C1"
