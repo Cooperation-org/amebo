@@ -28,7 +28,10 @@ answerer = MaxAnswerer(
     claude_bin=os.getenv("AMEBO_MAX_CLAUDE", "claude"),
     timeout_seconds=int(os.getenv("AMEBO_MAX_TIMEOUT_SECONDS", "600")),
     concurrency=int(os.getenv("AMEBO_MAX_CONCURRENCY", "1")),
-    per_hour=int(os.getenv("AMEBO_MAX_PER_HOUR", "20")),
+    per_hour=int(os.getenv("AMEBO_MAX_PER_HOUR", "120")),
+    sleep_window=os.getenv("AMEBO_MAX_SLEEP", "00:00-06:00"),
+    tz=os.getenv("AMEBO_MAX_TZ", "America/Phoenix"),
+    quiet_hours=float(os.getenv("AMEBO_MAX_QUIET_HOURS", "6")),
 )
 _SLACK_TS = re.compile(r"^\d+\.\d+$")
 _SLACK_ID = re.compile(r"^[A-Z0-9]+$")

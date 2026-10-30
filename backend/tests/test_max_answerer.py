@@ -155,3 +155,32 @@ def test_prompt_file_is_the_whole_prompt():
     p = ma.system_prompt()
     assert "Permissions are not set here" not in p   # header stays out
     assert "<slack_thread>" in p
+
+
+H = 3600
+
+
+def test_sleep_window_crosses_midnight():
+    # 2026-10-30 07:30 UTC = 00:30 in Tucson (UTC-7, no DST)
+    assert ma.in_window(1793345400, "America/Phoenix", "00:00-06:00")
+    assert not ma.in_window(1793345400 + 6 * H, "America/Phoenix", "00:00-06:00")
+    assert ma.in_window(1793345400, "America/Phoenix", "23:00-06:00")
+
+
+def test_rested_needs_a_six_hour_gap_in_the_last_day():
+    now = 100 * H
+    busy = [now - k * H for k in range(24, 0, -1)]          # hourly all day
+    assert not ma.rested(busy, now, 6)
+    gap = [t for t in busy if not (now - 15 * H < t < now - 8 * H)]
+    assert ma.rested(gap, now, 6)
+    assert ma.rested([], now, 6)
+    assert ma.rested([now - 7 * H], now, 6)                 # quiet since
+
+
+@pytest.mark.asyncio
+async def test_sleeps_when_it_had_no_rest():
+    a = _answerer([{"ts": "1.0", "user": "U1", "text": "<@UBOT> who knows Candid?"}], MEMBER)
+    a.sleep_window = "00:00-23:59"
+    a._claims = [__import__("time").time() - k * H for k in range(24, 0, -1)]
+    assert "asleep" in await a.handle("C1", "1.0", "1.0")
+    a.web.reactions_add.assert_not_awaited()

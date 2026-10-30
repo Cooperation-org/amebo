@@ -137,10 +137,33 @@ def format_thread(messages: List[Dict[str, Any]], names: Dict[str, str],
     return "<slack_thread>\n" + "\n".join(lines) + "\n</slack_thread>"
 
 
+def in_window(now: float, tz: str, window: str) -> bool:
+    """True if `now` (epoch) falls in "HH:MM-HH:MM" local time in `tz`; the
+    window may cross midnight."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    t = datetime.fromtimestamp(now, ZoneInfo(tz)).strftime("%H:%M")
+    start, end = window.split("-")
+    return start <= t < end if start <= end else (t >= start or t < end)
+
+
+def rested(claims: List[float], now: float, quiet_hours: float) -> bool:
+    """True if the last 24 hours held a stretch of `quiet_hours` with no
+    answer. `claims` are answer times (epoch), oldest first."""
+    need = quiet_hours * 3600
+    points = [t for t in claims if t > now - 24 * 3600 - need] + [now]
+    if len(points) == 1:
+        return True
+    return any(b - a >= need and b > now - 24 * 3600
+               for a, b in zip(points, points[1:]))
+
+
 class MaxAnswerer:
     def __init__(self, bot_token: str, workdir: str, claude_bin: str = "claude",
                  timeout_seconds: int = 600, max_chars: int = 4000,
-                 concurrency: int = 1, per_hour: int = 20):
+                 concurrency: int = 1, per_hour: int = 120,
+                 sleep_window: str = "00:00-06:00", tz: str = "America/Phoenix",
+                 quiet_hours: float = 6):
         self.web = AsyncWebClient(token=bot_token)
         self.workdir = workdir
         # The Claude process gets its own PATH (AMEBO_MAX_PATH): the backend
@@ -154,7 +177,10 @@ class MaxAnswerer:
         self.max_chars = max_chars
         self._slots = asyncio.Semaphore(concurrency)
         self.per_hour = per_hour
-        self._claims: List[float] = []
+        self.sleep_window = sleep_window
+        self.tz = tz
+        self.quiet_hours = quiet_hours
+        self._claims: List[float] = []   # answer times, epoch, last 48h
         self._thread_locks: Dict[str, asyncio.Lock] = {}
         self._bot_user_id: Optional[str] = None
         self._bot_team_id: Optional[str] = None
@@ -200,9 +226,15 @@ class MaxAnswerer:
         if why:
             return f"skip: {why}"
 
-        now = time.monotonic()
-        self._claims = [t for t in self._claims if now - t < 3600]
-        if len(self._claims) >= self.per_hour:
+        # At least quiet_hours a day with no answers: if the last 24 hours had
+        # no such stretch, sleep through sleep_window. Skipped messages are
+        # left unclaimed, so the backend answers them.
+        now = time.time()
+        self._claims = [t for t in self._claims if now - t < 48 * 3600]
+        if in_window(now, self.tz, self.sleep_window) \
+                and not rested(self._claims, now, self.quiet_hours):
+            return f"skip: asleep ({self.sleep_window} {self.tz})"
+        if sum(1 for t in self._claims if now - t < 3600) >= self.per_hour:
             return f"skip: {self.per_hour} answers in the last hour"
 
         try:
