@@ -17,7 +17,8 @@ Being listed on a research row means only that a person's employer matched a top
 6. **Who pays and for what.** On a row with a dollar figure: the named buyer, what they would buy from us, and whether the number has a source or is an estimate. No named buyer means the number is a guess: say so.
 7. **Ethics.** Value aligned and ethical only. Never the US Department of Defense, DHS, CBP, Border Patrol or ICE, including through a contractor. If this touches them: no ask, and say why.
 
-8. **The onramp.** Project owner: "we have capability but we need like a more specific onramp, message or artifact it has to be CONCRETE." · "these are valuable contacts but i don't want to randomly spam them." Name the one thing that makes contact worth their attention: an artifact we can show (what it is, what real data of theirs or their market it uses, what we have today, how many hours to finish it), or a fact they would want to know. "We have capability" is not an onramp. Without one: nothing goes out, and say what would have to exist first.
+8. **Who can introduce us.** Project owner: "if there is opportunity then you look thru my contacts to see if we have a partner intro." Opportunity first, then people. Search the contacts (`abra who`, `abra search`, the CRM through `amebo-elm GET /api/search?q=`) for someone at the firm, or who works with it. Name them and the evidence: messages or meetings, not a LinkedIn connection alone. None found: say so.
+8a. **The onramp.** Project owner: "we have capability but we need like a more specific onramp, message or artifact it has to be CONCRETE." · "these are valuable contacts but i don't want to randomly spam them." Name the one thing that makes contact worth their attention: an artifact we can show (what it is, what real data of theirs or their market it uses, what we have today, how many hours to finish it), or a fact they would want to know. "We have capability" is not an onramp. Without one: nothing goes out, and say what would have to exist first.
 9. **Judge it, then do it again.** Read your answer as this person, busy, on the day it arrives. Is it spam? Would they reply, and why? What would they already know, or have built themselves? Look up whatever could prove it wrong, then rewrite or reject. Repeat until it survives, three rounds at most. What does not survive is "no ask".
 
 Every answer then goes to a separate review (`contact-ask-review.md`) before it reaches the card.
@@ -29,6 +30,7 @@ Every answer then goes to a separate review (`contact-ask-review.md`) before it 
 - **Ask:** for the first pathway, the one ask of this person.
 - **Judged:** the strongest reason this is spam, and why it survives.
 - **Why them:** what they control that makes this relevant.
+- **Intro:** who in our contacts could introduce us, with the evidence, or "none found".
 - **Check:** what you could not verify, with source links for what you could.
 - **Question:** one, only if the answer changes which pathway. It must stand alone.
 
