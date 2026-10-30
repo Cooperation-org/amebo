@@ -25,12 +25,18 @@ def main():
     if len(sys.argv) < 2 or sys.argv[1] not in VERBS:
         sys.exit(f"usage: amebo-taiga <{'|'.join(sorted(VERBS))}> [args...]")
     creds = read_env("TAIGA_URL", "TAIGA_USERNAME", "TAIGA_PASSWORD")
+    # A shell argument cannot easily hold a newline, so the description takes
+    # a literal \n for one; \n\n separates paragraphs (Taiga renders Markdown).
+    args = list(sys.argv[1:])
+    for i, a in enumerate(args[:-1]):
+        if a in ("-d", "--description"):
+            args[i + 1] = args[i + 1].replace("\\n", "\n")
     tool = shutil.which("mcp-taiga")
     if not tool:
         sys.exit("mcp-taiga not on PATH")
     with tempfile.TemporaryDirectory() as home:
         env = {**os.environ, **creds, "HOME": home}
-        sys.exit(subprocess.run([tool, *sys.argv[1:]], env=env).returncode)
+        sys.exit(subprocess.run([tool, *args], env=env).returncode)
 
 
 if __name__ == "__main__":

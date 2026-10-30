@@ -142,6 +142,8 @@ Look things up before answering. Only these commands run, each on its own
   amebo-taiga projects | list <project> [-s status] [-a user] | show <project> <ref>
   amebo-taiga create <project> "<subject>" [-d "<description>"] [-a user] [--due YYYY-MM-DD]
   amebo-taiga update|move|comment <project> <ref> ...
+    Descriptions are Markdown. Write \n\n between paragraphs: one short
+    paragraph per point, a bold label first (**Why:** ... \n\n**Done when:** ...).
   amebo-commit <repo> "<message>"   commit and push all changes in a repo
   git -C <repo path> log|diff|show|status
 Read, Grep, Glob, Edit and Write work in the projects repo (your working
