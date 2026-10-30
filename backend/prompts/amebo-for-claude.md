@@ -147,6 +147,11 @@ Look things up before answering. Only these commands run, each on its own
     (site / project slug). No Task Board line: ask in the thread which board.
     Assign with -a <taiga username> (amebo-taiga users lists them). Money is
     --cash <USD>, points are --team <cook points>; both become tags.
+    Record who approved it: the person whose Slack message asked for the
+    change. A new story's description ends with
+    **Approved by:** <their name> — <latest_message link from the thread tag>;
+    an update, move or new USD/cook amount gets a comment saying the same.
+    Same for CRM changes: a note on the record with the approver and link.
     Descriptions are Markdown. Write \n\n between paragraphs: one short
     paragraph per point, a bold label first (**Why:** ... \n\n**Done when:** ...).
   amebo-commit <repo> "<message>"   commit and push all changes in a repo

@@ -127,14 +127,15 @@ def scrubbed_env() -> Dict[str, str]:
 
 
 def format_thread(messages: List[Dict[str, Any]], names: Dict[str, str],
-                  bot_user_id: str, channel_name: str = "") -> str:
+                  bot_user_id: str, channel_name: str = "", permalink: str = "") -> str:
     lines = []
     for m in messages:
         who = "amebo" if (m.get("user") == bot_user_id or m.get("bot_id")) \
             else names.get(m.get("user", ""), m.get("user", "someone"))
         text = (m.get("text") or "").replace(f"<@{bot_user_id}>", "@amebo")
         lines.append(f"{who}: {text}")
-    attr = f' channel="#{channel_name}"' if channel_name else ""
+    attr = (f' channel="#{channel_name}"' if channel_name else "") \
+        + (f' latest_message="{permalink}"' if permalink else "")
     return f"<slack_thread{attr}>\n" + "\n".join(lines) + "\n</slack_thread>"
 
 
@@ -280,10 +281,15 @@ class MaxAnswerer:
             channel_name = (await self.web.conversations_info(channel=channel))["channel"]["name"]
         except SlackApiError:
             channel_name = ""
-        latest = format_thread(messages[-1:], names, bot_uid, channel_name)
+        try:
+            permalink = (await self.web.chat_getPermalink(
+                channel=channel, message_ts=messages[-1]["ts"]))["permalink"]
+        except SlackApiError:
+            permalink = ""
+        latest = format_thread(messages[-1:], names, bot_uid, channel_name, permalink)
         out = await self._run_claude(["--resume", session], latest, channel)
         if out is None:
-            whole = format_thread(messages, names, bot_uid, channel_name)
+            whole = format_thread(messages, names, bot_uid, channel_name, permalink)
             out = await self._run_claude(["--session-id", session], whole, channel)
         if out is None:
             raise RuntimeError("claude did not start a session")
