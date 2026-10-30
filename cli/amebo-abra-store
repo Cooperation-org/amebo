@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# amebo-abra-store <name> "<content>" [--scope S] [--qualifier Q] [--cat C] [--date D]
+# abra store for amebo-max: content on the command line only (no -f/--file,
+# which would let it copy any local file into abra), written as amebo-max.
+set -euo pipefail
+for a in "$@"; do
+  case "$a" in -f|--file|--file=*|-f*|--writer|--writer=*) echo "not allowed: $a" >&2; exit 2;; esac
+done
+[ $# -ge 2 ] || { echo 'usage: amebo-abra-store <name> "<content>" [--scope S] [--qualifier Q] [--cat C] [--date D]' >&2; exit 2; }
+exec abra store "$@" --writer amebo-max

@@ -27,6 +27,8 @@ answerer = MaxAnswerer(
     workdir=os.environ["AMEBO_MAX_WORKDIR"],
     claude_bin=os.getenv("AMEBO_MAX_CLAUDE", "claude"),
     timeout_seconds=int(os.getenv("AMEBO_MAX_TIMEOUT_SECONDS", "600")),
+    concurrency=int(os.getenv("AMEBO_MAX_CONCURRENCY", "1")),
+    per_hour=int(os.getenv("AMEBO_MAX_PER_HOUR", "20")),
 )
 _SLACK_TS = re.compile(r"^\d+\.\d+$")
 _SLACK_ID = re.compile(r"^[A-Z0-9]+$")

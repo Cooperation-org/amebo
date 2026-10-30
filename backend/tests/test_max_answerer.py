@@ -138,3 +138,20 @@ async def test_new_thread_starts_session_with_whole_thread():
     assert first.args[0][0] == "--resume" and "context" not in first.args[1]
     assert second.args[0][0] == "--session-id" and "context" in second.args[1]
     assert first.args[2] == "C1" and second.args[2] == "C1"
+
+
+@pytest.mark.asyncio
+async def test_hourly_cap_leaves_the_rest_to_the_backend():
+    a = _answerer([{"ts": "1.0", "user": "U1", "text": "<@UBOT> who knows Candid?"}], MEMBER)
+    a.per_hour = 1
+    a._run_claude = AsyncMock(return_value="ok")
+    assert await a.handle("C1", "1.0", "1.0") == "answered"
+    a.web.reactions_add.reset_mock()
+    assert "in the last hour" in await a.handle("C1", "1.0", "1.0")
+    a.web.reactions_add.assert_not_awaited()
+
+
+def test_prompt_file_is_the_whole_prompt():
+    p = ma.system_prompt()
+    assert "Permissions are not set here" not in p   # header stays out
+    assert "<slack_thread>" in p
