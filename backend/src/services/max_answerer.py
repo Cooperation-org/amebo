@@ -29,6 +29,7 @@ import json
 import logging
 import os
 import re
+import shutil
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -41,9 +42,11 @@ CLAIM_REACTION = "raised_hand"
 
 # Read-only. Bash rules are command prefixes; Claude Code checks each part of a
 # compound command separately, so `abra search x; cat ~/.env` is denied.
+ABRA_READ = ("search", "about", "read", "who", "related", "names")
+ABRA_SCOPES = ("golda", "linkedtrust", "claude")
 ALLOWED_TOOLS = [
-    "Bash(abra search:*)", "Bash(abra about:*)", "Bash(abra read:*)",
-    "Bash(abra who:*)", "Bash(abra related:*)", "Bash(abra names:*)",
+    *[f"Bash(abra {v}:*)" for v in ABRA_READ],
+    *[f"Bash(abra --scope {sc} {v}:*)" for sc in ABRA_SCOPES for v in ABRA_READ],
     "Bash(odoo-cli contact-search:*)", "Bash(odoo-cli comms:*)",
     "Bash(odoo-cli campaign-list:*)", "Bash(odoo-cli campaign-show:*)",
     "Bash(amebo-slack-history:*)",
@@ -139,7 +142,13 @@ class MaxAnswerer:
                  concurrency: int = 2):
         self.web = AsyncWebClient(token=bot_token)
         self.workdir = workdir
-        self.claude_bin = claude_bin
+        # The Claude process gets its own PATH (AMEBO_MAX_PATH): the backend
+        # .env sets PATH for the backend, and it lacks claude and the amebo CLIs.
+        self.path = os.getenv("AMEBO_MAX_PATH") or os.environ.get("PATH", "")
+        # Full path: uvloop's spawn does not search PATH.
+        self.claude_bin = shutil.which(claude_bin, path=self.path)
+        if not self.claude_bin:
+            raise RuntimeError(f"{claude_bin!r} not found on PATH")
         self.timeout_seconds = timeout_seconds
         self.max_chars = max_chars
         self._slots = asyncio.Semaphore(concurrency)
@@ -250,7 +259,7 @@ class MaxAnswerer:
             "--output-format", "json",
         ]
         proc = await asyncio.create_subprocess_exec(
-            *args, cwd=self.workdir, env={**scrubbed_env(), "AMEBO_MAX_CHANNEL": channel},
+            *args, cwd=self.workdir, env={**scrubbed_env(), "PATH": self.path, "AMEBO_MAX_CHANNEL": channel},
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         try:

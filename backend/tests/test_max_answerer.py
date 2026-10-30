@@ -81,7 +81,7 @@ async def test_backend_answers_when_max_did_not_claim():
 
 
 def _answerer(messages, user):
-    a = ma.MaxAnswerer(bot_token="xoxb-test", workdir="/tmp")
+    a = ma.MaxAnswerer(bot_token="xoxb-test", workdir="/tmp", claude_bin="true")
     a.web = AsyncMock()
     a.web.auth_test.return_value = {"user_id": "UBOT", "team_id": "T1"}
     a.web.conversations_replies.return_value = {"messages": messages}
