@@ -73,6 +73,20 @@ async def _deliver(web_client, answer, channel, thread_ts, trigger_ts):
 
 
 
+async def _claimed_by_max(web_client, instance_slug, channel, ts, thread_root):
+    """True if amebo-max (instance config `max_answerer`) answered this one.
+
+    See src/services/max_answerer.py. Without that config, always False.
+    """
+    if not instance_slug:
+        return False
+    from src.db.repositories.instance_repo import InstanceRepo
+    from src.services.max_answerer import claimed_by_max
+    inst = InstanceRepo().get_by_slug(instance_slug) or {}
+    cfg = (inst.get("config") or {}).get("max_answerer")
+    return await claimed_by_max(web_client, cfg, channel, ts, thread_root)
+
+
 def _resolve_org_and_instance(workspace_id: str):
     """Map a Slack workspace (team_id) to its (org_id, instance_slug).
 
@@ -448,10 +462,13 @@ async def handle_app_mention(team_id, channel, text, user, ts, thread_ts=None):
             )
             return
 
-        # Get answer from Q&A service (with thread context for conversation memory).
         # Resolve org + instance so the loop can use this team's tools and
         # attribute gated actions (e.g. creating a Taiga task) to the org.
         org_id, instance_slug = _resolve_org_and_instance(team_id)
+        if await _claimed_by_max(web_client, instance_slug, channel, ts, thread_root):
+            return
+
+        # Get answer from Q&A service (with thread context for conversation memory).
         qa_service = QAService(workspace_id=team_id, org_id=org_id)
         result = qa_service.answer_question(
             question=question,
@@ -564,6 +581,8 @@ async def handle_thread_reply(team_id, channel, text, user, ts, thread_ts):
         web_client = AsyncWebClient(token=BOT_TOKEN)
 
         org_id, instance_slug = _resolve_org_and_instance(team_id)
+        if await _claimed_by_max(web_client, instance_slug, channel, ts, thread_ts):
+            return
         qa_service = QAService(workspace_id=team_id, org_id=org_id)
         result = qa_service.answer_question(
             question=question,

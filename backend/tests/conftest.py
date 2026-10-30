@@ -23,3 +23,14 @@ if "DATABASE_URL" not in os.environ:
         os.environ["DATABASE_URL"] = "postgresql://test:test@127.0.0.1:1/test"
 
 os.environ.setdefault("ANTHROPIC_API_KEY", "test-key")
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _no_max_handoff(monkeypatch):
+    """Slack handler tests answer locally: never hand off to a live amebo-max."""
+    from unittest.mock import AsyncMock
+    from src.services import slack_commands
+    monkeypatch.setattr(slack_commands, "_claimed_by_max", AsyncMock(return_value=False))
