@@ -309,6 +309,9 @@ class MaxAnswerer:
               for t in ("Read", "Grep", "Edit", "Write")
               for f in (".env", ".env.*", "*.env", "*.pem", "*.key")],
             "--system-prompt", system_prompt() + "\n\nWritable:\n" + where,
+            # Every turn gets the current prompt file; with the default (on), a
+            # resumed thread keeps the prompt from its first turn.
+            "--system-prompt-snapshot", "off",
             "--output-format", "json",
         ]
         proc = await asyncio.create_subprocess_exec(
