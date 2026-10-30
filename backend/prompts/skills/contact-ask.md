@@ -33,6 +33,7 @@ Teammates narrow this down by adding notes on the card. Each new note is the nex
 
 ## Don't
 - Never write the message. No draft, no opening line, no "you could say". Give the facts it would carry, as bullets. The person speaks for themselves.
+- Write to the person reading as "you" and the team as "we". Never name or call them "she", "he" or "they", and no "how she knows them".
 - No flattery, no "explore synergies", no "pick their brain", no "partner" without saying what each side does.
 - No invented facts or intentions. Mark an estimate as an estimate.
 - Don't pad the pathways. One good one beats three.
