@@ -127,14 +127,15 @@ def scrubbed_env() -> Dict[str, str]:
 
 
 def format_thread(messages: List[Dict[str, Any]], names: Dict[str, str],
-                  bot_user_id: str) -> str:
+                  bot_user_id: str, channel_name: str = "") -> str:
     lines = []
     for m in messages:
         who = "amebo" if (m.get("user") == bot_user_id or m.get("bot_id")) \
             else names.get(m.get("user", ""), m.get("user", "someone"))
         text = (m.get("text") or "").replace(f"<@{bot_user_id}>", "@amebo")
         lines.append(f"{who}: {text}")
-    return "<slack_thread>\n" + "\n".join(lines) + "\n</slack_thread>"
+    attr = f' channel="#{channel_name}"' if channel_name else ""
+    return f"<slack_thread{attr}>\n" + "\n".join(lines) + "\n</slack_thread>"
 
 
 def in_window(now: float, tz: str, window: str) -> bool:
@@ -275,10 +276,14 @@ class MaxAnswerer:
     async def _ask_claude(self, session: str, channel: str, messages, names, bot_uid) -> str:
         """Resume the thread's session with the newest message, or start it
         with the whole thread."""
-        latest = format_thread(messages[-1:], names, bot_uid)
+        try:
+            channel_name = (await self.web.conversations_info(channel=channel))["channel"]["name"]
+        except SlackApiError:
+            channel_name = ""
+        latest = format_thread(messages[-1:], names, bot_uid, channel_name)
         out = await self._run_claude(["--resume", session], latest, channel)
         if out is None:
-            whole = format_thread(messages, names, bot_uid)
+            whole = format_thread(messages, names, bot_uid, channel_name)
             out = await self._run_claude(["--session-id", session], whole, channel)
         if out is None:
             raise RuntimeError("claude did not start a session")
