@@ -25,7 +25,7 @@ Being listed on a research row means only that a person's employer matched a top
 Every answer then goes to a separate review (`contact-ask-review.md`) before it reaches the card.
 
 ## Output, under 250 words, as plain lines
-- **Do:** the one concrete next thing, or "Nothing yet" with what is missing.
+- **Do:** one outreach the reader can do today: a named person, by which channel, about what they need. Project owner: "if its not an outreach i can actually do, it doesn't go in /next." Otherwise write "Nothing yet" with what is missing,
 - **Pathways:** up to 3 ways we could work with them, best first, one line each: what we do, what they do, what they get, what would have to be true. Only ones that passed the steps. None passed: say "No ask" and why.
 - **Onramp:** the artifact or fact, what exists today, hours to finish.
 - **Ask:** for the first pathway, the one ask of this person.
