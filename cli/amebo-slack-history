@@ -13,16 +13,12 @@ import sys
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
-from pathlib import Path
 
-ENV_FILE = Path(__file__).resolve().parent.parent / "backend" / ".env"
+from _amebo_env import read_env
 
 
 def token():
-    for line in ENV_FILE.read_text().splitlines():
-        if line.startswith("SLACK_BOT_TOKEN="):
-            return line.split("=", 1)[1].strip().strip('"')
-    sys.exit("SLACK_BOT_TOKEN not found")
+    return read_env("SLACK_BOT_TOKEN")["SLACK_BOT_TOKEN"]
 
 
 def call(method, **params):

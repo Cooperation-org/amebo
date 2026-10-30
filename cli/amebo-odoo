@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+"""amebo-odoo — odoo-cli as the amebo CRM user (ODOO_USER / ODOO_API_KEY from
+backend/.env), for amebo-max. Same args as odoo-cli; only the verbs in VERBS.
+
+The key is handed only to odoo-cli. HOME is a fresh empty directory so
+odoo-cli does not source the caller's own ~/.env (a person's login).
+"""
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+
+from _amebo_env import read_env
+
+# Contacts, activities, notes. No users, modules, oauth, shell, deletes or
+# exports. No campaign verbs: they add an Odoo field first, which needs admin
+# rights the amebo user does not have; campaigns go through amebo-elm.
+VERBS = {"contact-search", "contact-list", "comms", "agenda",
+         "contact-create", "contact-set", "contact-tag", "contact-untag",
+         "note", "schedule", "done"}
+
+
+def main():
+    if len(sys.argv) < 2 or sys.argv[1] not in VERBS:
+        sys.exit(f"usage: amebo-odoo <{'|'.join(sorted(VERBS))}> [args...]")
+    creds = read_env("ODOO_USER", "ODOO_API_KEY")
+    tool = shutil.which("odoo-cli")
+    if not tool:
+        sys.exit("odoo-cli not on PATH")
+    with tempfile.TemporaryDirectory() as home:
+        env = {**os.environ, **creds, "HOME": home}
+        sys.exit(subprocess.run([tool, *sys.argv[1:]], env=env).returncode)
+
+
+if __name__ == "__main__":
+    main()

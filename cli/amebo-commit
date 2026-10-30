@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# amebo-commit <repo> "<message>" — commit and push everything in one of the
+# repos amebo-max may write (the team rule: add -A, pull --rebase, push).
+# Repos come from AMEBO_MAX_REPOS: "name=/path,name=/path".
+set -euo pipefail
+[ $# -eq 2 ] && [ -n "$2" ] || { echo 'usage: amebo-commit <repo> "<message>"' >&2; exit 2; }
+path=""
+IFS=',' read -ra pairs <<< "${AMEBO_MAX_REPOS:?AMEBO_MAX_REPOS not set}"
+for p in "${pairs[@]}"; do [ "${p%%=*}" = "$1" ] && path="${p#*=}"; done
+[ -n "$path" ] || { echo "unknown repo '$1'; allowed: ${AMEBO_MAX_REPOS}" >&2; exit 2; }
+cd "$path"
+git add -A
+git diff --cached --quiet && { echo "nothing to commit"; exit 0; }
+git commit -q -m "$2" -m "Written by amebo-max (Claude) from a Slack request."
+git pull -q --rebase
+git push -q
+git log --oneline -1

@@ -13,10 +13,9 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from pathlib import Path
 
-ENV_FILE = Path(__file__).resolve().parent.parent / "backend" / ".env"
-KEYS = ("TAIGA_URL", "TAIGA_USERNAME", "TAIGA_PASSWORD")
+from _amebo_env import read_env
+
 # No attach (reads local files), add-member, onboard, login.
 VERBS = {"projects", "members", "statuses", "users", "list", "show",
          "create", "update", "move", "comment", "task"}
@@ -25,14 +24,7 @@ VERBS = {"projects", "members", "statuses", "users", "list", "show",
 def main():
     if len(sys.argv) < 2 or sys.argv[1] not in VERBS:
         sys.exit(f"usage: amebo-taiga <{'|'.join(sorted(VERBS))}> [args...]")
-    creds = {}
-    for line in ENV_FILE.read_text().splitlines():
-        k, _, v = line.partition("=")
-        if k in KEYS:
-            creds[k] = v.strip().strip('"')
-    missing = [k for k in KEYS if not creds.get(k)]
-    if missing:
-        sys.exit(f"missing in backend/.env: {', '.join(missing)}")
+    creds = read_env("TAIGA_URL", "TAIGA_USERNAME", "TAIGA_PASSWORD")
     tool = shutil.which("mcp-taiga")
     if not tool:
         sys.exit("mcp-taiga not on PATH")
