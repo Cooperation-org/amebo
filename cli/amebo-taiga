@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
 """amebo-taiga — mcp-taiga as the amebo Taiga user, for amebo-max.
 
-Usage: amebo-taiga <verb> [args...]   verbs: see VERBS; same args as mcp-taiga.
+Usage: amebo-taiga [--site workersvc] <verb> [args...]
+       verbs: see VERBS; same args as mcp-taiga.
+
+--site picks the Taiga: default taiga.linkedtrust.us (TAIGA_URL, TAIGA_USERNAME,
+TAIGA_PASSWORD); --site <name> reads TAIGA_<NAME>_URL, _USERNAME, _PASSWORD.
 
 The Taiga login (TAIGA_URL, TAIGA_USERNAME, TAIGA_PASSWORD) is read here from
 backend/.env and handed only to mcp-taiga, so it never reaches the caller's
@@ -22,12 +26,18 @@ VERBS = {"projects", "members", "statuses", "users", "list", "show",
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in VERBS:
-        sys.exit(f"usage: amebo-taiga <{'|'.join(sorted(VERBS))}> [args...]")
-    creds = read_env("TAIGA_URL", "TAIGA_USERNAME", "TAIGA_PASSWORD")
+    argv = sys.argv[1:]
+    prefix = "TAIGA_"
+    if argv[:1] == ["--site"] and len(argv) > 1:
+        prefix = f"TAIGA_{argv[1].upper()}_"
+        argv = argv[2:]
+    if not argv or argv[0] not in VERBS:
+        sys.exit(f"usage: amebo-taiga [--site <name>] <{'|'.join(sorted(VERBS))}> [args...]")
+    site = read_env(*(prefix + k for k in ("URL", "USERNAME", "PASSWORD")))
+    creds = {"TAIGA_" + k[len(prefix):]: v for k, v in site.items()}
     # A shell argument cannot easily hold a newline, so the description takes
     # a literal \n for one; \n\n separates paragraphs (Taiga renders Markdown).
-    args = list(sys.argv[1:])
+    args = list(argv)
     for i, a in enumerate(args[:-1]):
         if a in ("-d", "--description"):
             args[i + 1] = args[i + 1].replace("\\n", "\n")

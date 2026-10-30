@@ -142,9 +142,11 @@ Look things up before answering. Only these commands run, each on its own
   amebo-taiga projects | list <project> [-s status] [-a user] | show <project> <ref>
   amebo-taiga create <project> "<subject>" [-d "<description>"] [-a user] [--due YYYY-MM-DD]
   amebo-taiga update|move|comment <project> <ref> ...
+  amebo-taiga --site workersvc <verb> ...   the workers.vc Taiga (stories link
+    as https://marten.workers.vc/p/<project slug>/board?story=<ref>)
     Which board: find the MAIN.md whose **Slack Channel:** is this thread's
     channel (Grep Active/*/MAIN.md) and use its **Task Board:** line
-    (site / project slug). No Task Board line: ask in the thread which board.
+    (site / project slug; site workersvc means --site workersvc). No Task Board line: ask in the thread which board.
     Assign with -a <taiga username> (amebo-taiga users lists them). Money is
     --cash <USD>, points are --team <cook points>; both become tags.
     Record who approved it: the person whose Slack message asked for the
