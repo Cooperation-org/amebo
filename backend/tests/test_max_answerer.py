@@ -197,3 +197,29 @@ def test_card_tools_only_read():
     assert "Edit" not in ma.CARD_TOOLS and "Write" not in ma.CARD_TOOLS
     assert not any(r.startswith(("Bash(amebo-odoo", "Bash(amebo-commit", "Bash(amebo-taiga", "Bash(amebo-abra-store")) for r in ma.CARD_ALLOWED)
     assert "Bash(amebo-elm GET:*)" in ma.CARD_ALLOWED
+
+
+@pytest.mark.parametrize("text,ok", [
+    ('{"pass": true, "why": ""}', True),
+    ('checked it.\n{"pass": false, "why": "stale"}', False),
+    ("looks good", False),
+    ('{"pass": "yes"}', False),
+])
+def test_review_verdict_only_passes_on_a_clear_true(text, ok):
+    assert ma.review_verdict(text)["pass"] is ok
+
+
+@pytest.mark.asyncio
+async def test_rejected_three_times_never_reaches_the_card():
+    a = ma.MaxAnswerer.__new__(ma.MaxAnswerer)
+    a._run_card = AsyncMock(side_effect=lambda args, prompt, skill=ma.CARD_SKILL: (
+        '{"pass": false, "why": "no source"}' if skill == ma.CARD_REVIEW else "rewritten slop"))
+    out = await a._reviewed({"id": 1}, "s", "slop")
+    assert "slop" not in out and "no source" in out
+
+
+@pytest.mark.asyncio
+async def test_passing_review_keeps_the_answer():
+    a = ma.MaxAnswerer.__new__(ma.MaxAnswerer)
+    a._run_card = AsyncMock(return_value='{"pass": true, "why": ""}')
+    assert await a._reviewed({"id": 1}, "s", "clear answer") == "clear answer"

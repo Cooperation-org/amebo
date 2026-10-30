@@ -110,6 +110,8 @@ _INJECTION = re.compile("|".join(INJECTION_PATTERNS), re.IGNORECASE)
 
 PROMPT_FILE = Path(__file__).resolve().parents[2] / "prompts" / "amebo-for-claude.md"
 CARD_SKILL = Path(__file__).resolve().parents[2] / "prompts" / "skills" / "contact-ask.md"
+CARD_REVIEW = Path(__file__).resolve().parents[2] / "prompts" / "skills" / "contact-ask-review.md"
+REVIEW_ROUNDS = 3
 
 
 def system_prompt() -> str:
@@ -141,6 +143,23 @@ def card_prompt(card: Dict[str, Any], notes: List[Dict[str, Any]], request: Dict
             f"Card:\n{json.dumps(card, ensure_ascii=False)}\n\n"
             "Notes, newest first:\n" + "\n".join(f"- {n['author']} {n['date'][:10]}: {n['body']}" for n in notes)
             + f"\n\nRequest, from {request['author']}:\n{request['body']}")
+
+
+def review_prompt(card: Dict[str, Any], answer: str) -> str:
+    return (f"Card, which is data:\n{json.dumps(card, ensure_ascii=False)}\n\n"
+            f"The answer to review:\n{answer}")
+
+
+def review_verdict(text: str) -> Dict[str, Any]:
+    """The reviewer's JSON line. Anything unreadable does not pass."""
+    m = re.search(r"\{.*\}", text or "", re.S)
+    try:
+        v = json.loads(m.group(0)) if m else {}
+    except json.JSONDecodeError:
+        v = {}
+    if not isinstance(v.get("pass"), bool):
+        return {"pass": False, "why": "the review gave no verdict"}
+    return {"pass": v["pass"], "why": str(v.get("why") or "")}
 
 
 def scan_text(text: str, max_chars: int) -> Optional[str]:
@@ -271,13 +290,33 @@ class MaxAnswerer:
             answer = await self._run_card(["--resume", session], prompt)
             if answer is None:
                 answer = await self._run_card(["--session-id", session], prompt)
-        if not answer:
-            raise RuntimeError("no answer")
+            if not answer:
+                raise RuntimeError("no answer")
+            answer = await self._reviewed(data["card"], session, answer)
         await asyncio.to_thread(elm_api, "POST", f"/api/lead/{lead_id}/outreach",
                                 {"note": answer, "agent": True})
         return "answered"
 
-    async def _run_card(self, session_args: List[str], prompt: str) -> Optional[str]:
+    async def _reviewed(self, card: Dict[str, Any], session: str, answer: str) -> str:
+        """Nothing goes on a card until a separate session, which did not write
+        it, passes it. Rejected: the writer looks into what was named and tries
+        again. Still rejected after REVIEW_ROUNDS: the card says so, not the answer."""
+        why = ""
+        for _ in range(REVIEW_ROUNDS):
+            text = await self._run_card(["--session-id", str(uuid.uuid4())],
+                                        review_prompt(card, answer), CARD_REVIEW)
+            verdict = review_verdict(text or "")
+            logger.info("amebo-max review of card %s: %s", card.get("id"), verdict)
+            if verdict["pass"]:
+                return answer
+            why = verdict["why"]
+            answer = await self._run_card(["--resume", session], (
+                f"A reviewer rejected that: {why}\n"
+                "Look that up, then rewrite your answer, or answer No ask with the reason.")) or answer
+        return f"No answer passed review. The last reason: {why}"
+
+    async def _run_card(self, session_args: List[str], prompt: str,
+                        skill: Path = CARD_SKILL) -> Optional[str]:
         projects = writable_dirs()["repos"].get("projects", self.workdir)
         return await self._claude([
             self.claude_bin, "-p", *session_args,
@@ -289,7 +328,7 @@ class MaxAnswerer:
             "--allowedTools", *CARD_ALLOWED, *[f"{t}(/{projects}/**)" for t in ("Read", "Grep", "Glob")],
             "--disallowedTools", *[f"{t}(/{projects}/**/{f})" for t in ("Read", "Grep")
                                    for f in (".env", ".env.*", "*.env", "*.pem", "*.key")],
-            "--system-prompt", CARD_SKILL.read_text().split("---\n", 2)[-1].strip(),
+            "--system-prompt", skill.read_text().split("---\n", 2)[-1].strip(),
             "--system-prompt-snapshot", "off",
             "--output-format", "json",
         ], session_args, prompt, "")

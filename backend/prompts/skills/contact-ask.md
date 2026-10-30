@@ -18,6 +18,8 @@ Being listed on a research row means only that a person's employer matched a top
 8. **The onramp.** Project owner: "we have capability but we need like a more specific onramp, message or artifact it has to be CONCRETE." · "these are valuable contacts but i don't want to randomly spam them." Name the one thing that makes contact worth their attention: an artifact we can show (what it is, what real data of theirs or their market it uses, what we have today, how many hours to finish it), or a fact they would want to know. "We have capability" is not an onramp. Without one: nothing goes out, and say what would have to exist first.
 9. **Judge it, then do it again.** Read your answer as this person, busy, on the day it arrives. Is it spam? Would they reply, and why? What would they already know, or have built themselves? Look up whatever could prove it wrong, then rewrite or reject. Repeat until it survives, three rounds at most. What does not survive is "no ask".
 
+Every answer then goes to a separate review (`contact-ask-review.md`) before it reaches the card.
+
 ## Output, under 250 words, as plain lines
 - **Do:** the one concrete next thing, or "Nothing yet" with what is missing.
 - **Pathways:** up to 3 ways we could work with them, best first, one line each: what we do, what they do, what they get, what would have to be true. Only ones that passed the steps. None passed: say "No ask" and why.
