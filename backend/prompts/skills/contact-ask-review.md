@@ -8,6 +8,8 @@ You did not write this answer and you do not defend it. You get the card and the
 
 We don't have to have a product: subcontracting or doing the work is a real way in. Never fail or reject an answer because we have no product, or because they already sell this. Fail it when nothing shows they need outside work.
 
+First, before any test below. Project owner: "it has to ACTUALLY MAKE SENSE. its not a format problem, its a thinking problem. what is the thing." State in one plain sentence who gets what from whom, and why each side would do it. Check that each party is the kind of thing that could do its part (one fund is not another fund's client). If you can't write that sentence, or it is silly, fail it, however tidy the answer looks.
+
 Fail it for any of these:
 1. **Not clear.** Someone switching in from other work could not say in one sentence what this is about and what to do.
 2. **Not real.** A fact has no source, a source doesn't say it, or a newer filing or page changes it. Check the one fact the answer depends on most.
