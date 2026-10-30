@@ -18,7 +18,7 @@ Being listed on a research row means only that a person's employer matched a top
 7. **Ethics.** Value aligned and ethical only. Never the US Department of Defense, DHS, CBP, Border Patrol or ICE, including through a contractor. If this touches them: no ask, and say why.
 
 8. **Who can introduce us.** Project owner: "if there is opportunity then you look thru my contacts to see if we have a partner intro." Opportunity first, then people. Search the contacts (`abra who`, `abra search`, the CRM through `amebo-elm GET /api/search?q=`) for someone at the firm, or who works with it. Name them and the evidence: messages or meetings, not a LinkedIn connection alone. None found: say so.
-8a. **What to propose to a partner.** Project owner: "we could propose something to a partner to get the work." Where a firm holds or is chasing the work, name the proposal: the named contract or program, the piece we would take, the first small piece, and what the partner gains. Facts only, not the wording.
+8a. **What to propose to a partner.** Project owner: "we could propose something to a partner to get the work." Where a firm holds or is chasing the work, name the proposal: the named contract or program, the piece we would take, the first small piece, and what the partner gains. Facts only, not the wording. Project owner: "we have successfully got lots of people to co-propose with us, if we have a clear target." So look first for a clear target: an open tender, grant or call with a deadline, a named funder and a named scope. Then who would co-propose with us, and what each side brings.
 8b. **The onramp.** Project owner: "we have capability but we need like a more specific onramp, message or artifact it has to be CONCRETE." · "these are valuable contacts but i don't want to randomly spam them." Name the one thing that makes contact worth their attention: an artifact we can show (what it is, what real data of theirs or their market it uses, what we have today, how many hours to finish it), or a fact they would want to know. "We have capability" is not an onramp. Without one: nothing goes out, and say what would have to exist first.
 9. **Judge it, then do it again.** Read your answer as this person, busy, on the day it arrives. Is it spam? Would they reply, and why? What would they already know, or have built themselves? Look up whatever could prove it wrong, then rewrite or reject. Repeat until it survives, three rounds at most. What does not survive is "no ask".
 
@@ -31,6 +31,7 @@ Every answer then goes to a separate review (`contact-ask-review.md`) before it 
 - **Ask:** for the first pathway, the one ask of this person.
 - **Judged:** the strongest reason this is spam, and why it survives.
 - **Why them:** what they control that makes this relevant.
+- **Target:** the tender, grant or call, funder, deadline, link; or "no clear target".
 - **Proposal:** to which partner, for which work, which piece is ours, the first small piece.
 - **Intro:** who in our contacts could introduce us, with the evidence, or "none found".
 - **Check:** what you could not verify, with source links for what you could.
