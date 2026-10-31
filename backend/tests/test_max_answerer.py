@@ -223,3 +223,21 @@ async def test_passing_review_keeps_the_answer():
     a = ma.MaxAnswerer.__new__(ma.MaxAnswerer)
     a._run_card = AsyncMock(return_value='{"pass": true, "why": ""}')
     assert await a._reviewed({"id": 1}, "s", "clear answer") == "clear answer"
+
+
+@pytest.mark.asyncio
+async def test_think_posts_only_what_the_critic_and_review_pass():
+    a = ma.MaxAnswerer.__new__(ma.MaxAnswerer)
+    a._thread_locks, a._claims, a._slots = {}, [], __import__("asyncio").Semaphore(1)
+    a.sleep_window, a.tz, a.quiet_hours, a.per_hour = "00:00-00:00", "UTC", 0, 10
+    def run(args, prompt, skill=ma.CARD_SKILL, timeout=None):
+        return {ma.THINK_BRAINSTORM: "58 ideas", ma.THINK_CRITIC: "one gem", ma.CARD_REVIEW: '{"pass": true}'}[skill]
+    a._run_card = AsyncMock(side_effect=run)
+    calls = []
+    def api(method, path, body=None):
+        calls.append((method, path, body))
+        return {"card": {"id": 7}, "notes": []} if method == "GET" else {"ok": True}
+    with patch.object(ma, "elm_api", api):
+        assert await a.handle_think(7) == "thought"
+    posted = [c[2]["note"] for c in calls if c[0] == "POST"]
+    assert posted == ["one gem"]
