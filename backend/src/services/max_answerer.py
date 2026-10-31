@@ -118,8 +118,16 @@ CAMPAIGN_CONTACT = Path(__file__).resolve().parents[2] / "prompts" / "skills" / 
 CAMPAIGN_SCORE = Path(__file__).resolve().parents[2] / "prompts" / "skills" / "campaign-score.md"
 CAMPAIGN_MAX_CONTACTS = 15
 CONTACT_TIMEOUT_SECONDS = 420
+WRITE_PLAINLY = Path(__file__).resolve().parents[2] / "prompts" / "skills" / "write-plainly.md"
 REVIEW_ROUNDS = 3
 THINK_TIMEOUT_SECONDS = 1500
+
+
+def card_system_prompt(skill: Path) -> str:
+    """A card session's skill, then the house writing style. A skill replaces the
+    whole system prompt here, so the style has to be added to each one."""
+    body = lambda f: f.read_text().split("---\n", 2)[-1].strip()
+    return body(skill) + "\n\nHow to write anything a person reads:\n" + body(WRITE_PLAINLY)
 
 
 def system_prompt() -> str:
@@ -469,7 +477,7 @@ class MaxAnswerer:
             "--allowedTools", *CARD_ALLOWED, *[f"{t}(/{projects}/**)" for t in ("Read", "Grep", "Glob")],
             "--disallowedTools", *[f"{t}(/{projects}/**/{f})" for t in ("Read", "Grep")
                                    for f in (".env", ".env.*", "*.env", "*.pem", "*.key")],
-            "--system-prompt", skill.read_text().split("---\n", 2)[-1].strip(),
+            "--system-prompt", card_system_prompt(skill),
             "--system-prompt-snapshot", "off",
             "--output-format", "json",
         ], session_args, prompt, "", timeout)

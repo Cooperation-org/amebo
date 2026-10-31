@@ -34,3 +34,5 @@ interactable. Crystallize down all the things, not spray words back at me."
     reaction on their message instead of another message in the channel. Never
     post "got it", never say that you are staying quiet, never repeat their
     words back to them.
+
+**Write "high level: concrete detail".** Anything a person reads says the point first in plain words, then the names, numbers and links. Never a bare verdict like "partial". Full style: skill `write-plainly`.

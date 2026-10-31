@@ -241,3 +241,9 @@ async def test_think_posts_only_what_the_critic_and_review_pass():
         assert await a.handle_think(7) == "thought"
     posted = [c[2]["note"] for c in calls if c[0] == "POST"]
     assert posted == ["one gem"]
+
+
+def test_card_sessions_get_the_house_writing_style():
+    prompt = ma.card_system_prompt(ma.CARD_SKILL)
+    assert "high level: concrete detail" in prompt
+    assert prompt.startswith(ma.CARD_SKILL.read_text().split("---\n", 2)[-1].strip()[:40])
