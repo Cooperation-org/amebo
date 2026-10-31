@@ -83,5 +83,35 @@ async def think(request: Request):
     return JSONResponse(status_code=202, content={"accepted": True})
 
 
+@app.post("/campaign")
+async def campaign(request: Request):
+    body = await request.json()
+    lead_id, campaign_id = body.get("lead_id"), body.get("campaign_id")
+    if not all(isinstance(x, int) and x > 0 for x in (lead_id, campaign_id)):
+        raise HTTPException(status_code=400, detail="lead_id and campaign_id required")
+
+    async def run():
+        logger.info("amebo-max campaign %s: %s", campaign_id, await answerer.handle_campaign(lead_id, campaign_id))
+
+    asyncio.create_task(run())
+    return JSONResponse(status_code=202, content={"accepted": True})
+
+
+@app.post("/rescore")
+async def rescore(request: Request):
+    campaign_id = (await request.json()).get("campaign_id")
+    if not isinstance(campaign_id, int) or campaign_id <= 0:
+        raise HTTPException(status_code=400, detail="campaign_id required")
+
+    async def run():
+        try:
+            logger.info("amebo-max rescore %s: %s", campaign_id, await answerer.handle_rescore(campaign_id))
+        except Exception:
+            logger.exception("amebo-max: rescore %s failed", campaign_id)
+
+    asyncio.create_task(run())
+    return JSONResponse(status_code=202, content={"accepted": True})
+
+
 if __name__ == "__main__":
     uvicorn.run(app, host="127.0.0.1", port=int(os.environ["AMEBO_MAX_PORT"]))

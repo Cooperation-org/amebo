@@ -252,8 +252,12 @@ class Poller:
             self.repo.dead_letter("intake_sink_failed", message_id=mid, from_addr=sender,
                                   subject=subject, tag="intake", detail=str(e)[:200])
 
-    def process(self, msg: Message) -> str:
-        """Process one message. Returns a short status string."""
+    def process(self, msg: Message, raw_bytes: bytes = None) -> str:
+        """Process one message. Returns a short status string.
+
+        msg: parsed email.message.Message object
+        raw_bytes: raw RFC822 message bytes (for DKIM verification)
+        """
         mid = (msg.get("Message-ID") or "").strip()
         subject = msg.get("Subject", "") or ""
 
@@ -274,6 +278,7 @@ class Poller:
             from_hdr, auth_results_from_message(msg),
             self.config.allowlist, self.config.trusted_domains,
             getattr(self.config, "trusted_authserv", ("google.com",)),
+            raw_bytes,
         )
         if not ok:
             self.repo.dead_letter(reason, message_id=mid, from_addr=parseaddr(from_hdr)[1],

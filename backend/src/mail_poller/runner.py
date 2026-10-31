@@ -31,9 +31,10 @@ class ImapRunner:
                 typ, msgdata = M.fetch(num, "(RFC822)")
                 if typ != "OK" or not msgdata or not msgdata[0]:
                     continue
-                msg = email.message_from_bytes(msgdata[0][1])
+                raw_bytes = msgdata[0][1]
+                msg = email.message_from_bytes(raw_bytes)
                 try:
-                    status = self.poller.process(msg)
+                    status = self.poller.process(msg, raw_bytes=raw_bytes)
                 except Exception:
                     logger.exception("process failed for a message")
                     status = "error"

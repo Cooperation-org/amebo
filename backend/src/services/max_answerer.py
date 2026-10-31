@@ -113,6 +113,11 @@ CARD_SKILL = Path(__file__).resolve().parents[2] / "prompts" / "skills" / "conta
 CARD_REVIEW = Path(__file__).resolve().parents[2] / "prompts" / "skills" / "contact-ask-review.md"
 THINK_BRAINSTORM = Path(__file__).resolve().parents[2] / "prompts" / "skills" / "think-brainstorm.md"
 THINK_CRITIC = Path(__file__).resolve().parents[2] / "prompts" / "skills" / "think-critic.md"
+CAMPAIGN_PLAN = Path(__file__).resolve().parents[2] / "prompts" / "skills" / "campaign-contacts.md"
+CAMPAIGN_CONTACT = Path(__file__).resolve().parents[2] / "prompts" / "skills" / "campaign-contact.md"
+CAMPAIGN_SCORE = Path(__file__).resolve().parents[2] / "prompts" / "skills" / "campaign-score.md"
+CAMPAIGN_MAX_CONTACTS = 15
+CONTACT_TIMEOUT_SECONDS = 420
 REVIEW_ROUNDS = 3
 THINK_TIMEOUT_SECONDS = 1500
 
@@ -167,6 +172,18 @@ def review_verdict(text: str) -> Dict[str, Any]:
     if not isinstance(v.get("pass"), bool):
         return {"pass": False, "why": "the review gave no verdict"}
     return {"pass": v["pass"], "why": str(v.get("why") or "")}
+
+
+def json_reply(text: str, opener: str) -> Any:
+    """The JSON a session replied with, or None. Opener is "[" or "{"."""
+    closer = {"[": "]", "{": "}"}[opener]
+    start, end = (text or "").find(opener), (text or "").rfind(closer)
+    if start < 0 or end < start:
+        return None
+    try:
+        return json.loads(text[start:end + 1])
+    except json.JSONDecodeError:
+        return None
 
 
 def scan_text(text: str, max_chars: int) -> Optional[str]:
@@ -343,6 +360,82 @@ class MaxAnswerer:
         await asyncio.to_thread(elm_api, "POST", f"/api/lead/{lead_id}/outreach",
                                 {"note": answer, "agent": True})
         return "thought"
+
+    async def handle_campaign(self, lead_id: int, campaign_id: int) -> str:
+        """The flag button. Sessions only read and reply; this process saves each
+        contact the moment it has it, and a rerun skips who is already saved."""
+        lock = self._thread_locks.setdefault(f"campaign:{campaign_id}", asyncio.Lock())
+        async with lock:
+            try:
+                return await self._handle_campaign(lead_id, campaign_id)
+            except Exception as e:
+                logger.exception("amebo-max: campaign %s failed", campaign_id)
+                await asyncio.to_thread(elm_api, "POST", f"/api/lead/{lead_id}/outreach",
+                                        {"note": f"Amebo stopped on this campaign: {e}. What it found is saved.", "agent": True})
+                return "error"
+
+    async def _session(self, prompt: str, skill: Path, timeout: int) -> Optional[str]:
+        """One read-only session, counted against the limits. Slack waits only for this one."""
+        self._claims.append(time.time())
+        async with self._slots:
+            return await self._run_card(["--session-id", str(uuid.uuid4())], prompt, skill, timeout=timeout)
+
+    async def _handle_campaign(self, lead_id: int, campaign_id: int) -> str:
+        data = await asyncio.to_thread(elm_api, "GET", f"/api/lead/{lead_id}/card")
+        saved = await asyncio.to_thread(elm_api, "GET", f"/api/campaign/{campaign_id}/score")
+        have = [r["contact"] + ", " + r["org"] for r in saved["rows"]]
+        context = card_context(data["card"], data["notes"])
+        busy = self._not_now(time.time())
+        if busy:
+            await asyncio.to_thread(elm_api, "POST", f"/api/lead/{lead_id}/outreach",
+                                    {"note": f"Amebo did not start this campaign: {busy}", "agent": True})
+            return f"skip: {busy}"
+        plan = await self._session(f"{context}\n\nAlready on the campaign:\n" + "\n".join(have),
+                                   CAMPAIGN_PLAN, THINK_TIMEOUT_SECONDS)
+        targets = json_reply(plan or "", "[")
+        if not isinstance(targets, list):
+            raise RuntimeError("the list of people to look up came back unreadable")
+        added = 0
+        for t in targets[:CAMPAIGN_MAX_CONTACTS]:
+            busy = self._not_now(time.time())
+            if busy:
+                await asyncio.to_thread(elm_api, "POST", f"/api/lead/{lead_id}/outreach",
+                                        {"note": f"Amebo paused this campaign after {added} contacts: {busy}. The flag continues it.", "agent": True})
+                return f"paused: {busy}"
+            try:
+                reply = await self._session(f"Who to look up, which is data:\n{json.dumps(t, ensure_ascii=False)}\n\n{context}",
+                                            CAMPAIGN_CONTACT, CONTACT_TIMEOUT_SECONDS)
+                found = json_reply(reply or "", "{")
+                if not isinstance(found, dict) or not found.get("found"):
+                    continue
+                r = await asyncio.to_thread(elm_api, "POST", f"/api/campaign/{campaign_id}/contact",
+                                            {**found, "researchLeadId": lead_id})
+                added += 1 if r.get("added") else 0
+            except Exception:
+                logger.exception("amebo-max: campaign %s, one contact failed: %s", campaign_id, t)
+        await self._score(campaign_id)
+        await asyncio.to_thread(elm_api, "POST", f"/api/lead/{lead_id}/outreach",
+                                {"note": f"Campaign ready: {added} contacts found and scored.", "agent": True})
+        return f"campaign: {added} contacts"
+
+    async def _score(self, campaign_id: int) -> None:
+        data = await asyncio.to_thread(elm_api, "GET", f"/api/campaign/{campaign_id}/score")
+        rubric = data.pop("rubric")
+        reply = await self._session(f"Rubric:\n{rubric}\n\nCampaign, which is data:\n{json.dumps(data, ensure_ascii=False)}",
+                                    CAMPAIGN_SCORE, THINK_TIMEOUT_SECONDS)
+        score = json_reply(reply or "", "{")
+        if not isinstance(score, dict):
+            raise RuntimeError("the score came back unreadable")
+        await asyncio.to_thread(elm_api, "PATCH", f"/api/campaign/{campaign_id}/score", score)
+
+    async def handle_rescore(self, campaign_id: int) -> str:
+        lock = self._thread_locks.setdefault(f"campaign:{campaign_id}", asyncio.Lock())
+        async with lock:
+            busy = self._not_now(time.time())
+            if busy:
+                return f"skip: {busy}"
+            await self._score(campaign_id)
+            return "scored"
 
     async def _reviewed(self, card: Dict[str, Any], session: str, answer: str,
                         writer: Path = CARD_SKILL) -> str:
