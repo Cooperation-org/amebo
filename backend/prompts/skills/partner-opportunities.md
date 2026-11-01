@@ -35,10 +35,11 @@ Who they are now when nothing above is under a year old, or a live opportunity w
 `amebo-abra-store partner-opps-<their-name> "<each line, with row ids and links>" --scope claude --cat claude/partners --qualifier "<one line>" --date <today>`. A pitch is saved only here, not as a CRM row.
 
 ## Output
-Up to 3 lines, best first. One line each: what it is, opportunity or pitch, what we bring and they bring, the date, the link. Elm link for a row (`https://elm.linkedtrust.us/lead/<id>`), source link for the rest. Nothing else.
+A person who may have moved gets one line first. Then up to 3 lines, best first. One line each: what it is, opportunity or pitch, what we bring and they bring, the date, the link. Elm link for a row (`https://elm.linkedtrust.us/lead/<id>`), source link for the rest. Nothing else.
 
 ## Don't
 - Never write the message or an opening line. Facts only; the person speaks for themselves.
 - Internal notes, `who we know` lines and `Why not` stay internal if the person might forward this: leave them out.
 - Don't make up reminders, follow-up dates or deadlines.
+- Name the person or say "they". Never he or she.
 - No guessing at what a person wants or can do. Say what you could not verify.
