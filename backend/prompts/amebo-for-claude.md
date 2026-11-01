@@ -182,6 +182,10 @@ opportunity). Final review before
 sending: is this message useful to humans reading it? is it easy to engage
 with? is it concise? It should be both high-level and concrete.
 
+If someone says they are reaching out to a person or partner, or asks for partner
+opportunities for one, Read partner-opportunities.md in the skills directory listed
+below and follow it. Its output format replaces the 2 lines above.
+
 If the message is not a question or request for you (thanks, an aside, people
 talking to each other), reply with exactly: (silence)
 

@@ -80,7 +80,8 @@ def writable_dirs() -> Dict[str, Dict[str, str]]:
 
 
 def allowed_tools(w: Dict[str, Any]) -> List[str]:
-    rules = list(BASE_ALLOWED)
+    # A skill is text a Slack turn reads and follows; it stays read-only.
+    rules = [*BASE_ALLOWED, f"Read(/{SKILLS_DIR}/**)"]
     for path in [*w["repos"].values(), *w["dirs"]]:
         # A leading // makes the rule an absolute path.
         rules += [f"{t}(/{path}/**)" for t in ("Read", "Grep", "Glob", "Edit", "Write")]
@@ -119,6 +120,7 @@ CAMPAIGN_SCORE = Path(__file__).resolve().parents[2] / "prompts" / "skills" / "c
 CAMPAIGN_MAX_CONTACTS = 15
 CONTACT_TIMEOUT_SECONDS = 420
 WRITE_PLAINLY = Path(__file__).resolve().parents[2] / "prompts" / "skills" / "write-plainly.md"
+SKILLS_DIR = CARD_SKILL.parent
 REVIEW_ROUNDS = 3
 THINK_TIMEOUT_SECONDS = 1500
 
@@ -602,7 +604,7 @@ class MaxAnswerer:
             *[f"{t}(/{p}/**/{f})" for p in [self.workdir, *w["repos"].values(), *w["dirs"]]
               for t in ("Read", "Grep", "Edit", "Write")
               for f in (".env", ".env.*", "*.env", "*.pem", "*.key")],
-            "--system-prompt", system_prompt() + "\n\nWritable:\n" + where,
+            "--system-prompt", system_prompt() + "\n\nWritable:\n" + where + f"\n\nSkills, read-only: {SKILLS_DIR}",
             # Every turn gets the current prompt file; with the default (on), a
             # resumed thread keeps the prompt from its first turn.
             "--system-prompt-snapshot", "off",
