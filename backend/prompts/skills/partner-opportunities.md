@@ -9,7 +9,7 @@ Two different things, kept apart. An **opportunity** exists without us: an RFP o
 ## Read first, in this order. Stop reading once you have 3 good ones.
 1. **Their list:** `amebo-elm GET /api/partners` for their id, `amebo-elm GET /api/partners/<id>` for their rows. Rows already there are the answer: use them, and check only that dates have not passed. Not listed: `amebo-elm POST /api/partners '{"name":"<name>"}'`.
 2. **What they can do:** `amebo-elm GET "/api/world/capability?entity=<id>"`, `abra about <their-name>`, `abra search "<name>"`, `amebo-odoo comms <name>`. People change employers: go by the latest evidence.
-3. **What we can do:** `amebo-elm GET /api/world/capability` (entity LinkedTrust).
+3. **What we can do and care about:** `amebo-elm GET /api/world/capability` (entity LinkedTrust).
 4. **What exists:** `amebo-elm GET /api/world/opportunity`, one short line each: RFPs, grants, stated needs. Our pitches and research: `amebo-elm GET /api/opportunities?tags=research`. Pick up to 5 by title, then `amebo-elm GET /api/lead/<id>/card` for only those. Never read every card.
 5. **Past work with them:** `amebo-elm GET /api/search?q=<name or org>`, and Grep `connections/` and `grants/` in the projects repo.
 
@@ -29,7 +29,8 @@ Who they are now when nothing above is under a year old, or a live opportunity w
   - **Agentic AI:** business process automation, machine learning
   - **Project Money:** managing fast-moving teams for startups
   - **Risk:** no project document defines it, so read `Active/*/MAIN.md` and claim only what one says
-- **Rank by:** a date still reachable, then how directly it fits, then who we know there. No invented scores.
+- **Shares a value.** Our values are the `kind: value` rows from `/api/world/capability`: opportunity for people, equity, accountability, climate change, accountability for harm, stopping forced labor. Shared values are why people work with us. Name one only when their own words show it, and save theirs with `"kind":"value"`.
+- **Rank by:** a date still reachable, then how directly it fits, then a shared value, then who we know there. No invented scores.
 - **Value aligned and ethical only.** Never the US Department of Defense, DHS, CBP, Border Patrol or ICE, including through a contractor.
 - Fewer than 3 is fine. None is a good answer: say what was checked.
 
