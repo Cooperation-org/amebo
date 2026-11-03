@@ -44,8 +44,6 @@ SLACK_SCOPES = [
     "reactions:read",
     "groups:history",
     "groups:read",
-    "im:history",
-    "mpim:history",
     "chat:write",
     "files:read",
     "links:read",

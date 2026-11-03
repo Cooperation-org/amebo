@@ -21,7 +21,7 @@ import requests
 
 logger = logging.getLogger(__name__)
 
-_ID_RE = re.compile(r"^[CGD][A-Z0-9]{8,}$")
+_ID_RE = re.compile(r"^[CG][A-Z0-9]{8,}$")
 _cache: Dict[str, str] = {}
 _lock = threading.Lock()
 
@@ -82,6 +82,10 @@ def post(channel: str, message: str) -> bool:
         cid = resolve_channel(channel, token)
         if not cid:
             logger.warning("slack_notify: no channel for %r", channel)
+            return False
+        from src.services.slack_no_dm import is_dm_target, REFUSAL
+        if is_dm_target(cid, token):
+            logger.warning("slack_notify: %s: %s", REFUSAL, channel)
             return False
         resp = requests.post(
             "https://slack.com/api/chat.postMessage",

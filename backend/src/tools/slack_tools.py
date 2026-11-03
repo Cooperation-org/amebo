@@ -180,6 +180,10 @@ def slack_post_impl(tool_input: Dict[str, Any], context: Dict[str, Any]) -> str:
     except SlackPostError as exc:
         return f"Error: {exc}"
 
+    from src.services.slack_no_dm import is_dm_target, REFUSAL
+    if is_dm_target(channel, token):
+        return f"Error: {REFUSAL}. Post in a team channel and @-mention the person."
+
     payload: Dict[str, Any] = {
         "channel": channel,
         "text": body,

@@ -830,7 +830,8 @@ register_tool(Tool(
 register_tool(Tool(
     name="slack_post",
     description=(
-        "Post a message to Slack directly (ungated). To actually NOTIFY a "
+        "Post a message to a Slack CHANNEL directly (ungated). Never a DM: "
+        "user ids and DM ids are refused. To actually NOTIFY a "
         "person, you MUST pass mention_user_id with their Slack user id "
         "(e.g. UHUUD9ERZ); a post without an @-mention generates no "
         "notification (it is just channel noise). Use thread_ts to reply "

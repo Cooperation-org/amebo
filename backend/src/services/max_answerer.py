@@ -486,6 +486,9 @@ class MaxAnswerer:
 
     async def handle(self, channel: str, ts: str, thread_root: str) -> str:
         """Answer one Slack message. Returns what happened, for the log."""
+        from src.services.slack_no_dm import is_dm_channel_id
+        if is_dm_channel_id(channel):
+            return "ignored: DM; amebo talks only in channels"
         lock = self._thread_locks.setdefault(f"{channel}:{thread_root}", asyncio.Lock())
         async with lock:
             return await self._handle(channel, ts, thread_root)

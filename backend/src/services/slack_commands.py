@@ -54,6 +54,10 @@ async def _deliver(web_client, answer, channel, thread_ts, trigger_ts):
     A reaction that cannot be added (missing scope, already there) is dropped:
     silence is the better failure than an unwanted message.
     """
+    from src.services.slack_no_dm import is_dm_channel_id
+    if is_dm_channel_id(channel):
+        logger.info("ignoring DM %s: amebo talks only in channels", channel)
+        return
     kind, payload = _delivery(answer)
     if kind == "nothing":
         return False
@@ -237,6 +241,10 @@ async def handle_task(web_client, user_id, channel_id, text, team_id=None):
     person issuing the command is the approval). The natural-language path
     (@amebo) is the gated, AI-assisted one.
     """
+    from src.services.slack_no_dm import is_dm_channel_id
+    if is_dm_channel_id(channel_id):
+        logger.info("ignoring DM %s: amebo talks only in channels", channel_id)
+        return
     payload, err = parse_task_command(text)
     if err:
         await web_client.chat_postEphemeral(channel=channel_id, user=user_id, text=err)
@@ -258,6 +266,10 @@ async def handle_task(web_client, user_id, channel_id, text, team_id=None):
 
 async def handle_ask(web_client, user_id, channel_id, question, private=True):
     """Handle /ask command"""
+    from src.services.slack_no_dm import is_dm_channel_id
+    if is_dm_channel_id(channel_id):
+        logger.info("ignoring DM %s: amebo talks only in channels", channel_id)
+        return
 
     if not question:
         await web_client.chat_postEphemeral(
@@ -444,6 +456,10 @@ async def handle_app_mention(team_id, channel, text, user, ts, thread_ts=None):
     memory is keyed on that root, so every mention in the same Slack thread
     continues one conversation instead of starting a blank one.
     """
+    from src.services.slack_no_dm import is_dm_channel_id
+    if is_dm_channel_id(channel):
+        logger.info("ignoring DM %s: amebo talks only in channels", channel)
+        return
     try:
         thread_root = thread_ts or ts
         # Remove bot mention from text
@@ -573,6 +589,10 @@ async def handle_thread_reply(team_id, channel, text, user, ts, thread_ts):
       2. We reply in the same thread (thread_ts is the original message,
          not the reply).
     """
+    from src.services.slack_no_dm import is_dm_channel_id
+    if is_dm_channel_id(channel):
+        logger.info("ignoring DM %s: amebo talks only in channels", channel)
+        return
     try:
         question = (text or "").strip()
         if not question:
