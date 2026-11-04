@@ -56,27 +56,58 @@ _FROM_LINE_RE = re.compile(r"^\s*From:\s*(.+)$", re.IGNORECASE | re.MULTILINE)
 _INLINE_WROTE_RE = re.compile(r"\bOn\b.+?<?([\w.+-]+@[\w-]+\.[\w.-]+)>?\s*wrote:", re.IGNORECASE | re.DOTALL)
 
 
-def forwarded_origin_address(body: str) -> Optional[str]:
+_HDR_FIELD_RE = re.compile(r"^\s*([A-Za-z-]+):\s*(.*)$")
+
+
+def _forwarded_headers(body: str) -> dict:
+    """From/To/Cc of the first forwarded block, wrapped lines joined."""
+    m = _FWD_MARKER_RE.search(body or "")
+    if not m:
+        return {}
+    fields, cur = {}, None
+    for line in body[m.end():].splitlines()[1:]:
+        if not line.strip():
+            if fields:
+                break
+            continue
+        hm = _HDR_FIELD_RE.match(line)
+        if hm:
+            cur = hm.group(1).lower()
+            fields[cur] = hm.group(2)
+        elif cur:
+            fields[cur] += " " + line.strip()
+        else:
+            break
+    return fields
+
+
+def forwarded_client_addresses(body: str, is_own: Callable[[str], bool]) -> List[str]:
     """
-    The original sender of a forwarded email (the client), pulled from the
-    forwarded block. Used when the client is not in To:/Cc (a plain forward).
+    The client(s) of a forwarded email, from the forwarded block. Used when the
+    client is not in the outer To:/Cc (a plain forward).
+
+    A forward of our own sent mail has one of us in From:, so the client is in
+    that block's To:, then Cc. Otherwise the client is the From:.
     """
     if not body:
-        return None
-    # 1. A forwarded-block header: take the first From: after the marker.
-    m = _FWD_MARKER_RE.search(body)
-    if m:
-        after = body[m.end():]
-        fm = _FROM_LINE_RE.search(after)
-        if fm:
-            em = _EMAIL_RE.search(fm.group(1))
-            if em:
-                return em.group(0).lower()
-    # 2. Inline quote: "On <date>, Name <addr> wrote:"
+        return []
+    hdrs = _forwarded_headers(body)
+    if hdrs:
+        frm = [a.lower() for a in _EMAIL_RE.findall(hdrs.get("from", ""))]
+        if frm and not is_own(frm[0]):
+            return [frm[0]]
+        out = []
+        for key in ("to", "cc"):
+            for a in _EMAIL_RE.findall(hdrs.get(key, "")):
+                a = a.lower()
+                if not is_own(a) and a not in out:
+                    out.append(a)
+        return out
+    # Inline quote: "On <date>, Name <addr> wrote:"
     im = _INLINE_WROTE_RE.search(body)
-    if im:
-        return im.group(1).lower()
-    return None
+    if im and not is_own(im.group(1).lower()):
+        return [im.group(1).lower()]
+    return []
 
 
 def is_auto_reply(msg: Message) -> bool:
@@ -221,6 +252,19 @@ class Poller:
         self._base_local = (config.imap_user.split("@", 1)[0] or "").lower()
         self.intake_sink = intake_sink or _abra_intake_sink
 
+    def _own_address_test(self, sender: str) -> Callable[[str], bool]:
+        """True for our side of a thread: the sender, the allowlist, trusted
+        domains, and this inbox. Those are never the client."""
+        own = {sender.lower(), *(a.lower() for a in self.config.allowlist)}
+        domains = {d.lower() for d in self.config.trusted_domains}
+
+        def is_own(addr: str) -> bool:
+            addr = addr.lower()
+            local, _, domain = addr.partition("@")
+            return (addr in own or domain in domains
+                    or local.split("+", 1)[0] == self._base_local)
+        return is_own
+
     def _deposit_intake(self, msg: Message, mid: str, sender: str, subject: str) -> None:
         """Build a keyword-searchable intake item from an email and hand it to
         the intake sink (abra by default). Dead-letters on sink failure so an
@@ -314,14 +358,15 @@ class Poller:
 
         sender = parseaddr(from_hdr)[1]
         body = body_text(msg)
-        recips = recipient_addresses(msg, exclude_locals=[self._base_local])
+        is_own = self._own_address_test(sender)
+        recips = [a for a in recipient_addresses(msg, exclude_locals=[self._base_local])
+                  if not is_own(a)]
         forwarded = False
-        if recips:
-            target, skipped = recips[0], recips[1:]
-        else:
-            # No client in To:/Cc — a plain forward. File under the original sender.
-            target, skipped, forwarded = forwarded_origin_address(body), [], True
-            if not target:
+        if not recips:
+            # No client in To:/Cc — a plain forward. File under the client in
+            # the forwarded block.
+            recips, forwarded = forwarded_client_addresses(body, is_own), True
+            if not recips:
                 self.repo.dead_letter("no_recipient", message_id=mid, from_addr=sender,
                                       subject=subject, tag="crm")
                 self.repo.mark_seen(mid)
@@ -331,14 +376,25 @@ class Poller:
         # not exist, dead-letters with the reason instead of raising into the
         # runner, where the message would be marked read and lost.
         try:
-            partner_id = odoo.find_partner_by_email(target)
+            # The first client with an open CRM card gets the email on that
+            # card; with no card, the first client's contact record.
             created = False
-            if partner_id is None:
-                partner_id = odoo.create_partner(_name_for(msg, target), target)
-                created = True
-
-            odoo.post_message(
-                partner_id, subject, _provenance_body(sender, target, body, forwarded=forwarded))
+            target, lead_id = recips[0], None
+            for addr in recips:
+                lead_id = odoo.find_lead_by_email(addr)
+                if lead_id:
+                    target = addr
+                    break
+            skipped = [a for a in recips if a != target]
+            text = _provenance_body(sender, target, body, forwarded=forwarded)
+            if lead_id:
+                odoo.post_on_lead(lead_id, subject, text)
+            else:
+                partner_id = odoo.find_partner_by_email(target)
+                if partner_id is None:
+                    partner_id = odoo.create_partner(_name_for(msg, target), target)
+                    created = True
+                odoo.post_message(partner_id, subject, text)
         except Exception as e:
             logger.exception("CRM write failed for %s (team=%s)", mid, team or "-")
             self.repo.dead_letter("crm_write_failed", message_id=mid, from_addr=sender,

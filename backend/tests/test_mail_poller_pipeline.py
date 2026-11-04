@@ -41,8 +41,10 @@ class FakeRepo:
 
 
 class FakeOdoo:
-    def __init__(self, partners=None):
+    def __init__(self, partners=None, leads=None):
         self.partners = dict(partners or {})  # email -> id
+        self.leads = dict(leads or {})        # email -> crm.lead id
+        self.lead_posts = []
         self.posts = []
         self.created = []
         self._next = 1000
@@ -55,6 +57,13 @@ class FakeOdoo:
         self.partners[email_.lower()] = self._next
         self.created.append({"name": name, "email": email_, "id": self._next})
         return self._next
+
+    def find_lead_by_email(self, email_):
+        return self.leads.get(email_.lower())
+
+    def post_on_lead(self, lead_id, subject, body, message_type="email"):
+        self.lead_posts.append({"lead_id": lead_id, "subject": subject, "body": body})
+        return len(self.lead_posts)
 
     def post_message(self, partner_id, subject, body, message_type="email"):
         self.posts.append({"partner_id": partner_id, "subject": subject, "body": body})
@@ -294,3 +303,61 @@ def test_crm_write_failure_dead_letters_instead_of_raising():
     p = Poller(cfg(), repo, Broken())
     assert p.process(msg()) == "crm_write_failed"
     assert repo.dead[0]["reason"] == "crm_write_failed"
+
+
+# --- forwarding our own sent mail, team addresses, CRM cards ---------------
+
+OWN_FWD_BODY = (
+    "---------- Forwarded message ---------\n"
+    "From: Golda Velez <btucson1@gmail.com>\n"
+    "Date: Wed, Nov 4, 2026 at 12:59 PM\n"
+    "Subject: Re: Workshop\n"
+    "To: Jeff Grann <jgrann@client.org>\n"
+    "Cc: <helper@gmail.com>, Teammate <mate@linkedtrust.us>,\n"
+    "Rachel V <\n"
+    "rachel@client.org>\n\n"
+    "Hi Jeff,\n"
+)
+
+
+def test_forward_of_own_sent_mail_files_under_its_recipient():
+    odoo = FakeOdoo()
+    m = msg(to="amebo2019+crm@gmail.com", subject="Fwd: Re: Workshop", body=OWN_FWD_BODY)
+    assert poller(odoo=odoo).process(m) == "filed_created"
+    assert odoo.created[0]["email"] == "jgrann@client.org"
+
+
+def test_forward_of_own_sent_mail_prefers_a_recipient_with_a_card():
+    odoo = FakeOdoo(leads={"rachel@client.org": 2672})
+    repo = FakeRepo()
+    m = msg(to="amebo2019+crm@gmail.com", body=OWN_FWD_BODY)
+    assert poller(repo, odoo).process(m) == "filed"
+    assert odoo.lead_posts[0]["lead_id"] == 2672
+    assert odoo.posts == [] and odoo.created == []
+    skipped = {d["to_addrs"] for d in repo.dead if d["reason"] == "skipped_recipient"}
+    assert "mate@linkedtrust.us" not in skipped
+    assert "jgrann@client.org" in skipped
+
+
+def test_forward_with_mailto_wrapped_addresses():
+    body = ("---------- Forwarded message ---------\n"
+            "From: Golda Velez <btucson1@gmail.com <mailto:btucson1@gmail.com> >\n"
+            "Subject: Story\n"
+            "To: <tracy@eforall.org <mailto:tracy@eforall.org> >\n\nHi Tracy\n")
+    odoo = FakeOdoo(leads={"tracy@eforall.org": 2379})
+    m = msg(to="amebo2019+crm@gmail.com", body=body)
+    assert poller(odoo=odoo).process(m) == "filed"
+    assert odoo.lead_posts[0]["lead_id"] == 2379
+
+
+def test_team_address_in_to_is_never_the_client():
+    odoo = FakeOdoo(partners={"client@acme.com": 5})
+    m = msg(to="Mate <mate@linkedtrust.us>, Client <client@acme.com>")
+    assert poller(odoo=odoo).process(m) == "filed"
+    assert odoo.posts[0]["partner_id"] == 5
+
+
+def test_direct_email_to_client_with_card_lands_on_card():
+    odoo = FakeOdoo(leads={"client@acme.com": 42})
+    assert poller(odoo=odoo).process(msg()) == "filed"
+    assert odoo.lead_posts[0]["lead_id"] == 42

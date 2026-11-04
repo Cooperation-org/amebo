@@ -38,6 +38,9 @@ class FakeOdoo:
     def create_partner(self, n, e):
         return 1
 
+    def find_lead_by_email(self, e):
+        return None
+
     def post_message(self, *a, **k):
         return 1
 
