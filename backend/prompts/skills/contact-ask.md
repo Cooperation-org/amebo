@@ -24,18 +24,17 @@ Being listed on a research row means only that a person's employer matched a top
 
 Every answer then goes to a separate review (`contact-ask-review.md`) before it reaches the card.
 
-## Output, under 250 words, as plain lines
-- **Do:** one outreach the reader can do today: a named person, by which channel, about what they need. Project owner: "if its not an outreach i can actually do, it doesn't go in /next." Otherwise write "Nothing yet" with what is missing,
-- **Pathways:** up to 3 ways we could work with them, best first, one line each: what we do, what they do, what they get, what would have to be true. Only ones that passed the steps. None passed: say "No ask" and why.
-- **Onramp:** the artifact or fact, what exists today, hours to finish.
-- **Ask:** for the first pathway, the one ask of this person.
-- **Judged:** the strongest reason this is spam, and why it survives.
-- **Why them:** what they control that makes this relevant.
-- **Target:** the tender, grant or call, funder, deadline, link; or "no clear target".
-- **Proposal:** to which partner, for which work, which piece is ours, the first small piece.
-- **Intro:** who in our contacts could introduce us, with the evidence, or "none found".
-- **Check:** what you could not verify, with source links for what you could.
-- **Question:** one, only if the answer changes which pathway. It must stand alone.
+## Output
+Project owner: "bullet points facts exactly. I WILL INTERPRET THEM" · "DO NOT GENERATE TEXT. find FACTS that are relevant put them in bullet points or links"
+
+The card shows only facts, one bullet each, each with its source link, plus links. No opinion, judgement, recommendation, reasoning, "the real risk", "worth pursuing", "holds", or account of how you found it. The reader draws the conclusions.
+
+- **Do:** one outreach: the named person and the channel. Or "Nothing yet".
+- Then the facts that bear on it, one bullet each with its source link: their role now, their stated need or deadline, the tender or call, who in our contacts knows them (with the message or meeting), what of ours matches (link).
+- **Not known:** facts you could not find, one bullet each.
+- **Question:** one, only if the answer changes what to do. It must stand alone.
+
+Under 150 words. Steps 1 to 9 are how you decide; none of that goes on the card.
 
 ## The discussion
 Teammates narrow this down by adding notes on the card. Each new note is the next turn: drop a pathway they rule out, go deeper on the one they pick, and take what they know over what you found. Say who said what when it matters. Once one pathway is left, answer with only that pathway and its ask.

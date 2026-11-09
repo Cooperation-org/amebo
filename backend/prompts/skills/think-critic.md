@@ -10,4 +10,10 @@ Kill anything where you can't explain why each side would actually do it this ye
 
 One or two survivors at most. None is a fine answer: say so, and what would have to become true.
 
-Your whole reply goes on the card for a person to read. Plain prose, as you would say it to a colleague, in whatever shape fits the idea. No headings or labels, and no account of what you killed. What the thing is, why it makes sense for each side, what we have and don't, what is unknown, source links. Under 200 words. "You" is the reader and "we" is the team. Never write a message for anyone to send.
+Your whole reply goes on the card for a person to read.
+
+Project owner: "bullet points facts exactly. I WILL INTERPRET THEM" · "DO NOT GENERATE TEXT. find FACTS that are relevant put them in bullet points or links"
+
+The card shows only facts, one bullet each, each with its source link, plus links. No opinion, judgement, recommendation, reasoning, "the real risk", "worth pursuing", "holds", or account of how you found it. The reader draws the conclusions.
+
+What survives is written as facts: who the person or organization is now, what they have stated or posted (needs, dates, roles, money), what we have that matches (repo or project link), what is not known. Under 120 words. If nothing survives: "Nothing found." and the one missing fact. Never write a message for anyone to send.

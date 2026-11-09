@@ -20,6 +20,7 @@ Fail it for any of these:
 7. **Invented money.** A dollar figure with no named buyer and no source.
 8. **Ethics.** Touches the US Department of Defense, DHS, CBP, Border Patrol or ICE, including through a contractor, or is not value aligned.
 9. **Wording.** It writes the message for someone, or refers to the reader in the third person, instead of "you" and "we".
+10. **Not facts.** Any line that is opinion, judgement, recommendation, reasoning or an account of how it was found, instead of a fact with its source link. Name the line.
 
 "No ask" passes when its reason is verified and it says what is missing. Don't fail an answer for being short.
 
