@@ -547,9 +547,30 @@ class MaxAnswerer:
                 text=f"Sorry, I encountered an error: {e}")
             return "error"
 
+        answer = await self._guard(session, channel, answer)
         from src.services.slack_commands import _deliver
         sent = await _deliver(self.web, answer, channel, thread_root, ts)
         return "answered" if sent else "silent"
+
+    async def _guard(self, session: str, channel: str, answer: str) -> str:
+        """One rewrite in the same session when the answer breaks the reply
+        rule (src/services/reply_guard.py); posted as-is if it still does."""
+        from src.services.reply_guard import problem, REWRITE_INSTRUCTION
+        why = problem((answer or "").strip())
+        if not why:
+            return answer
+        try:
+            async with self._slots:
+                rewritten = await self._run_claude(
+                    ["--resume", session], REWRITE_INSTRUCTION.format(why=why), channel)
+        except Exception as e:
+            logger.warning("amebo-max: reply guard: %s; rewrite failed: %s", why, e)
+            return answer
+        rewritten = (rewritten or "").strip()
+        still = problem(rewritten)
+        logger.info("amebo-max: reply guard: %s; rewritten%s", why,
+                    f", still {still}" if still else "")
+        return rewritten or answer
 
     async def _names(self, user_ids) -> Dict[str, str]:
         names = {}

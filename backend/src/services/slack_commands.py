@@ -46,6 +46,33 @@ def _delivery(answer):
     return "post", text
 
 
+def _guard_answer(answer):
+    """The answer, rewritten once by the model if it breaks the reply rule
+    (src/services/reply_guard.py). Posted as-is if the rewrite fails too."""
+    from src.services.reply_guard import problem, rewrite_prompt
+    why = problem((answer or "").strip())
+    if not why:
+        return answer
+    from src.services.llm_client import get_llm_client, resolve_model, first_text
+    client = get_llm_client()
+    if client is None:
+        logger.warning("reply guard: %s; no LLM client to rewrite", why)
+        return answer
+    try:
+        response = client.messages.create(
+            model=resolve_model("claude-sonnet-4-6"),
+            max_tokens=1024,
+            messages=[{"role": "user", "content": rewrite_prompt(answer, why)}],
+        )
+        rewritten = first_text(response).strip()
+    except Exception as e:
+        logger.warning("reply guard: %s; rewrite failed: %s", why, e)
+        return answer
+    still = problem(rewritten)
+    logger.info("reply guard: %s; rewritten%s", why, f", still {still}" if still else "")
+    return rewritten or answer
+
+
 async def _deliver(web_client, answer, channel, thread_ts, trigger_ts):
     """Deliver an answer, or stay silent. True if anything was sent.
 
@@ -421,7 +448,7 @@ async def process_events(client: SocketModeClient, req: SocketModeRequest):
                     },
                 )
 
-                response_text = result['answer']
+                response_text = _guard_answer(result['answer'])
 
                 # Compact source footer, only on a message we are actually sending
                 kind, _ = _delivery(response_text)
@@ -502,7 +529,7 @@ async def handle_app_mention(team_id, channel, text, user, ts, thread_ts=None):
             },
         )
 
-        response_text = result['answer']
+        response_text = _guard_answer(result['answer'])
 
         # Compact source footer, only on a message we are actually sending
         kind, _ = _delivery(response_text)
