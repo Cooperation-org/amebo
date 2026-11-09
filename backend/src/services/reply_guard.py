@@ -13,7 +13,7 @@ import re
 from typing import Optional
 
 # Characters of visible text; a Slack link <url|label> counts as its label.
-MAX_CHARS = 600
+MAX_CHARS = 400
 
 # Headings and openers that narrate the work instead of giving the result.
 PROCESS_MARKERS = re.compile(
@@ -21,6 +21,11 @@ PROCESS_MARKERS = re.compile(
     r"|^\s*[*_]*(?:i (?:read|checked|searched|looked at|reviewed))\b",
     re.IGNORECASE | re.MULTILINE,
 )
+
+# Sentences about amebo itself ("I removed", "I've noted", "My mistake"): two or
+# more is an account of the work, not the result.
+_SELF = re.compile(r"(?:^|[.!?:]\s+|\n\s*)(?:I|I've|I'm|I'd|I'll|My)\b")
+_APOLOGY = re.compile(r"my mistake|i should have|sorry|apolog", re.IGNORECASE)
 
 _SLACK_LINK = re.compile(r"<([^|>]+)\|([^>]*)>")
 _BARE_LINK = re.compile(r"<(https?://[^>]+)>")
@@ -47,6 +52,11 @@ def problem(text: str) -> Optional[str]:
     n = visible_length(text)
     if n > MAX_CHARS:
         return f"it is {n} characters, the limit is {MAX_CHARS}"
+    if _APOLOGY.search(text):
+        return "it apologizes; state the result only"
+    n_self = len(_SELF.findall(text))
+    if n_self >= 2:
+        return f"it narrates what amebo did ({n_self} sentences start with I or My)"
     m = PROCESS_MARKERS.search(text)
     if m:
         return f"it narrates process (\"{m.group(0).strip()}\")"
