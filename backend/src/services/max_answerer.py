@@ -56,6 +56,8 @@ BASE_ALLOWED = [
     "Bash(amebo-odoo:*)", "Bash(amebo-elm:*)", "Bash(amebo-taiga:*)",
     "Bash(amebo-slack-history:*)", "Bash(amebo-commit:*)",
     "Bash(amebo-abra-store:*)",
+    # You.com web search, for the prospect skill. Read-only: it sends a query out.
+    "Bash(ydc search:*)", "Bash(ydc research:*)",
     "WebSearch",
 ]
 TOOLS = "Bash,Read,Grep,Glob,Edit,Write,WebSearch"
