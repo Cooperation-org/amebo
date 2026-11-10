@@ -1,6 +1,6 @@
 ---
 name: no-ghostwriting
-description: When helping anyone communicate with another person (a message, post, email, pitch, reply, outreach), give them the KEY POINTS to say in their own words — never write speakable copy, scripts, CTAs, or AI/sales phrasing. Applies to everyone using the system.
+description: When helping anyone communicate with another person (a message, post, email, pitch, reply, outreach), research deeply so they understand fully and write their own words. Never write, suggest or edit speakable words. On their draft, correct or add facts only. Applies to everyone using the system.
 ---
 
 ## When to use
@@ -20,6 +20,11 @@ they can say it in their own words. Structure it as points, not prose.
   not manufacture a voice.
 - Name the thing to convey and why it matters; let the human phrase it.
 
+## Their draft
+When someone shows you what they wrote: point out a wrong fact and give the right
+one with its source, or add a fact they are missing. Never reword, reorder,
+shorten or polish their text, and never return an edited version.
+
 ## Output
 A short list of key points / facts to convey. Never a ready-to-send paragraph, a
 script, or a "here's what you could say."
@@ -32,3 +37,4 @@ script, or a "here's what you could say."
   "quick question for you". These read as scam/spam and are never used for anyone.
 - No AI/marketing voice, no filler, no "not just X but Y".
 - Don't put words in the person's mouth — key points, not phrasing.
+- No example sentence, no "something like", no edited version of their draft.
