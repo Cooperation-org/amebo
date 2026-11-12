@@ -104,7 +104,7 @@ INJECTION_PATTERNS = [
     r"you are now",
     r"\bjailbreak\b",
     r"developer mode",
-    r"</?(system|instructions?|slack_message|slack_thread)>",
+    r"</?(system|instructions?|slack_message|slack_thread|bluesky_thread|post)\b",
     r"\.env\b",
     r"api[_ -]?key|secret|password|credentials?|private key|ssh",
     r"\b(rm|curl|wget|sudo|chmod|chown|ssh|scp|nc|bash|sh|python3?)\s+-",
@@ -248,13 +248,16 @@ def rested(claims: List[float], now: float, quiet_hours: float) -> bool:
                for a, b in zip(points, points[1:]))
 
 
-class MaxAnswerer:
-    def __init__(self, bot_token: str, workdir: str, claude_bin: str = "claude",
+class ClaudeMax:
+    """One Claude Code turn at a time on the Max login, with the daily rest and
+    hourly cap. Knows nothing about where the question came from; MaxAnswerer
+    (Slack) and BlueskyAnswerer (src/services/bluesky_answerer.py) build on it."""
+
+    def __init__(self, workdir: str, claude_bin: str = "claude",
                  timeout_seconds: int = 600, max_chars: int = 4000,
                  concurrency: int = 1, per_hour: int = 120,
                  sleep_window: str = "00:00-06:00", tz: str = "America/Phoenix",
                  quiet_hours: float = 6):
-        self.web = AsyncWebClient(token=bot_token)
         self.workdir = workdir
         # The Claude process gets its own PATH (AMEBO_MAX_PATH): the backend
         # .env sets PATH for the backend, and it lacks claude and the amebo CLIs.
@@ -272,15 +275,9 @@ class MaxAnswerer:
         self.quiet_hours = quiet_hours
         self._claims: List[float] = []   # answer times, epoch, last 48h
         self._thread_locks: Dict[str, asyncio.Lock] = {}
-        self._bot_user_id: Optional[str] = None
-        self._bot_team_id: Optional[str] = None
 
-    async def bot_identity(self):
-        if not self._bot_user_id:
-            auth = await self.web.auth_test()
-            self._bot_user_id = auth["user_id"]
-            self._bot_team_id = auth["team_id"]
-        return self._bot_user_id, self._bot_team_id
+    def system_prompt_text(self) -> str:
+        return system_prompt()
 
     def _not_now(self, now: float) -> Optional[str]:
         """At least quiet_hours a day with no answers: if the last 24 hours had
@@ -292,6 +289,83 @@ class MaxAnswerer:
         if sum(1 for t in self._claims if now - t < 3600) >= self.per_hour:
             return f"{self.per_hour} answers in the last hour"
         return None
+
+    async def _run_claude(self, session_args: List[str], prompt: str,
+                          channel: str) -> Optional[str]:
+        """Run one turn. None when --resume finds no session to resume.
+        The channel is passed in the environment for amebo-slack-history."""
+        w = writable_dirs()
+        where = "\n".join([f"  repo {n}: {p}" for n, p in w["repos"].items()]
+                          + [f"  directory (no git, edits are live): {d}" for d in w["dirs"]])
+        add_dirs = [a for p in [*w["repos"].values(), *w["dirs"]] for a in ("--add-dir", p)]
+        args = [
+            self.claude_bin, "-p", *session_args, *add_dirs,
+            "--setting-sources", "",
+            "--strict-mcp-config",
+            "--disable-slash-commands",
+            "--tools", TOOLS,
+            "--permission-mode", "dontAsk",
+            "--allowedTools", *allowed_tools(w),
+            # A hook or config planted in .git would run as this user on the
+            # next amebo-commit.
+            "--disallowedTools", *[f"{t}(/{p}/.git/**)" for p in w["repos"].values()
+                                   for t in ("Edit", "Write")],
+            # Repos hold their own secrets files.
+            *[f"{t}(/{p}/**/{f})" for p in [self.workdir, *w["repos"].values(), *w["dirs"]]
+              for t in ("Read", "Grep", "Edit", "Write")
+              for f in (".env", ".env.*", "*.env", "*.pem", "*.key")],
+            "--system-prompt", self.system_prompt_text() + "\n\nWritable:\n" + where + f"\n\nSkills, read-only: {SKILLS_DIR}",
+            # Every turn gets the current prompt file; with the default (on), a
+            # resumed thread keeps the prompt from its first turn.
+            "--system-prompt-snapshot", "off",
+            "--output-format", "json",
+        ]
+        return await self._claude(args, session_args, prompt, channel)
+
+    async def _claude(self, args: List[str], session_args: List[str], prompt: str,
+                      channel: str, timeout: Optional[int] = None) -> Optional[str]:
+        proc = await asyncio.create_subprocess_exec(
+            *args, cwd=self.workdir, env={**scrubbed_env(), "PATH": self.path, "AMEBO_MAX_CHANNEL": channel},
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        try:
+            out, err = await asyncio.wait_for(
+                proc.communicate(prompt.encode()), timeout or self.timeout_seconds)
+        except asyncio.TimeoutError:
+            proc.kill()
+            raise RuntimeError(f"claude timed out after {timeout or self.timeout_seconds}s")
+        text = out.decode(errors="replace").strip()
+        if proc.returncode != 0 and "--resume" in session_args \
+                and "No conversation found" in (text + err.decode(errors="replace")):
+            return None
+        try:
+            result = json.loads(text)
+        except json.JSONDecodeError:
+            raise RuntimeError(f"claude exit {proc.returncode}: "
+                               f"{(err.decode(errors='replace') or text)[-300:]}")
+        if result.get("is_error"):
+            if "--resume" in session_args and "No conversation found" in str(result.get("result")):
+                return None
+            raise RuntimeError(f"claude: {str(result.get('result'))[:300]}")
+        denied = result.get("permission_denials") or []
+        if denied:
+            logger.warning("amebo-max: denied tool calls %s", denied)
+        return result.get("result") or ""
+
+
+class MaxAnswerer(ClaudeMax):
+    def __init__(self, bot_token: str, workdir: str, **kwargs):
+        super().__init__(workdir, **kwargs)
+        self.web = AsyncWebClient(token=bot_token)
+        self._bot_user_id: Optional[str] = None
+        self._bot_team_id: Optional[str] = None
+
+    async def bot_identity(self):
+        if not self._bot_user_id:
+            auth = await self.web.auth_test()
+            self._bot_user_id = auth["user_id"]
+            self._bot_team_id = auth["team_id"]
+        return self._bot_user_id, self._bot_team_id
 
     async def handle_card(self, lead_id: int) -> str:
         """Answer the newest note on an elm card, as a note on that card. The
@@ -605,68 +679,6 @@ class MaxAnswerer:
         if out is None:
             raise RuntimeError("claude did not start a session")
         return out
-
-    async def _run_claude(self, session_args: List[str], prompt: str,
-                          channel: str) -> Optional[str]:
-        """Run one turn. None when --resume finds no session to resume.
-        The channel is passed in the environment for amebo-slack-history."""
-        w = writable_dirs()
-        where = "\n".join([f"  repo {n}: {p}" for n, p in w["repos"].items()]
-                          + [f"  directory (no git, edits are live): {d}" for d in w["dirs"]])
-        add_dirs = [a for p in [*w["repos"].values(), *w["dirs"]] for a in ("--add-dir", p)]
-        args = [
-            self.claude_bin, "-p", *session_args, *add_dirs,
-            "--setting-sources", "",
-            "--strict-mcp-config",
-            "--disable-slash-commands",
-            "--tools", TOOLS,
-            "--permission-mode", "dontAsk",
-            "--allowedTools", *allowed_tools(w),
-            # A hook or config planted in .git would run as this user on the
-            # next amebo-commit.
-            "--disallowedTools", *[f"{t}(/{p}/.git/**)" for p in w["repos"].values()
-                                   for t in ("Edit", "Write")],
-            # Repos hold their own secrets files.
-            *[f"{t}(/{p}/**/{f})" for p in [self.workdir, *w["repos"].values(), *w["dirs"]]
-              for t in ("Read", "Grep", "Edit", "Write")
-              for f in (".env", ".env.*", "*.env", "*.pem", "*.key")],
-            "--system-prompt", system_prompt() + "\n\nWritable:\n" + where + f"\n\nSkills, read-only: {SKILLS_DIR}",
-            # Every turn gets the current prompt file; with the default (on), a
-            # resumed thread keeps the prompt from its first turn.
-            "--system-prompt-snapshot", "off",
-            "--output-format", "json",
-        ]
-        return await self._claude(args, session_args, prompt, channel)
-
-    async def _claude(self, args: List[str], session_args: List[str], prompt: str,
-                      channel: str, timeout: Optional[int] = None) -> Optional[str]:
-        proc = await asyncio.create_subprocess_exec(
-            *args, cwd=self.workdir, env={**scrubbed_env(), "PATH": self.path, "AMEBO_MAX_CHANNEL": channel},
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        try:
-            out, err = await asyncio.wait_for(
-                proc.communicate(prompt.encode()), timeout or self.timeout_seconds)
-        except asyncio.TimeoutError:
-            proc.kill()
-            raise RuntimeError(f"claude timed out after {timeout or self.timeout_seconds}s")
-        text = out.decode(errors="replace").strip()
-        if proc.returncode != 0 and "--resume" in session_args \
-                and "No conversation found" in (text + err.decode(errors="replace")):
-            return None
-        try:
-            result = json.loads(text)
-        except json.JSONDecodeError:
-            raise RuntimeError(f"claude exit {proc.returncode}: "
-                               f"{(err.decode(errors='replace') or text)[-300:]}")
-        if result.get("is_error"):
-            if "--resume" in session_args and "No conversation found" in str(result.get("result")):
-                return None
-            raise RuntimeError(f"claude: {str(result.get('result'))[:300]}")
-        denied = result.get("permission_denials") or []
-        if denied:
-            logger.warning("amebo-max: denied tool calls %s", denied)
-        return result.get("result") or ""
 
 
 async def claimed_by_max(web: AsyncWebClient, max_cfg: Optional[Dict[str, Any]],
