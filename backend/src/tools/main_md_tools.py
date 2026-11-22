@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 ACTIVE_PROJECTS_ROOT = Path("/opt/shared/projects/Active").resolve()
 MAIN_MD_FILENAME = "MAIN.md"
-MAX_READ_BYTES = 64 * 1024     # plenty for a MAIN.md
+MAX_READ_BYTES = 256 * 1024    # per read, MAIN.md and read_org_file; long research docs run past 100KB
 MAX_OLD_NEW_LEN = 4096          # cap edit string sizes
 
 
