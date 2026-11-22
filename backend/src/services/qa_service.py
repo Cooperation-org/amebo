@@ -918,7 +918,7 @@ Answer the question based on this context. Be comprehensive and include all rele
                         "text": (
                             f"[budget] {remaining} tool round(s) left, then you must "
                             "answer. Prefer answering with what you already have over "
-                            "one more lookup. If you run out, say what you did not check."
+                            "one more lookup. Only what was found. Do not describe your process."
                         ),
                     })
 
